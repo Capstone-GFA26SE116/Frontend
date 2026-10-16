@@ -31,9 +31,22 @@ import "./schedule.css";
  * =========================================================== */
 
 type ViewMode = "week" | "month" | "gantt";
-type Tone = "primary" | "secondary" | "tertiary" | "error" | "muted";
+type Tone = "primary" | "secondary" | "tertiary" | "error" | "muted" | "sky";
 type FilterId = "all" | "priority" | "capstone" | "deep";
 type CalSource = "task" | "subtask" | "milestone" | "google";
+
+/**
+ * Một "project span" đại diện cho 1 dự án trên timeline (gantt / month accent).
+ * Được build từ `ProjectDto` + anchor (start/deadline) + tất cả tasks/subtasks
+ * làm anchor, mở rộng về phía trước/sau bằng deadline/fixed* của tasks và
+ * scheduled* của subtasks. Mỗi span có 1 màu riêng (hash từ project id).
+ */
+type ProjectSpan = {
+  project: ProjectDto;
+  start: Date;
+  end: Date;
+  color: string;
+};
 
 interface CalEvent {
   id: string;
@@ -162,12 +175,15 @@ function pickAccentForDay(
     let bestDeadlineDelta = Number.POSITIVE_INFINITY;
     const projTasks = tasks.filter((t) => t.projectId === sp.project.id);
     for (const t of projTasks) {
+      const deadline = t.deadline ?? null;
+      const fixedStart = t.fixedStart ? new Date(t.fixedStart) : null;
+      const fixedEnd = t.fixedEnd ? new Date(t.fixedEnd) : null;
       const isActive =
-        (t.deadline && isSameDay(new Date(t.deadline), day)) ||
-        (t.fixedStart && new Date(t.fixedStart) <= dayEnd && new Date(t.fixedEnd) >= dayStart);
+        (deadline && isSameDay(new Date(deadline), day)) ||
+        (fixedStart && fixedEnd && fixedStart <= dayEnd && fixedEnd >= dayStart);
       if (isActive) taskCount++;
-      if (t.deadline) {
-        const dl = new Date(t.deadline).getTime();
+      if (deadline) {
+        const dl = new Date(deadline).getTime();
         const delta = Math.abs(dl - dc);
         if (delta < bestDeadlineDelta) bestDeadlineDelta = delta;
       }
@@ -175,8 +191,10 @@ function pickAccentForDay(
     const taskIds = new Set(projTasks.map((t) => t.id));
     for (const st of subtasks) {
       if (!taskIds.has(st.taskId)) continue;
+      const sStart = st.scheduledStart ? new Date(st.scheduledStart) : null;
+      const sEnd = st.scheduledEnd ? new Date(st.scheduledEnd) : null;
       const isActive =
-        st.scheduledStart && new Date(st.scheduledStart) <= dayEnd && new Date(st.scheduledEnd) >= dayStart;
+        sStart && sEnd && sStart <= dayEnd && sEnd >= dayStart;
       if (isActive) subtaskCount++;
     }
     const total = taskCount + subtaskCount;
@@ -394,13 +412,8 @@ export function SchedulePage() {
    * Project spans: mỗi project 1 span, lấy từ ProjectDto (startDate, deadline)
    * làm anchor, mở rộng về phía trước/sau bằng deadline/fixed* của tasks và
    * scheduled* của subtasks. Mỗi span có 1 màu riêng (hash từ project id).
+   * (Kiểu ProjectSpan đã được khai báo ở top-level file.)
    */
-  type ProjectSpan = {
-    project: ProjectDto;
-    start: Date;
-    end: Date;
-    color: string;
-  };
 
   /** Bảng màu xoay vòng cho project spans (khi ở /schedule all-projects). */
   const PROJECT_COLORS = [
@@ -663,7 +676,7 @@ export function SchedulePage() {
 
   /* staggered mount for KPIs */
   const { mounted: kpiMounted, bumpKey: kpiBumpKey, getDelay: getKpiDelay } =
-    useStaggeredMount<HTMLDivElement>([kpis.totalHours, kpis.tasksCount]);
+    useStaggeredMount(60, 40, kpis.tasksCount);
 
   /* Navigation */
   function goPrev() {
@@ -694,7 +707,7 @@ export function SchedulePage() {
   const [selected, setSelected] = useState<CalEvent | null>(null);
 
   /** Cell popover: hiện khi click 1 cell có nhiều projects/tasks. */
-  const [popover, setPopover] = useState<{ day: Date; info: ReturnType<typeof pickAccentForCell> } | null>(null);
+  const [popover, setPopover] = useState<{ day: Date; info: CellAccent } | null>(null);
 
   const openCellPopover = useCallback((day: Date) => {
     const info = pickAccentForCell(day);
@@ -986,7 +999,7 @@ export function SchedulePage() {
             </div>
 
             <aside className="sch-board__side">
-              <Sidebar upcoming={upcomingEvents} totalEvents={events.length} onSelect={setSelected} />
+              <Sidebar upcoming={upcomingEvents} totalEvents={events.length} onSelect={(e) => setSelected(e)} />
             </aside>
           </div>
         )}
@@ -1003,7 +1016,7 @@ export function SchedulePage() {
           day={popover.day}
           info={popover.info}
           onClose={() => setPopover(null)}
-          onSelectEvent={setSelected}
+          onSelectEvent={(e) => setSelected(e)}
         />
       )}
     </section>
@@ -1372,6 +1385,14 @@ function GanttView({
           const span = ev.isAllDay
             ? Math.max(1, Math.ceil((ev.end.getTime() - ev.start.getTime()) / 86_400_000))
             : 1;
+          // Tìm span của project chứa event này (nếu có) để render start/end markers
+          const evSpan = spans.find((sp) => sp.project.id === ev.projectId);
+          const startCol = evSpan
+            ? days.findIndex((d) => isSameDay(d.date, evSpan.start))
+            : -1;
+          const endCol = evSpan
+            ? days.findIndex((d) => isSameDay(d.date, evSpan.end))
+            : -1;
           return (
             <div key={ev.id} className="sch-gantt__row">
               <div className="sch-gantt__col sch-gantt__col--name">
@@ -1545,7 +1566,7 @@ function Sidebar({
  * (khi cell có >1 project, hoặc user muốn xem chi tiết).
  * =========================================================== */
 function CellPopover({
-  day, info, onClose, onSelectEvent,
+  day, info, onClose, onSelectEvent: _onSelectEvent,
 }: {
   day: Date;
   info: CellAccent;

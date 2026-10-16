@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import "./site-layout.css";
 
@@ -15,7 +15,6 @@ import "./site-layout.css";
  */
 export function SiteLayout() {
   const { isAuthenticated, user, logout } = useAuth();
-  const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 

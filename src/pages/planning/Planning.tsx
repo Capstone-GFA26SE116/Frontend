@@ -157,7 +157,6 @@ export function PlanningPage() {
 
   /* domains (dùng cho dropdown chọn domain của task) */
   const [domains, setDomains] = useState<DomainDto[]>([]);
-  const [domainsLoading, setDomainsLoading] = useState(false);
 
   /* UI state */
   const [showCreateTask, setShowCreateTask] = useState(false);
@@ -211,12 +210,10 @@ export function PlanningPage() {
   /* Load domains (1 lần khi mount, không phụ thuộc project) */
   useEffect(() => {
     let cancelled = false;
-    setDomainsLoading(true);
     void listDomains().then((res) => {
       if (cancelled) return;
       if (res.ok) setDomains(res.data);
       // Lỗi thì im lặng — domain là optional, vẫn cho tạo task bình thường
-      setDomainsLoading(false);
     });
     return () => { cancelled = true; };
   }, []);
@@ -1030,8 +1027,7 @@ function CreateTaskModal({
       domainId: domainId || null, // Manual decompose: optional, null nếu không chọn
       deadline: toUtcIso(deadline),
       estimatedMinutes: estimatedMinutes ? parseInt(estimatedMinutes, 10) : 0,
-      aiEstimatedMinutes: null, // Manual decompose: không phải AI estimate
-      // Fixed: bắt buộc có cả start & end; Flexible: null
+      // Manual decompose: không phải AI estimate — bỏ field
       fixedStart: taskType === "Fixed" ? toUtcIso(fixedStart) : null,
       fixedEnd: taskType === "Fixed" ? toUtcIso(fixedEnd) : null,
     };

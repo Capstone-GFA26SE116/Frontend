@@ -11,9 +11,9 @@ import { useStaggeredMount } from "../../hooks/useStaggeredMount";
 import {
   createClient,
   createProject,
-  CURRENT_USER_ID,
   filterProjects,
   listClients,
+  type ApiResult,
   type ClientDto,
   type ProjectDto,
 } from "../../lib/api-client";
@@ -202,7 +202,7 @@ export function ProjectsPage() {
     null,
   );
   const [clientBrowserList, setClientBrowserList] = useState<
-    Awaited<ReturnType<typeof listClients>>["data"] | null
+    Extract<ApiResult<ClientDto[]>, { ok: true }>["data"] | null
   >(null);
   const [clientBrowserSearch, setClientBrowserSearch] = useState("");
   const projectFormRef = useRef<HTMLFormElement | null>(null);
@@ -470,12 +470,12 @@ export function ProjectsPage() {
     setClientBrowserOpen(false);
   }
 
-  const filteredClientBrowser = (clientBrowserList ?? []).filter((c) => {
+  const filteredClientBrowser = (clientBrowserList ?? []).filter((c: ClientDto) => {
     const q = clientBrowserSearch.trim().toLowerCase();
     if (!q) return true;
     return (
       (c.name ?? "").toLowerCase().includes(q) ||
-      (c.contactEmail ?? "").toLowerCase().includes(q) ||
+      (c.email ?? "").toLowerCase().includes(q) ||
       (c.phone ?? "").toLowerCase().includes(q)
     );
   });
@@ -1376,7 +1376,7 @@ export function ProjectsPage() {
                       </div>
                     ) : (
                       <ul className="proj-browser-list">
-                        {filteredClientBrowser.map((c) => {
+                        {filteredClientBrowser.map((c: ClientDto) => {
                           const isSelected = selectedClientId === c.id;
                           return (
                             <li
@@ -1409,8 +1409,8 @@ export function ProjectsPage() {
                                     )}
                                   </span>
                                   <span className="proj-browser-item-meta">
-                                    {c.contactEmail || c.phone
-                                      ? [c.contactEmail, c.phone]
+                                    {c.email || c.phone
+                                      ? [c.email, c.phone]
                                           .filter(Boolean)
                                           .join(" • ")
                                       : "No contact info"}

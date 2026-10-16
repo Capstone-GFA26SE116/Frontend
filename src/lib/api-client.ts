@@ -347,30 +347,7 @@ export const CURRENT_USER_ID = "3fa85f64-5717-4562-b3fc-2c963f66afa6";
  *
  * Hiện tại RỖNG — vì user chưa tạo dự án nào qua POST /api/projects
  * (mock trả `[]` cho filterProjects), nên UI sẽ hiện empty state.
- *
- * Để test giao diện với dữ liệu mẫu, bỏ comment khối dưới.
  */
-const MOCK_PROJECTS: ProjectDto[] = [
-  // ----- Bỏ comment khối dưới nếu cần test UI với dữ liệu mẫu -----
-  // {
-  //   id: "3fa85f64-5717-4562-b3fc-2c963f66a001",
-  //   userId: CURRENT_USER_ID,
-  //   name: "Hệ thống Fintech Mobile Banking v2",
-  //   description: "Nâng cấp ứng dụng mobile banking: onboarding eKYC, ví sinh trắc học, thanh toán QR tích hợp VISA.",
-  //   startDate: "2026-03-15",
-  //   deadline: "2026-04-15",
-  //   status: "active",
-  //   clientId: "3fa85f64-5717-4562-b3fc-2c963f66a101",
-  //   client: {
-  //     id: "3fa85f64-5717-4562-b3fc-2c963f66a101",
-  //     name: "Ngân hàng Techcombank",
-  //     contactEmail: "pm@techcombank.example.com",
-  //     phone: "0901 234 567",
-  //   },
-  //   createdAt: "2026-03-15T06:19:37.322Z",
-  // },
-  // ... thêm các dự án khác nếu cần
-];
 
 /** Params cho GET /api/projects/filter. Tất cả optional. */
 export interface ProjectFilter {

@@ -1,0 +1,839 @@
+/* ===========================================================
+ * Trang đăng nhập — Login
+ * Dark glassmorphism, scope theo `.login-*`.
+ * =========================================================== */
+
+.login {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+  color: var(--auth-text);
+  font-family: "Inter", system-ui, sans-serif;
+}
+
+/* ---------- Header ---------- */
+.login-header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.login-eyebrow {
+  font-family: "JetBrains Mono", "Inter", monospace;
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--auth-primary);
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  background-color: rgba(192, 193, 255, 0.1);
+  border: 1px solid rgba(192, 193, 255, 0.2);
+}
+
+.login-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--auth-text);
+  letter-spacing: -0.02em;
+  margin: 0.25rem 0 0;
+  line-height: 1.2;
+}
+
+@media (min-width: 640px) {
+  .login-title {
+    font-size: 1.875rem;
+  }
+}
+
+.login-subtitle {
+  font-size: 0.875rem;
+  color: var(--auth-text-mute);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ---------- Google SSO ---------- */
+.login-sso {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.25rem;
+}
+
+.login-google-btn {
+  position: relative;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  background-color: var(--auth-bg-4);
+  border: 1px solid var(--auth-border);
+  padding: 0.875rem 1rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  color: var(--auth-text);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 200ms ease;
+}
+
+.login-google-btn:hover:not(:disabled) {
+  background-color: #353942; /* surface-bright */
+  border-color: var(--auth-border-3);
+}
+
+.login-google-btn:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.login-google-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.login-google-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+}
+
+.login-sso-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  color: var(--auth-text-mute);
+  font-family: "JetBrains Mono", "Inter", monospace;
+  font-size: 0.75rem;
+  padding-top: 0.25rem;
+}
+
+.login-sso-dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 9999px;
+  background-color: var(--auth-secondary);
+}
+
+/* ---------- Divider ---------- */
+.login-divider {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 0.25rem 0;
+}
+
+.login-divider-line {
+  flex-grow: 1;
+  height: 1px;
+  background-color: var(--auth-border);
+}
+
+.login-divider-text {
+  flex-shrink: 0;
+  margin: 0 1rem;
+  font-family: "JetBrains Mono", "Inter", monospace;
+  font-size: 0.6875rem;
+  color: var(--auth-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* ---------- Form ---------- */
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* ---------- Field ---------- */
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.login-field-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.login-field-label {
+  font-family: "JetBrains Mono", "Inter", monospace;
+  font-size: 0.75rem;
+  color: var(--auth-text-mute);
+  letter-spacing: 0.02em;
+}
+
+.login-field-error {
+  font-size: 0.75rem;
+  color: #fca5a5; /* red-300 cho nền tối */
+}
+
+/* ---------- Input ---------- */
+.login-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.login-input {
+  display: block;
+  width: 100%;
+  background-color: var(--auth-bg-2);
+  color: var(--auth-text);
+  font-size: 0.875rem;
+  font-family: "Inter", system-ui, sans-serif;
+  padding: 0.75rem 0.875rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--auth-border);
+  outline: none;
+  transition: all 150ms ease;
+}
+
+.login-input::placeholder {
+  color: rgba(144, 143, 160, 0.5);
+}
+
+.login-input:focus {
+  border-color: var(--auth-accent-1);
+  box-shadow: 0 0 0 1px var(--auth-accent-1);
+}
+
+.login-input--with-toggle {
+  padding-right: 2.75rem;
+}
+
+.login-input-icon {
+  position: absolute;
+  right: 0.875rem;
+  color: rgba(144, 143, 160, 0.5);
+  pointer-events: none;
+  font-size: 1.125rem;
+}
+
+/* ---------- Toggle password ---------- */
+.login-toggle {
+  position: absolute;
+  right: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  color: var(--auth-text-dim);
+  background: transparent;
+  border: none;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: color 150ms ease;
+}
+
+.login-toggle:hover {
+  color: var(--auth-text);
+}
+
+.login-toggle .material-symbols-outlined {
+  font-size: 1.125rem;
+}
+
+/* ---------- Remember (custom checkbox) ---------- */
+.login-remember {
+  display: flex;
+  align-items: center;
+  padding-top: 0.25rem;
+}
+
+.login-checkbox-input {
+  /* ẩn native, dùng custom */
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.login-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.75rem;
+  color: var(--auth-text-mute);
+  transition: color 150ms ease;
+}
+
+.login-checkbox-label:hover {
+  color: var(--auth-text);
+}
+
+.login-checkbox-box {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 0.25rem;
+  background-color: var(--auth-bg-2);
+  border: 1px solid var(--auth-border-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 150ms ease;
+  flex-shrink: 0;
+}
+
+.login-checkbox-check {
+  width: 0.75rem;
+  height: 0.75rem;
+  color: #ffffff;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.login-checkbox-input:checked + .login-checkbox-label .login-checkbox-box {
+  background-color: var(--auth-accent-1);
+  border-color: var(--auth-accent-1);
+}
+
+.login-checkbox-input:checked + .login-checkbox-label .login-checkbox-check {
+  opacity: 1;
+}
+
+.login-checkbox-input:focus-visible + .login-checkbox-label .login-checkbox-box {
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.45);
+}
+
+/* ---------- Alert ---------- */
+.login-alert {
+  border-radius: 0.5rem;
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  background-color: rgba(127, 29, 29, 0.4);
+  color: #fecaca;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+}
+
+/* ---------- Links ---------- */
+.login-link {
+  font-family: "JetBrains Mono", "Inter", monospace;
+  font-size: 0.75rem;
+  color: var(--auth-primary);
+  text-decoration: none;
+  transition: color 150ms ease;
+}
+
+.login-link:hover {
+  color: #e1e0ff; /* primary-fixed */
+  text-decoration: underline;
+}
+
+.login-link--strong {
+  font-weight: 600;
+}
+
+/* ---------- Submit (gradient) ---------- */
+.login-submit {
+  margin-top: 0.5rem;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background-image: linear-gradient(
+    to right,
+    var(--auth-accent-1),
+    var(--auth-accent-2)
+  );
+  color: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: "Inter", system-ui, sans-serif;
+  padding: 0.875rem 1rem;
+  border-radius: 0.75rem;
+  border: none;
+  box-shadow: 0 10px 25px -5px rgba(99, 102, 241, 0.25);
+  cursor: pointer;
+  transition: all 200ms ease;
+}
+
+.login-submit:hover:not(:disabled) {
+  background-image: linear-gradient(
+    to right,
+    #5558e6,
+    #7c4def
+  );
+}
+
+.login-submit:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.login-submit:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.login-submit .material-symbols-outlined {
+  font-size: 1rem;
+}
+
+/* ---------- Mobile-only link (hiện <lg khi topbar bị ẩn) ---------- */
+.login-mobile-link {
+  display: block;
+  font-size: 0.875rem;
+  color: var(--auth-text-mute);
+  text-align: center;
+  margin: 0;
+}
+
+@media (min-width: 1024px) {
+  .login-mobile-link {
+    display: none;
+  }
+}
+
+/* ===========================================================
+ * Animation layer
+ * - Entry: fade + slide-up theo cascade khi component mount.
+ * - Ambient: 2 blob glow phía sau, di chuyển chậm (very low CPU).
+ * - Interaction: shimmer cho CTA loading, shake cho alert.
+ * - Tất cả respect prefers-reduced-motion.
+ * =========================================================== */
+
+@keyframes login-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes login-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes login-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes login-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-6px);
+  }
+  40% {
+    transform: translateX(6px);
+  }
+  60% {
+    transform: translateX(-4px);
+  }
+  80% {
+    transform: translateX(4px);
+  }
+}
+
+@keyframes login-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(99, 102, 241, 0);
+  }
+}
+
+@keyframes login-blob-a {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  33% {
+    transform: translate3d(20px, -10px, 0) scale(1.05);
+  }
+  66% {
+    transform: translate3d(-15px, 12px, 0) scale(0.95);
+  }
+}
+
+@keyframes login-blob-b {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  40% {
+    transform: translate3d(-18px, 8px, 0) scale(1.04);
+  }
+  80% {
+    transform: translate3d(12px, -14px, 0) scale(0.97);
+  }
+}
+
+@keyframes login-ring-pulse {
+  0% {
+    transform: scale(0.7);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+/* ----- Entry cascade (auto chạy khi render) ----- */
+.login-header,
+.login-sso,
+.login-divider,
+.login-form,
+.login-mobile-link {
+  opacity: 0;
+  animation: login-fade-up 480ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.login-header {
+  animation-delay: 60ms;
+}
+.login-sso {
+  animation-delay: 140ms;
+}
+.login-divider {
+  animation-delay: 220ms;
+}
+.login-form {
+  animation-delay: 300ms;
+}
+.login-mobile-link {
+  animation-delay: 420ms;
+}
+
+/* Các field bên trong form: stagger thêm */
+.login-field {
+  opacity: 0;
+  animation: login-fade-up 380ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.login-field:nth-of-type(1) {
+  animation-delay: 360ms;
+}
+.login-field:nth-of-type(2) {
+  animation-delay: 420ms;
+}
+.login-field + .login-remember {
+  animation: login-fade-up 380ms cubic-bezier(0.22, 1, 0.36, 1) 480ms forwards;
+  opacity: 0;
+}
+.login-submit {
+  animation: login-fade-up 420ms cubic-bezier(0.22, 1, 0.36, 1) 540ms forwards;
+  opacity: 0;
+}
+
+/* ----- Ambient glow phía sau form ----- */
+.login {
+  position: relative;
+  isolation: isolate;
+}
+
+.login::before,
+.login::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  width: 18rem;
+  height: 18rem;
+  border-radius: 9999px;
+  filter: blur(64px);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.login::before {
+  top: -4rem;
+  right: -6rem;
+  background: radial-gradient(
+    circle,
+    rgba(128, 131, 255, 0.22),
+    transparent 70%
+  );
+  animation: login-blob-a 14s ease-in-out infinite;
+}
+
+.login::after {
+  bottom: -5rem;
+  left: -5rem;
+  background: radial-gradient(
+    circle,
+    rgba(6, 182, 212, 0.14),
+    transparent 70%
+  );
+  animation: login-blob-b 18s ease-in-out infinite;
+}
+
+/* ----- Input: glow + caret shimmer khi focus ----- */
+.login-input {
+  transition: border-color 150ms ease, box-shadow 200ms ease,
+    background-color 200ms ease;
+}
+
+.login-input:focus {
+  border-color: var(--auth-accent-1);
+  box-shadow:
+    0 0 0 1px var(--auth-accent-1),
+    0 0 24px -8px rgba(99, 102, 241, 0.55);
+}
+
+.login-input:hover:not(:focus) {
+  border-color: var(--auth-border-3);
+  background-color: var(--auth-bg-3);
+}
+
+/* ----- Toggle visibility: rotate icon khi đổi trạng thái ----- */
+.login-toggle .material-symbols-outlined {
+  transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.login-toggle:hover .material-symbols-outlined {
+  transform: scale(1.1);
+}
+
+/* ----- Checkbox: ripple khi check ----- */
+.login-checkbox-input:checked + .login-checkbox-label .login-checkbox-box {
+  animation: login-pulse 600ms ease-out;
+}
+
+/* ----- Alert: shake ngắn khi xuất hiện ----- */
+.login-alert {
+  animation: login-shake 420ms cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+/* ----- Submit: shimmer overlay khi đang loading ----- */
+.login-submit {
+  position: relative;
+  overflow: hidden;
+}
+
+.login-submit[aria-busy="true"]::after,
+.login-submit:disabled::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.18) 50%,
+    transparent 80%
+  );
+  background-size: 200% 100%;
+  animation: login-shimmer 1.4s linear infinite;
+  pointer-events: none;
+}
+
+.login-submit:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow:
+    0 14px 30px -8px rgba(99, 102, 241, 0.4),
+    0 0 0 1px rgba(192, 193, 255, 0.2);
+  background-image: linear-gradient(to right, #5558e6, #7c4def);
+}
+
+.login-submit:active:not(:disabled) {
+  transform: scale(0.985) translateY(0);
+}
+
+/* ----- Google button: subtle lift ----- */
+.login-google-btn {
+  position: relative;
+  overflow: hidden;
+  transition: background-color 200ms ease, border-color 200ms ease,
+    transform 200ms ease, box-shadow 200ms ease;
+}
+
+.login-google-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background-color: #353942;
+  border-color: var(--auth-border-3);
+  box-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.6);
+}
+
+.login-google-btn:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+/* ----- SSO hint dot: pulse ----- */
+.login-sso-dot {
+  position: relative;
+}
+.login-sso-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background-color: var(--auth-secondary);
+  animation: login-ring-pulse 2.2s ease-out infinite;
+}
+
+/* ----- Eyebrow badge: sheen ngang rất nhẹ ----- */
+.login-eyebrow {
+  position: relative;
+  overflow: hidden;
+}
+.login-eyebrow::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(
+    100deg,
+    transparent 30%,
+    rgba(192, 193, 255, 0.12) 50%,
+    transparent 70%
+  );
+  background-size: 200% 100%;
+  animation: login-shimmer 6s linear infinite;
+  pointer-events: none;
+}
+
+/* ----- Link: underline chạy từ trái sang ----- */
+.login-link {
+  position: relative;
+  background-image: linear-gradient(currentColor, currentColor);
+  background-size: 0% 1px;
+  background-repeat: no-repeat;
+  background-position: 0 100%;
+  transition: background-size 250ms ease, color 150ms ease;
+}
+.login-link:hover {
+  background-size: 100% 1px;
+  text-decoration: none;
+  color: #e1e0ff;
+}
+
+/* ----- Respect prefers-reduced-motion ----- */
+@media (prefers-reduced-motion: reduce) {
+  .login-header,
+  .login-sso,
+  .login-divider,
+  .login-form,
+  .login-mobile-link,
+  .login-field,
+  .login-submit {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+  .login::before,
+  .login::after,
+  .login-eyebrow::after,
+  .login-submit::after,
+  .login-sso-dot::after {
+    animation: none !important;
+  }
+  .login-input:focus,
+  .login-submit:hover,
+  .login-google-btn:hover {
+    transform: none !important;
+  }
+  .login-banner {
+    animation: none !important;
+  }
+}
+
+/* ================= Success banner (sau khi đăng ký) ================= */
+@keyframes login-banner-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.login-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: 0.625rem;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  background-color: rgba(78, 222, 163, 0.08); /* secondary / 8% */
+  border: 1px solid rgba(78, 222, 163, 0.35);
+  color: #c7c4d7;
+  animation: login-banner-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  /* chừa chỗ giữa header và sso */
+  margin-top: 0.25rem;
+}
+
+.login-banner--success {
+  background-color: rgba(78, 222, 163, 0.1);
+  border-color: rgba(78, 222, 163, 0.4);
+  color: #d6f4e6;
+}
+
+.login-banner-icon {
+  color: #4edea3; /* secondary */
+  font-size: 1.25rem;
+  flex-shrink: 0;
+  margin-top: 0.0625rem;
+}
+
+.login-banner-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.login-banner-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #6ffbbe; /* secondary-fixed */
+  letter-spacing: -0.005em;
+}
+
+.login-banner-text {
+  color: #c7c4d7;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+}
+
+.login-banner-close {
+  background: transparent;
+  border: none;
+  padding: 0.125rem;
+  margin: -0.125rem -0.25rem 0 0;
+  color: #c7c4d7;
+  cursor: pointer;
+  border-radius: 0.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 150ms ease, background-color 150ms ease;
+  flex-shrink: 0;
+}
+
+.login-banner-close:hover {
+  color: #dfe2ee;
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.login-banner-close .material-symbols-outlined {
+  font-size: 1rem;
+}

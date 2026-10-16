@@ -1,0 +1,140 @@
+/* ===========================================================
+ * Trang Landing — giới thiệu sản phẩm METANOIA.
+ * Mọi class prefix `.landing-*`.
+ * =========================================================== */
+
+.landing {
+  min-height: 100vh;
+  background-color: #ffffff;
+  color: #0f172a; /* slate-900 */
+}
+
+/* --- header --- */
+.landing-header {
+  margin: 0 auto;
+  display: flex;
+  max-width: 72rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.5rem;
+}
+
+.landing-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.landing-nav-link {
+  border-radius: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  font-weight: 500;
+  color: #475569; /* slate-600 */
+  text-decoration: none;
+  transition: background-color 150ms ease;
+}
+
+.landing-nav-link:hover {
+  background-color: #f1f5f9; /* slate-100 */
+}
+
+.landing-nav-cta {
+  border-radius: 0.375rem;
+  background-color: #7c3aed; /* metanoia-600 */
+  padding: 0.5rem 0.75rem;
+  font-weight: 600;
+  color: #ffffff;
+  text-decoration: none;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  transition: background-color 150ms ease;
+}
+
+.landing-nav-cta:hover {
+  background-color: #6d28d9; /* metanoia-700 */
+}
+
+/* --- hero --- */
+.landing-main {
+  margin: 0 auto;
+  max-width: 48rem;
+  padding: 6rem 1.5rem;
+  text-align: center;
+}
+
+.landing-eyebrow {
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: #7c3aed;
+}
+
+.landing-headline {
+  margin-top: 1rem;
+  font-size: 2.25rem;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+@media (min-width: 640px) {
+  .landing-headline {
+    font-size: 3.75rem;
+  }
+}
+
+.landing-subhead {
+  margin: 1.5rem auto 0;
+  max-width: 36rem;
+  font-size: 1.125rem;
+  color: #475569; /* slate-600 */
+}
+
+.landing-cta-row {
+  margin-top: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.landing-cta-primary {
+  border-radius: 0.5rem;
+  background-color: #7c3aed;
+  padding: 0.75rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #ffffff;
+  text-decoration: none;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  transition: background-color 150ms ease;
+}
+
+.landing-cta-primary:hover {
+  background-color: #6d28d9;
+}
+
+.landing-cta-secondary {
+  border-radius: 0.5rem;
+  border: 1px solid #e2e8f0;
+  padding: 0.75rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #334155;
+  text-decoration: none;
+  transition: background-color 150ms ease;
+}
+
+.landing-cta-secondary:hover {
+  background-color: #f8fafc;
+}
+
+/* --- footer --- */
+.landing-footer {
+  border-top: 1px solid #f1f5f9;
+  padding: 2rem 0;
+  text-align: center;
+  font-size: 0.75rem;
+  color: #94a3b8; /* slate-400 */
+}

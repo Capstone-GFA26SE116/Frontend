@@ -1,0 +1,1264 @@
+/* ===========================================================
+ * Dashboard — homepage sau khi đăng nhập.
+ * Scope `.dash-*` (tránh đụng `.dashboard-*` cũ đã có).
+ * Cognitive minimalist dark theme.
+ *
+ * Tokens (đồng bộ với SiteLayout + Pricing):
+ *   surface                    #0f131c
+ *   surface-container           #1c2028
+ *   surface-container-high      #262a33
+ *   surface-container-highest   #31353e
+ *   surface-container-low       #181c24
+ *   surface-container-lowest    #0a0e16
+ *   on-surface                  #dfe2ee
+ *   on-surface-variant          #c7c4d7
+ *   outline                     #908fa0
+ *   outline-variant             #464554
+ *   primary                     #c0c1ff
+ *   primary-container           #8083ff
+ *   secondary                   #4edea3
+ *   tertiary                    #d0bcff
+ *   tertiary-container          #a078ff
+ *   error                       #ffb4ab
+ *   error-container             #93000a
+ * =========================================================== */
+
+.dash {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  color: #dfe2ee;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+.dash-ambient {
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 680px;
+  height: 260px;
+  background: linear-gradient(
+    to bottom,
+    rgba(192, 193, 255, 0.1),
+    rgba(128, 131, 255, 0.05),
+    transparent
+  );
+  filter: blur(48px);
+  pointer-events: none;
+}
+
+.dash-container {
+  width: 100%;
+  max-width: 80rem;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 3rem;
+}
+
+/* ================= Welcome Bar ================= */
+.dash-welcome {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+@media (min-width: 1024px) {
+  .dash-welcome {
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+}
+
+.dash-welcome-text {
+  max-width: 42rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.dash-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 9999px;
+  background-color: #262a33;
+  color: #c0c1ff;
+  font-family: "JetBrains Mono", "Inter", monospace;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  align-self: flex-start;
+}
+
+.dash-eyebrow .material-symbols-outlined {
+  font-size: 0.9375rem;
+}
+
+.dash-title {
+  font-size: 1.875rem;
+  line-height: 2.25rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: #dfe2ee;
+  margin: 0;
+}
+
+@media (min-width: 768px) {
+  .dash-title {
+    font-size: 2.5rem;
+    line-height: 3rem;
+  }
+}
+
+.dash-wave {
+  display: inline-block;
+  transform-origin: bottom right;
+  transition: transform 300ms ease;
+  cursor: default;
+}
+
+.dash-wave:hover {
+  transform: rotate(12deg);
+}
+
+.dash-subtitle {
+  font-size: 1rem;
+  line-height: 1.625;
+  letter-spacing: -0.01em;
+  color: #c7c4d7;
+  margin: 0;
+}
+
+.dash-strong {
+  color: #dfe2ee;
+  font-weight: 500;
+}
+
+.dash-success {
+  color: #4edea3;
+  font-weight: 500;
+}
+
+/* Action buttons */
+.dash-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.dash-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  font-family: inherit;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background-color 200ms ease, color 200ms ease,
+    box-shadow 200ms ease, transform 100ms ease, opacity 200ms ease;
+}
+
+.dash-btn:active {
+  transform: scale(0.98);
+}
+
+.dash-btn-icon {
+  font-size: 1.125rem;
+}
+
+.dash-btn--ghost {
+  background-color: #262a33;
+  color: #c7c4d7;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.dash-btn--ghost:hover {
+  background-color: #31353e;
+  color: #dfe2ee;
+}
+
+.dash-btn--ghost .dash-btn-icon {
+  color: #c7c4d7;
+  transition: color 200ms ease;
+}
+
+.dash-btn--ghost:hover .dash-btn-icon {
+  color: #c0c1ff;
+}
+
+.dash-btn--primary {
+  background-color: #c0c1ff;
+  color: #1000a9;
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.3),
+    0 8px 24px -4px rgba(192, 193, 255, 0.3);
+}
+
+.dash-btn--primary:hover {
+  opacity: 0.95;
+}
+
+/* ================= 3 Metrics ================= */
+.dash-metrics {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  .dash-metrics {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.dash-metric {
+  position: relative;
+  overflow: hidden;
+  background-color: #181c24; /* surface-container-low */
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: box-shadow 200ms ease;
+}
+
+.dash-metric:hover {
+  box-shadow: 0 4px 8px -2px rgba(0, 0, 0, 0.4);
+}
+
+.dash-metric-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.dash-metric-head-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.dash-metric-label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: #c7c4d7;
+}
+
+/* chip */
+.dash-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  font-family: "JetBrains Mono", "Inter", monospace;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+}
+
+.dash-chip--success {
+  background-color: rgba(0, 165, 114, 0.2);
+  color: #4edea3;
+}
+
+.dash-chip--primary {
+  background-color: rgba(128, 131, 255, 0.2);
+  color: #c0c1ff;
+}
+
+.dash-chip--muted {
+  background-color: #262a33;
+  color: #c7c4d7;
+}
+
+.dash-chip--mono {
+  background-color: #1c2028;
+  color: #908fa0;
+  cursor: help;
+  transition: color 150ms ease;
+  font-family: "JetBrains Mono", "Inter", monospace;
+  font-size: 0.6875rem;
+  padding: 0.125rem 0.375rem;
+}
+
+.dash-chip--mono:hover {
+  color: #dfe2ee;
+}
+
+/* metric value row */
+.dash-metric-value {
+  margin-top: 1rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.dash-metric-value--split {
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.dash-metric-value-left {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+}
+
+.dash-metric-value-right {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.125rem;
+}
+
+.dash-metric-number {
+  font-size: 2.5rem;
+  line-height: 3rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #dfe2ee;
+}
+
+.dash-metric-number--sm {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  font-family: "JetBrains Mono", "Inter", monospace;
+}
+
+.dash-metric-number--success {
+  color: #4edea3;
+}
+
+.dash-metric-mono {
+  font-family: "JetBrains Mono", "Inter", monospace;
+  font-size: 0.6875rem;
+  color: #908fa0;
+}
+
+.dash-metric-trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  font-family: "JetBrains Mono", "Inter", monospace;
+  font-size: 0.6875rem;
+  color: #4edea3;
+}
+
+.dash-metric-trend .material-symbols-outlined {
+  font-size: 0.875rem;
+}
+
+.dash-metric-trend--mono {
+  letter-spacing: -0.005em;
+}
+
+.dash-metric-sub {
+  font-size: 0.6875rem;
+  color: #c7c4d7;
+  font-family: "Inter", system-ui, sans-serif;
+}
+
+.dash-metric-foot {
+  margin-top: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: #c7c4d7;
+}
+
+.dash-metric-foot-emph {
+  font-family: "JetBrains Mono", "Inter", monospace;
+  font-size: 0.6875rem;
+  color: #dfe2ee;
+  font-weight: 500;
+}
+
+/* sparkline */
+.dash-sparkline {
+  margin-top: 0.75rem;
+  width: 100%;
+  height: 2rem;
+  overflow: hidden;
+  border-radius: 0.25rem;
+  background-color: #1c2028;
+}
+
+.dash-sparkline-svg {
+  width: 100%;
+  height: 100%;
+  color: #4edea3;
+  opacity: 0.75;
+}
+
+/* formula row */
+.dash-formula {
+  margin-top: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: "JetBrains Mono", "Inter", monospace;
+  font-size: 0.6875rem;
+  color: #c7c4d7;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.dash-formula-code {
+  color: #908fa0;
+  font-size: 0.6875rem;
+  letter-spacing: 0;
+}
+
+.dash-formula-addon {
+  color: #d0bcff; /* tertiary */
+  font-family: "JetBrains Mono", "Inter", monospace;
+  font-size: 0.6875rem;
+}
+
+/* segmented bar */
+.dash-bar {
+  margin-top: 0.5rem;
+  width: 100%;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background-color: #1c2028;
+  overflow: hidden;
+  display: flex;
+}
+
+.dash-bar-seg {
+  height: 100%;
+}
+
+.dash-bar-seg--60 {
+  background-color: rgba(192, 193, 255, 0.7);
+}
+
+.dash-bar-seg--20a {
+  background-color: #c0c1ff;
+}
+
+.dash-bar-seg--20b {
+  background-color: rgba(160, 120, 255, 0.8);
+  animation: dash-pulse 2s ease-in-out infinite;
+}
+
+@keyframes dash-pulse {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.dash-bar-legend {
+  margin-top: 0.25rem;
+  display: flex;
+  justify-content: space-between;
+  font-family: "JetBrains Mono", "Inter", monospace;
+  font-size: 0.6875rem;
+  color: #908fa0;
+}
+
+/* progress bar */
+.dash-progress {
+  margin-top: 0.75rem;
+  width: 100%;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background-color: #1c2028;
+  overflow: hidden;
+}
+
+.dash-progress-fill {
+  height: 100%;
+  background-color: #4edea3;
+  border-radius: 9999px;
+  transition: width 500ms ease;
+}
+
+/* ================= Workspace grid (8/4) ================= */
+.dash-workspace {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2rem;
+  align-items: flex-start;
+}
+
+@media (min-width: 1024px) {
+  .dash-workspace {
+    grid-template-columns: 8fr 4fr;
+  }
+}
+
+.dash-col-left,
+.dash-col-right {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.dash-col-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.dash-col-head-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.dash-col-dot {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 9999px;
+  background-color: #c0c1ff;
+}
+
+.dash-col-icon {
+  color: #c0c1ff;
+  font-size: 1.125rem;
+}
+
+.dash-col-title {
+  font-size: 1.125rem;
+  line-height: 1.625rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: #dfe2ee;
+  margin: 0;
+}
+
+.dash-col-sub {
+  display: none;
+  font-family: "JetBrains Mono", "Inter", monospace;
+  font-size: 0.6875rem;
+  color: #908fa0;
+}
+
+@media (min-width: 640px) {
+  .dash-col-sub {
+    display: inline;
+  }
+}
+
+.dash-col-meta {
+  font-family: "JetBrains Mono", "Inter", monospace;
+  font-size: 0.6875rem;
+  color: #c7c4d7;
+}
+
+.dash-col-footer {
+  padding-top: 0.5rem;
+}
+
+.dash-link-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #c0c1ff;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: color 200ms ease;
+}
+
+.dash-link-primary .material-symbols-outlined {
+  font-size: 1.125rem;
+  transition: transform 200ms ease;
+}
+
+.dash-link-primary:hover {
+  color: #e1e0ff;
+}
+
+.dash-link-primary:hover .material-symbols-outlined {
+  transform: translateX(4px);
+}
+
+/* ================= Focus slots ================= */
+.dash-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.dash-slot {
+  position: relative;
+  overflow: hidden;
+  background-color: #181c24;
+  border-radius: 0.75rem;
+  padding: 1rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: background-color 200ms ease, box-shadow 200ms ease;
+}
+
+.dash-slot:hover {
+  background-color: #1c2028;
+  box-shadow: 0 4px 8px -2px rgba(0, 0, 0, 0.4);
+}
+
+.dash-slot--focus {
+  background-color: #262a33;
+  box-shadow: 0 4px 8px -2px rgba(0, 0, 0, 0.4);
+}
+
+.dash-slot-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 6px;
+  background-color: #c0c1ff;
+}
+
+.dash-slot-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: stretch;
+}
+
+@media (min-width: 640px) {
+  .dash-slot-inner {
+    flex-direction: row;
+    align-items: center;
+  }
+}
+
+.dash-slot--focus .dash-slot-inner {
+  padding-left: 0.5rem;
+}
+
+.dash-slot-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+@media (min-width: 640px) {
+  .dash-slot-left {
+    align-items: center;
+  }
+}
+
+.dash-slot-time {
+  width: 6rem;
+  flex-shrink: 0;
+  font-family: "JetBrains Mono", "Inter", monospace;
+  font-size: 0.8125rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  color: #908fa0;
+}
+
+@media (min-width: 640px) {
+  .dash-slot-time {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.125rem;
+  }
+}
+
+.dash-slot-time--focus {
+  color: #c0c1ff;
+}
+
+.dash-slot-time-start {
+  font-weight: 600;
+  color: #dfe2ee;
+  font-size: 0.8125rem;
+}
+
+.dash-slot-time-start--focus {
+  color: #c0c1ff;
+  font-weight: 700;
+}
+
+.dash-slot-time-end {
+  font-size: 0.75rem;
+  color: #c7c4d7;
+}
+
+.dash-slot-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.dash-slot-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dash-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  font-family: "JetBrains Mono", "Inter", monospace;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.dash-tag-icon {
+  font-size: 0.8125rem;
+}
+
+.dash-tag--primary {
+  background-color: rgba(192, 193, 255, 0.15);
+  color: #c0c1ff;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.dash-tag--success {
+  background-color: transparent;
+  color: #4edea3;
+  padding-left: 0.25rem;
+}
+
+.dash-tag--warning {
+  background-color: transparent;
+  color: #d0bcff;
+  font-weight: 500;
+}
+
+.dash-tag--muted {
+  background-color: #1c2028;
+  color: #c7c4d7;
+}
+
+.dash-slot-title {
+  font-size: 1rem;
+  line-height: 1.5rem;
+  font-weight: 500;
+  color: #dfe2ee;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.dash-slot--focus .dash-slot-title {
+  font-weight: 600;
+}
+
+.dash-slot-desc {
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  color: #c7c4d7;
+  margin: 0;
+}
+
+.dash-slot-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  align-self: flex-end;
+}
+
+@media (min-width: 640px) {
+  .dash-slot-right {
+    align-self: center;
+  }
+}
+
+.dash-slot-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-family: "JetBrains Mono", "Inter", monospace;
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+}
+
+.dash-slot-status--done {
+  background-color: #1c2028;
+  color: #908fa0;
+}
+
+.dash-slot-status--next {
+  color: #4edea3;
+  background-color: transparent;
+}
+
+.dash-slot-ping {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background-color: #4edea3;
+  position: relative;
+}
+
+.dash-slot-ping::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background-color: #4edea3;
+  animation: dash-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes dash-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  75%,
+  100% {
+    transform: scale(2.5);
+    opacity: 0;
+  }
+}
+
+.dash-slot-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+  background: transparent;
+  border: none;
+  color: #c7c4d7;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.dash-slot-more:hover {
+  color: #dfe2ee;
+  background-color: #262a33;
+}
+
+.dash-slot-more .material-symbols-outlined {
+  font-size: 1.125rem;
+}
+
+/* ================= Quick task drawer (right) ================= */
+.dash-drawer {
+  background-color: #181c24;
+  border-radius: 0.75rem;
+  padding: 1rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.dash-input-form {
+  position: relative;
+}
+
+.dash-input {
+  width: 100%;
+  background-color: #1c2028;
+  color: #dfe2ee;
+  font-size: 0.875rem;
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  padding: 0.75rem 2.5rem 0.75rem 1rem;
+  outline: none;
+  transition: background-color 200ms ease, box-shadow 200ms ease;
+  font-family: inherit;
+}
+
+.dash-input::placeholder {
+  color: #908fa0;
+}
+
+.dash-input:focus {
+  background-color: #262a33;
+  box-shadow: 0 0 0 2px rgba(192, 193, 255, 0.3);
+}
+
+.dash-input--ring {
+  background-color: #262a33;
+  box-shadow: 0 0 0 2px #c0c1ff;
+}
+
+.dash-input-submit {
+  position: absolute;
+  right: 0.625rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: #908fa0;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 0.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 150ms ease;
+}
+
+.dash-input-submit:hover {
+  color: #c0c1ff;
+}
+
+.dash-input-submit .material-symbols-outlined {
+  font-size: 1.25rem;
+}
+
+.dash-drawer-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.25rem;
+}
+
+.dash-drawer-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 0.25rem;
+}
+
+.dash-drawer-section-title {
+  font-family: "JetBrains Mono", "Inter", monospace;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #908fa0;
+}
+
+.dash-drawer-section-count {
+  font-family: "JetBrains Mono", "Inter", monospace;
+  font-size: 0.6875rem;
+  color: #c0c1ff;
+}
+
+.dash-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.dash-task {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  background-color: #1c2028;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.dash-task:hover {
+  background-color: #262a33;
+}
+
+.dash-task-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.dash-task-check {
+  margin-top: 0.25rem;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 0.25rem;
+  background-color: #31353e;
+  accent-color: #c0c1ff;
+  cursor: pointer;
+}
+
+.dash-task-title {
+  font-size: 0.875rem;
+  color: #dfe2ee;
+  font-weight: 500;
+  margin: 0;
+  letter-spacing: -0.005em;
+  transition: color 150ms ease;
+}
+
+.dash-task:hover .dash-task-title {
+  color: #c0c1ff;
+}
+
+.dash-task-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.dash-task-due {
+  font-family: "JetBrains Mono", "Inter", monospace;
+  font-size: 0.6875rem;
+  color: #c7c4d7;
+}
+
+.dash-urgency {
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  font-family: "JetBrains Mono", "Inter", monospace;
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.dash-urgency--urgent {
+  background-color: rgba(147, 0, 10, 0.2);
+  color: #ffb4ab;
+}
+
+.dash-urgency--normal {
+  background-color: #262a33;
+  color: #c7c4d7;
+}
+
+.dash-task-chev {
+  font-size: 1rem;
+  color: #908fa0;
+  transition: color 150ms ease, transform 150ms ease;
+}
+
+.dash-task:hover .dash-task-chev {
+  color: #dfe2ee;
+}
+
+/* AI tip card */
+.dash-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  background-color: rgba(28, 32, 40, 0.6);
+}
+
+.dash-tip-icon {
+  color: #d0bcff;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+}
+
+.dash-tip-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.dash-tip-head {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.dash-tip-title {
+  font-family: "JetBrains Mono", "Inter", monospace;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #d0bcff;
+}
+
+.dash-tip-dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 9999px;
+  background-color: #d0bcff;
+}
+
+.dash-tip-text {
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  color: #c7c4d7;
+  margin: 0;
+}
+
+/* ================= Toast ================= */
+.dash-toast {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  background-color: #31353e; /* surface-container-highest */
+  color: #dfe2ee;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+  font-size: 0.75rem;
+  font-weight: 500;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 300ms ease, transform 300ms ease;
+}
+
+.dash-toast--show {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.dash-toast-icon {
+  font-size: 1.25rem;
+  color: #4edea3;
+}
+
+@keyframes dash-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.dash-toast-icon--spin {
+  animation: dash-spin 1s linear infinite;
+}
+
+.dash-toast-text {
+  color: #dfe2ee;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+/* ================= Motion entrance (stagger fade-up, subtle) =================
+ *
+ * Pattern:
+ *  - Mỗi element bắt đầu với opacity:0 + translateY(8px).
+ *  - Khi React thêm class `--in` (qua useStaggeredMount), animation chạy.
+ *  - Mỗi element lấy `animation-delay` inline từ hook.
+ *  - prefers-reduced-motion: reduce -> set opacity:1 ngay, không chạy keyframes.
+ *
+ * Vì sao dùng class thay vì thuần CSS animation-delay?
+ *  - Trigger lại được khi data thay đổi (vd: thêm task mới).
+ *  - Đồng bộ với React lifecycle, tránh lệch nhịp giữa data và animation.
+ */
+@keyframes dash-stagger-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes dash-stagger-up-strong {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 3 sections chính: welcome / metrics / workspace.
+   Dùng class `--in` để chỉ chạy khi hook đã mounted, tránh flash trắng
+   trước khi useEffect kịp chạy. */
+.dash-welcome,
+.dash-metrics,
+.dash-workspace {
+  opacity: 0;
+  /* Mặc định sẽ được override bằng inline style animation-delay,
+     nhưng set ở đây để nếu hook fail thì vẫn có fallback 0ms. */
+  animation: dash-stagger-up 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.dash-welcome--in,
+.dash-metrics--in,
+.dash-workspace--in {
+  animation-play-state: running;
+}
+
+/* 3 metric cards: stagger thêm +70ms mỗi card (delay từ hook). */
+.dash-metric {
+  opacity: 0;
+}
+
+.dash-metric--in {
+  animation: dash-stagger-up 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Focus slots: stagger +90ms mỗi slot. */
+.dash-slot {
+  opacity: 0;
+}
+
+.dash-slot--in {
+  animation: dash-stagger-up-strong 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Upcoming tasks: stagger +80ms mỗi task. */
+.dash-task {
+  opacity: 0;
+}
+
+.dash-task--in {
+  animation: dash-stagger-up 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Reduced motion: tắt keyframes, hiện ngay tất cả. */
+@media (prefers-reduced-motion: reduce) {
+  .dash-welcome,
+  .dash-metrics,
+  .dash-workspace,
+  .dash-metric,
+  .dash-slot,
+  .dash-task {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .dash-bar-seg--20b,
+  .dash-toast-icon--spin,
+  .dash-slot-ping::before {
+    animation: none !important;
+  }
+  .dash-btn:active,
+  .dash-link-primary:hover .material-symbols-outlined,
+  .dash-wave {
+    transform: none !important;
+  }
+}

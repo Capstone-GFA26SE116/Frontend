@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { CenterToasts, useCenterToast } from "../../components/Toast";
 import {
   createMilestone,
+  createScheduleSlot,
   createSubtask,
   createTask,
   deleteMilestone,
@@ -13,6 +15,7 @@ import {
   listSubtasks,
   listTasks,
   type CreateMilestoneRequest,
+  type CreateScheduleSlotRequest,
   type CreateSubtaskRequest,
   type CreateTaskRequest,
   type DomainDto,
@@ -177,6 +180,187 @@ export function PlanningPage() {
   } | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
+  /* Schedule Modal state */
+  const [scheduleModal, setScheduleModal] = useState<{
+    taskId: string;
+    taskTitle: string;
+  } | null>(null);
+  const [scheduleStart, setScheduleStart] = useState("");
+  const [scheduleEnd, setScheduleEnd] = useState("");
+  const [scheduleExplanation, setScheduleExplanation] = useState("");
+  const [scheduleSubtaskId, setScheduleSubtaskId] = useState<string | null>(null);
+  const [scheduleSubmitting, setScheduleSubmitting] = useState(false);
+
+  /* Toast thông báo giữa màn hình */
+  const [toasts, toast] = useCenterToast();
+  const toastDismiss = useCallback((id: number) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  function openScheduleModal(taskId: string, taskTitle: string) {
+    // Default: next hour to next hour + 1
+    const now = new Date();
+    const start = new Date(now);
+    start.setHours(start.getHours() + 1, 0, 0, 0);
+    const end = new Date(start);
+    end.setHours(end.getHours() + 1);
+    setScheduleStart(start.toISOString().slice(0, 16));
+    setScheduleEnd(end.toISOString().slice(0, 16));
+    setScheduleExplanation("");
+    setScheduleSubtaskId(null);
+
+    // Auto-load subtasks nếu chưa có để dropdown có dữ liệu
+    if (subtasksMap[taskId] === undefined && !subtasksLoading[taskId]) {
+      setSubtasksLoading((p) => ({ ...p, [taskId]: true }));
+      void listSubtasks(taskId).then((res) => {
+        setSubtasksMap((p) => ({ ...p, [taskId]: res.ok ? res.data : [] }));
+        setSubtasksLoading((p) => ({ ...p, [taskId]: false }));
+      });
+    }
+
+    setScheduleModal({ taskId, taskTitle });
+  }
+
+  async function handleScheduleSubmit() {
+    console.log("handleScheduleSubmit called", { scheduleModal, scheduleStart, scheduleEnd, scheduleSubtaskId });
+    if (!scheduleModal || !scheduleStart || !scheduleEnd) {
+      console.log("Early return: missing data");
+      return;
+    }
+    setScheduleSubmitting(true);
+    console.log("Calling API...");
+    try {
+      // Nếu chọn 1 subtask cụ thể → chỉ tạo 1 slot
+      if (scheduleSubtaskId) {
+        const res = await createScheduleSlot(scheduleModal.taskId, {
+          subTaskId: scheduleSubtaskId,
+          startTime: new Date(scheduleStart).toISOString(),
+          endTime: new Date(scheduleEnd).toISOString(),
+          originalStartTime: new Date(scheduleStart).toISOString(),
+          isManualOverride: true,
+          kbiasUsed: 0,
+          explanation: scheduleExplanation || "Manual schedule from Planning page",
+          status: "scheduled",
+        });
+        console.log("API result:", JSON.stringify(res));
+        setScheduleSubmitting(false);
+        if (res.ok) {
+          setScheduleModal(null);
+          toast.success(
+            "Đã tạo lịch thành công!",
+            `"${subtasksMap[scheduleModal.taskId]?.find((s) => s.id === scheduleSubtaskId)?.title ?? "Task"}" được lên lịch.`
+          );
+        } else {
+          toast.error("Không tạo được lịch", res.error);
+        }
+        return;
+      }
+
+      // Chọn "Whole task" → chia thời gian từ form theo estimatedMinutes của từng subtask (theo orderIndex)
+      const subs = (subtasksMap[scheduleModal.taskId] ?? [])
+        .slice()
+        .sort((a, b) => a.orderIndex - b.orderIndex);
+
+      if (subs.length === 0) {
+        // Không có subtask → tạo 1 slot cho cả task
+        const res = await createScheduleSlot(scheduleModal.taskId, {
+          subTaskId: null,
+          startTime: new Date(scheduleStart).toISOString(),
+          endTime: new Date(scheduleEnd).toISOString(),
+          originalStartTime: new Date(scheduleStart).toISOString(),
+          isManualOverride: true,
+          kbiasUsed: 0,
+          explanation: scheduleExplanation || "Manual schedule from Planning page",
+          status: "scheduled",
+        });
+        setScheduleSubmitting(false);
+        if (res.ok) {
+          setScheduleModal(null);
+          toast.success(
+            "Đã tạo lịch thành công!",
+            `"${scheduleModal.taskTitle}" · ${new Date(scheduleStart).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })} — ${new Date(scheduleEnd).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}`
+          );
+        } else {
+          toast.error("Không tạo được lịch", res.error);
+        }
+        return;
+      }
+
+      // Chia thời gian từ scheduleStart → scheduleEnd theo tỉ lệ estimatedMinutes
+      const totalStart = new Date(scheduleStart).getTime();
+      const totalEnd = new Date(scheduleEnd).getTime();
+      const totalRange = totalEnd - totalStart;
+      const totalMinutes = subs.reduce((sum, s) => sum + (s.estimatedMinutes || 0), 0);
+
+      if (totalMinutes === 0) {
+        // Subtasks chưa có estimatedMinutes → fallback 1 slot cho cả task
+        const res = await createScheduleSlot(scheduleModal.taskId, {
+          subTaskId: null,
+          startTime: new Date(scheduleStart).toISOString(),
+          endTime: new Date(scheduleEnd).toISOString(),
+          originalStartTime: new Date(scheduleStart).toISOString(),
+          isManualOverride: true,
+          kbiasUsed: 0,
+          explanation: scheduleExplanation || "Manual schedule from Planning page",
+          status: "scheduled",
+        });
+        setScheduleSubmitting(false);
+        if (res.ok) {
+          setScheduleModal(null);
+          toast.success(
+            "Đã tạo lịch thành công!",
+            `"${scheduleModal.taskTitle}" · ${new Date(scheduleStart).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })} — ${new Date(scheduleEnd).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}`
+          );
+        } else {
+          toast.error("Không tạo được lịch", res.error);
+        }
+        return;
+      }
+
+      // Tạo slot cho từng subtask, mỗi slot chiếm tỉ lệ estimatedMinutes / totalMinutes
+      let successCount = 0;
+      let failedCount = 0;
+      let cursor = totalStart;
+      for (const sub of subs) {
+        const minutes = sub.estimatedMinutes || 0;
+        const sliceMs = (minutes / totalMinutes) * totalRange;
+        const slotStart = cursor;
+        const slotEnd = cursor + sliceMs;
+        cursor = slotEnd;
+
+        const res = await createScheduleSlot(scheduleModal.taskId, {
+          subTaskId: sub.id,
+          startTime: new Date(slotStart).toISOString(),
+          endTime: new Date(slotEnd).toISOString(),
+          originalStartTime: new Date(slotStart).toISOString(),
+          isManualOverride: true,
+          kbiasUsed: 0,
+          explanation: scheduleExplanation || `Auto-scheduled for subtask "${sub.title}"`,
+          status: "scheduled",
+        });
+        if (res.ok) successCount++;
+        else failedCount++;
+      }
+
+      setScheduleSubmitting(false);
+      if (failedCount === 0) {
+        setScheduleModal(null);
+        toast.success(
+          "Đã tạo lịch thành công!",
+          `${successCount} subtask đã được chia lịch từ ${new Date(scheduleStart).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })} đến ${new Date(scheduleEnd).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}.`
+        );
+      } else {
+        toast.error(
+          "Tạo lịch chưa hoàn tất",
+          `${successCount} thành công, ${failedCount} thất bại.`
+        );
+      }
+    } catch (err) {
+      console.error("Exception in handleScheduleSubmit:", err);
+      setScheduleSubmitting(false);
+    }
+  }
+
   /* Load project */
   useEffect(() => {
     if (!projectId) return;
@@ -301,6 +485,25 @@ export function PlanningPage() {
     if (res.ok) {
       setTasks((prev) => [res.data, ...prev]);
       setShowCreateTask(false);
+
+      // Auto-tạo schedule slot nếu task có deadline hoặc fixedStart/fixedEnd
+      const task = res.data;
+      const hasDeadline = !!task.deadline;
+      const hasFixedTime = !!task.fixedStart && !!task.fixedEnd;
+
+      if (hasDeadline || hasFixedTime) {
+        const slotData: CreateScheduleSlotRequest = {
+          subTaskId: null,
+          startTime: task.fixedStart ?? task.deadline ?? new Date().toISOString(),
+          endTime: task.fixedEnd ?? task.deadline ?? new Date().toISOString(),
+          originalStartTime: task.deadline ?? null,
+          isManualOverride: false,
+          kbiasUsed: 0,
+          explanation: `Auto-scheduled from task creation`,
+          status: "scheduled",
+        };
+        void createScheduleSlot(task.id, slotData);
+      }
     } else {
       setError(res.error ?? "Failed to create task");
     }
@@ -336,6 +539,22 @@ export function PlanningPage() {
         [taskId]: [...(prev[taskId] ?? []), res.data],
       }));
       setSubtaskFormTaskId(null);
+
+      // Auto-tạo schedule slot nếu subtask có scheduledStart/scheduledEnd
+      const subtask = res.data;
+      if (subtask.scheduledStart && subtask.scheduledEnd) {
+        const slotData: CreateScheduleSlotRequest = {
+          subTaskId: subtask.id,
+          startTime: subtask.scheduledStart,
+          endTime: subtask.scheduledEnd,
+          originalStartTime: subtask.scheduledStart,
+          isManualOverride: false,
+          kbiasUsed: 0,
+          explanation: `Auto-scheduled from subtask creation`,
+          status: "scheduled",
+        };
+        void createScheduleSlot(taskId, slotData);
+      }
     }
   }
 
@@ -560,6 +779,7 @@ export function PlanningPage() {
                       onCreateSubtask={(data) => handleCreateSubtask(task.id, data)}
                       subtaskFormLoading={subtaskFormLoading}
                       onDelete={(kind, id, title) => setDeleteTarget({ kind, id, title })}
+                      onSchedule={(taskId, taskTitle) => openScheduleModal(taskId, taskTitle)}
                     />
                   ))}
                 </div>
@@ -612,6 +832,101 @@ export function PlanningPage() {
           onClose={() => setDeleteTarget(null)}
         />
       )}
+
+      {/* Schedule Modal */}
+      {scheduleModal && (
+        <div className="plan-modal-overlay" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && setScheduleModal(null)}>
+          <div className="plan-modal" role="dialog" aria-modal="true" aria-labelledby="schedule-modal-title">
+            <div className="plan-modal__head">
+              <div>
+                <span className="plan-card__eyebrow">Schedule Task</span>
+                <h2 className="plan-card__title" id="schedule-modal-title">{scheduleModal.taskTitle}</h2>
+              </div>
+              <button type="button" className="plan-icon-btn" aria-label="Close" onClick={() => setScheduleModal(null)}>
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <div className="plan-modal__body">
+              {/* Subtask dropdown - chỉ hiện nếu task có subtasks */}
+              {(() => {
+                const subs = subtasksMap[scheduleModal.taskId] ?? [];
+                if (subs.length > 0) {
+                  return (
+                    <div className="plan-form-group">
+                      <label htmlFor="schedule-subtask">Subtask (optional)</label>
+                      <select
+                        id="schedule-subtask"
+                        className="plan-input"
+                        value={scheduleSubtaskId ?? ""}
+                        onChange={(e) => setScheduleSubtaskId(e.target.value || null)}
+                      >
+                        <option value="">— Whole task —</option>
+                        {subs.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.title}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
+              <div className="plan-form-row">
+                <div className="plan-form-group">
+                  <label htmlFor="schedule-start">Start Time</label>
+                  <input
+                    id="schedule-start"
+                    type="datetime-local"
+                    className="plan-input"
+                    value={scheduleStart}
+                    onChange={(e) => setScheduleStart(e.target.value)}
+                  />
+                </div>
+                <div className="plan-form-group">
+                  <label htmlFor="schedule-end">End Time</label>
+                  <input
+                    id="schedule-end"
+                    type="datetime-local"
+                    className="plan-input"
+                    value={scheduleEnd}
+                    onChange={(e) => setScheduleEnd(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="plan-form-group">
+                <label htmlFor="schedule-explanation">Notes (optional)</label>
+                <input
+                  id="schedule-explanation"
+                  type="text"
+                  className="plan-input"
+                  placeholder="Why this time slot?"
+                  value={scheduleExplanation}
+                  onChange={(e) => setScheduleExplanation(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="plan-modal__actions">
+              <button type="button" className="plan-btn plan-btn--soft" onClick={() => setScheduleModal(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="plan-btn plan-btn--primary"
+                onClick={handleScheduleSubmit}
+                disabled={scheduleSubmitting || !scheduleStart || !scheduleEnd}
+              >
+                {scheduleSubmitting ? "Scheduling..." : "Schedule"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <CenterToasts toasts={toasts} onDismiss={toastDismiss} />
     </section>
   );
 }
@@ -658,6 +973,7 @@ interface TaskItemProps {
   onCreateSubtask: (data: CreateSubtaskRequest) => void;
   subtaskFormLoading: boolean;
   onDelete: (kind: "task" | "subtask", id: string, title: string) => void;
+  onSchedule: (taskId: string, taskTitle: string) => void;
 }
 
 function TaskItem({
@@ -672,6 +988,7 @@ function TaskItem({
   onCreateSubtask,
   subtaskFormLoading,
   onDelete,
+  onSchedule,
 }: TaskItemProps) {
   const tone = taskStatusTone(task.status);
   const taskStatusLower = (task.status ?? "").toLowerCase();
@@ -687,7 +1004,18 @@ function TaskItem({
     totalSubtasks > 0 ? Math.round((doneSubtasks / totalSubtasks) * 100) : 0;
 
   return (
-    <div className={`plan-task ${isDone ? "plan-task--done" : ""}`}>
+    <div
+      className={`plan-task ${isDone ? "plan-task--done" : ""}`}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData("application/x-metanoia-task", JSON.stringify({
+          taskId: task.id,
+          taskTitle: task.title,
+          projectId: task.projectId,
+        }));
+        e.dataTransfer.effectAllowed = "move";
+      }}
+    >
       {/* Task header row */}
       <div className="plan-task-head">
         <button
@@ -755,6 +1083,14 @@ function TaskItem({
 
         {/* Actions */}
         <div className="plan-task-actions">
+          <button
+            type="button"
+            className="plan-task-action"
+            title="Schedule task"
+            onClick={() => onSchedule(task.id, task.title)}
+          >
+            <span className="material-symbols-outlined">event</span>
+          </button>
           <button
             type="button"
             className="plan-task-action"

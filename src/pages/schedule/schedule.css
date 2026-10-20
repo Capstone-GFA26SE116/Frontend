@@ -1597,6 +1597,277 @@
 .sch-side-meta__row code { color: var(--sch-primary); }
 
 /* ===========================================================
+ * Aggregate task: timeline view
+ * =========================================================== */
+.sch-aggregate {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 0;
+}
+.sch-aggregate__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--sch-text);
+  font-size: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--sch-line-soft);
+}
+.sch-aggregate__head strong { font-weight: 600; }
+.sch-aggregate__head-total {
+  margin-left: auto;
+  padding: 3px 10px;
+  border-radius: var(--sch-r-pill);
+  background: var(--sch-primary-soft);
+  border: 1px solid rgba(0, 217, 146, 0.3);
+  color: var(--sch-primary);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.sch-aggregate__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.sch-aggregate__item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 0;
+}
+/* Rail dọc nối các dot */
+.sch-aggregate__item:not(:last-child) .sch-aggregate__rail::after {
+  content: "";
+  position: absolute;
+  left: 13px;
+  top: 26px;
+  bottom: -18px;
+  width: 2px;
+  background: linear-gradient(180deg, var(--sch-primary), rgba(0, 217, 146, 0.15));
+  border-radius: 2px;
+}
+.sch-aggregate__rail {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+.sch-aggregate__dot {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--sch-high);
+  border: 2px solid var(--sch-primary);
+  color: var(--sch-primary);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  z-index: 1;
+  box-shadow: 0 0 0 3px rgba(0, 217, 146, 0.08);
+}
+.sch-aggregate__body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 12px 10px;
+  border-radius: var(--sch-r-sm);
+  background: var(--sch-high);
+  border: 1px solid var(--sch-line-soft);
+  transition: border-color 0.15s var(--sch-ease),
+    background 0.15s var(--sch-ease);
+}
+.sch-aggregate__item:hover .sch-aggregate__body {
+  border-color: rgba(0, 217, 146, 0.35);
+  background: var(--sch-highest);
+}
+.sch-aggregate__item-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--sch-text);
+}
+.sch-aggregate__item-row strong {
+  font-weight: 600;
+  letter-spacing: -0.1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sch-aggregate__badge {
+  padding: 2px 8px;
+  border-radius: var(--sch-r-pill);
+  background: var(--sch-tertiary-soft);
+  color: var(--sch-text-2);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.sch-aggregate__dur {
+  margin-left: auto;
+  color: var(--sch-primary);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.sch-aggregate__item-time {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--sch-text-3);
+  font-variant-numeric: tabular-nums;
+}
+.sch-aggregate__arrow {
+  color: var(--sch-primary);
+  font-weight: 700;
+}
+
+/* ===========================================================
+ * Subtask time chip — khối nổi bật hiển thị giờ bắt đầu/giờ kết thúc
+ * =========================================================== */
+.sch-aggregate__time {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--sch-r-md);
+  background: linear-gradient(
+    135deg,
+    var(--sch-primary-soft) 0%,
+    rgba(0, 217, 146, 0.02) 100%
+  );
+  border: 1px solid rgba(0, 217, 146, 0.25);
+}
+.sch-aggregate__time-start,
+.sch-aggregate__time-end {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.sch-aggregate__time-end { align-items: flex-end; text-align: right; }
+.sch-aggregate__time-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sch-text-3);
+}
+.sch-aggregate__time-value {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--sch-primary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.5px;
+  text-shadow: 0 0 12px rgba(0, 217, 146, 0.35);
+}
+.sch-aggregate__time-value--muted {
+  color: var(--sch-text-2);
+  text-shadow: none;
+}
+.sch-aggregate__time-date {
+  font-size: 11px;
+  color: var(--sch-text-3);
+  font-variant-numeric: tabular-nums;
+}
+.sch-aggregate__time-arrow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px;
+  color: var(--sch-primary);
+}
+.sch-aggregate__time-arrow .material-symbols-outlined {
+  font-weight: 700;
+}
+.sch-aggregate__time-dur {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--sch-text-2);
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Badge trạng thái thời gian thực — hàng riêng dưới chip, không đè nhãn */
+.sch-aggregate__now-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sch-aggregate__now {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: var(--sch-r-pill);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.sch-aggregate__now-span {
+  font-size: 11px;
+  color: var(--sch-text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sch-aggregate__now--live {
+  background: var(--sch-primary);
+  color: var(--sch-low);
+  box-shadow: 0 0 0 2px var(--sch-low), 0 4px 14px var(--sch-primary-glow);
+}
+.sch-aggregate__now--soon {
+  background: var(--sch-highest);
+  color: var(--sch-text-2);
+  border: 1px solid var(--sch-line);
+}
+.sch-aggregate__now--done {
+  background: var(--sch-tertiary-soft);
+  color: var(--sch-text-3);
+}
+.sch-aggregate__now-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.sch-aggregate__now-dot--pulse {
+  background: var(--sch-low);
+  animation: sch-pulse 1.6s ease-in-out infinite;
+}
+@keyframes sch-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.4); }
+}
+/* Thanh thời lượng so với tổng span của task */
+.sch-aggregate__bar-track {
+  height: 5px;
+  border-radius: var(--sch-r-pill);
+  background: var(--sch-bg);
+  border: 1px solid var(--sch-line-soft);
+  overflow: hidden;
+}
+.sch-aggregate__bar {
+  height: 100%;
+  border-radius: var(--sch-r-pill);
+  background: linear-gradient(90deg, var(--sch-primary), var(--sch-secondary));
+  box-shadow: 0 0 8px var(--sch-primary-glow);
+}
+
+/* ===========================================================
  * Cell popover
  * =========================================================== */
 .sch-cell-popover {
@@ -1740,6 +2011,42 @@
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7),
     inset 0 0 0 1px rgba(148, 163, 184, 0.06);
   animation: sch-fade-up 0.3s var(--sch-ease);
+}
+.sch-modal__panel--two-col {
+  max-width: 920px;
+}
+.sch-modal__body {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+.sch-modal__panel--two-col .sch-modal__body {
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  align-items: start;
+}
+.sch-modal__col {
+  min-width: 0;
+}
+.sch-modal__col--info {
+  display: flex;
+  flex-direction: column;
+}
+.sch-modal__col--sub {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--sch-line);
+  padding-left: 20px;
+}
+@media (max-width: 720px) {
+  .sch-modal__panel--two-col .sch-modal__body {
+    grid-template-columns: 1fr;
+  }
+  .sch-modal__col--sub {
+    border-left: 0;
+    padding-left: 0;
+    border-top: 1px solid var(--sch-line);
+    padding-top: 16px;
+  }
 }
 .sch-modal__head {
   display: flex;

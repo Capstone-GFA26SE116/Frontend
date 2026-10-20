@@ -1,14 +1,22 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { CenterToasts, useCenterToast } from "../../components/Toast";
 import { useStaggeredMount } from "../../hooks/useStaggeredMount";
 import {
+  createScheduleSlot,
+  deleteScheduleSlot,
   getProject,
+  listCalendar,
   listProjects,
+  listScheduleSlotsByTask,
   listSubtasks,
   listTasks,
+  type CalendarItemDto,
   type ProjectDto,
+  type ScheduleSlotDto,
   type SubtaskDto,
   type TaskDto,
+  type UpdateScheduleSlotRequest,
 } from "../../lib/api-client";
 import "./schedule.css";
 
@@ -33,7 +41,7 @@ import "./schedule.css";
 type ViewMode = "week" | "month" | "gantt";
 type Tone = "primary" | "secondary" | "tertiary" | "error" | "muted" | "sky";
 type FilterId = "all" | "priority" | "capstone" | "deep";
-type CalSource = "task" | "subtask" | "milestone" | "google";
+type CalSource = "task" | "subtask" | "milestone" | "google" | "slot";
 
 /**
  * Một "project span" đại diện cho 1 dự án trên timeline (gantt / month accent).
@@ -59,9 +67,12 @@ interface CalEvent {
   taskId: string | null;
   subTaskId: string | null;
   projectId: string | null;
-  /** Item gốc: TaskDto | SubtaskDto | null (khi là Google event). */
+  /** Item gốc: TaskDto | SubtaskDto | ScheduleSlotDto | null (khi là Google event). */
   task?: TaskDto;
   subtask?: SubtaskDto;
+  scheduleSlot?: ScheduleSlotDto;
+  /** Danh sách ScheduleSlotDto gốc khi event là task aggregate (gộp nhiều slot subtask). */
+  aggregatedSlots?: ScheduleSlotDto[];
 }
 
 interface DayLoad {
@@ -138,6 +149,7 @@ function sourceLabel(source: CalSource): string {
     subtask: "Subtask",
     milestone: "Milestone",
     google: "Google Cal",
+    slot: "Scheduled",
   };
   return m[source?.toLowerCase()] ?? source;
 }
@@ -233,6 +245,100 @@ export function SchedulePage() {
   /* data */
   const [tasks, setTasks] = useState<TaskDto[]>([]);
   const [subtasks, setSubtasks] = useState<SubtaskDto[]>([]);
+  /** Schedule slots — tạo từ task/subtask để hiển thị trên calendar + notification */
+  const [scheduleSlots, setScheduleSlots] = useState<ScheduleSlotDto[]>([]);
+  /* Toast thông báo giữa màn hình */
+  const [toasts, toast] = useCenterToast();
+  const toastDismiss = useCallback(
+    (id: number) => setToasts((prev) => prev.filter((t) => t.id !== id)),
+    []
+  );
+  /** Calendar items từ API (BE merged + enriched) */
+  const [calendarItems, setCalendarItems] = useState<CalendarItemDto[]>([]);
+  /** Work hours config từ calendar response */
+  const [calendarConfig, setCalendarConfig] = useState<{
+    timeZone?: string;
+    workDayStart?: string | null;
+    workDayEnd?: string | null;
+    worksOnWeekend?: boolean;
+    googleCalendarStatus?: string;
+  }>({});
+
+  /** Handle drop từ Planning page (localStorage-based) */
+  const handleScheduleDrop = useCallback(async (date: Date) => {
+    // Đọc task từ localStorage (được set bởi Planning page)
+    const stored = localStorage.getItem("metanoia:drag-task");
+    if (!stored) return;
+
+    try {
+      const taskData = JSON.parse(stored);
+      // Default: từ 9:00 đến 10:00 ngày được drop
+      const start = new Date(date);
+      start.setHours(9, 0, 0, 0);
+      const end = new Date(start);
+      end.setHours(10, 0, 0, 0);
+
+      const res = await createScheduleSlot(taskData.taskId, {
+        subTaskId: null,
+        startTime: start.toISOString(),
+        endTime: end.toISOString(),
+        originalStartTime: start.toISOString(),
+        isManualOverride: true,
+        kbiasUsed: 0,
+        explanation: `Scheduled from Planning: "${taskData.taskTitle}"`,
+        status: "scheduled",
+      });
+
+      if (res.ok) {
+        // Reload data
+        setScheduleSlots((prev) => [...prev, res.data]);
+        toast.success(
+          "Đã tạo lịch thành công!",
+          `"${taskData.taskTitle}" được gán vào ${start.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })} — ${end.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}.`
+        );
+      } else {
+        toast.error("Không tạo được lịch", res.error);
+      }
+
+      // Clear localStorage
+      localStorage.removeItem("metanoia:drag-task");
+    } catch {
+      // ignore parse errors
+    }
+  }, []);
+
+  /** Listen for drag events từ Planning page */
+  useEffect(() => {
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      e.dataTransfer!.dropEffect = "move";
+    };
+
+    const handleDragDrop = (e: DragEvent) => {
+      e.preventDefault();
+      const data = e.dataTransfer?.getData("application/x-metanoia-task");
+      if (data) {
+        try {
+          const taskData = JSON.parse(data);
+          // Store to localStorage for cross-tab support
+          localStorage.setItem("metanoia:drag-task", data);
+          // Drop vào ngày hiện tại
+          handleScheduleDrop(new Date());
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    document.addEventListener("dragover", handleDragOver);
+    document.addEventListener("drop", handleDragDrop);
+
+    return () => {
+      document.removeEventListener("dragover", handleDragOver);
+      document.removeEventListener("drop", handleDragDrop);
+    };
+  }, [handleScheduleDrop]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -270,11 +376,62 @@ export function SchedulePage() {
    * rồi derive thành CalEvent.
    *   • /projects/:id/schedule  -> 1 project
    *   • /schedule                -> tất cả projects của user (loop listProjects + listTasks)
+   *
+   * Ưu tiên: dùng GET /api/calendar (BE merged data) khi available,
+   * fallback về local build nếu cần.
    */
   const [allProjects, setAllProjects] = useState<ProjectDto[]>([]);
+
+  /** Track if calendar API is unavailable (404) to skip future calls */
+  const calendarApiUnavailable = useRef(false);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
+
+    // Tính from/to từ range hiện tại (7 ngày hoặc 1 tháng)
+    const from = range.start.toISOString();
+    const to = range.end.toISOString();
+
+    // Ưu tiên: dùng Calendar API (BE merged + enriched data)
+    // Skip nếu đã biết API này không tồn tại (404)
+    if (!calendarApiUnavailable.current) {
+      const calRes = await listCalendar({ from, to, includeCancelled: false });
+
+      // Nếu 404 → mark as unavailable và fall through
+      if (calRes.status === 404) {
+        calendarApiUnavailable.current = true;
+      } else if (calRes.ok && calRes.data.items.length > 0) {
+        // Dùng calendar items từ BE
+        setCalendarItems(calRes.data.items);
+        setCalendarConfig({
+          timeZone: calRes.data.timeZone,
+          workDayStart: calRes.data.workDayStart,
+          workDayEnd: calRes.data.workDayEnd,
+          worksOnWeekend: calRes.data.worksOnWeekend,
+          googleCalendarStatus: calRes.data.googleCalendarStatus,
+        });
+
+        // Vẫn load tasks/subtasks để enrich slots nếu cần
+        if (!projectId) {
+          const projRes = await listProjects();
+          if (projRes.ok) setAllProjects(projRes.data);
+          const taskResults = await Promise.all(
+            (projRes.ok ? projRes.data : []).map((p) => listTasks(p.id)),
+          );
+          const allTasks: TaskDto[] = [];
+          for (const r of taskResults) if (r.ok) allTasks.push(...r.data);
+          setTasks(allTasks);
+        } else {
+          const tasksRes = await listTasks(projectId);
+          if (tasksRes.ok) setTasks(tasksRes.data);
+        }
+        setLoading(false);
+        return;
+      }
+    }
+
+    // Fallback: build CalEvents từ local tasks/subtasks/slots
     if (!projectId) {
       // Global /schedule: load tất cả projects, rồi load tasks của từng cái.
       const projRes = await listProjects();
@@ -283,6 +440,7 @@ export function SchedulePage() {
         setAllProjects([]);
         setTasks([]);
         setSubtasks([]);
+        setCalendarItems([]);
         setLoading(false);
         return;
       }
@@ -299,6 +457,16 @@ export function SchedulePage() {
       const allSub: SubtaskDto[] = [];
       for (const r of subResults) if (r.ok) allSub.push(...r.data);
       setSubtasks(allSub);
+
+      // Load schedule slots for all tasks
+      const slotResults = await Promise.all(
+        allTasks.map((t) => listScheduleSlotsByTask(t.id)),
+      );
+      const allSlots: ScheduleSlotDto[] = [];
+      for (const r of slotResults) if (r.ok) allSlots.push(...r.data);
+      setScheduleSlots(allSlots);
+      setCalendarItems([]); // Clear calendar items when using fallback
+
       setLoading(false);
       return;
     }
@@ -307,6 +475,7 @@ export function SchedulePage() {
       setError(tasksRes.error ?? "Failed to load tasks");
       setTasks([]);
       setSubtasks([]);
+      setCalendarItems([]);
       setLoading(false);
       return;
     }
@@ -318,16 +487,44 @@ export function SchedulePage() {
     const allSub: SubtaskDto[] = [];
     for (const r of subResults) if (r.ok) allSub.push(...r.data);
     setSubtasks(allSub);
+
+    // Load schedule slots for project tasks
+    const slotResults = await Promise.all(
+      tasksRes.data.map((t) => listScheduleSlotsByTask(t.id)),
+    );
+    const allSlots: ScheduleSlotDto[] = [];
+    for (const r of slotResults) if (r.ok) allSlots.push(...r.data);
+    setScheduleSlots(allSlots);
+    setCalendarItems([]); // Clear calendar items when using fallback
+
     setLoading(false);
-  }, [projectId]);
+  }, [projectId, range]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- data-fetch pattern
     void loadData();
   }, [loadData]);
 
-  /* Build CalEvent từ tasks + subtasks */
+  /* Build CalEvent từ tasks + subtasks (fallback) HOẶC từ calendarItems (BE merged) */
   const events = useMemo<CalEvent[]>(() => {
+    // Ưu tiên dùng calendarItems từ BE (đã merged + enriched)
+    if (calendarItems.length > 0) {
+      return calendarItems.map((item) => ({
+        id: `cal-${item.id}`,
+        source: (item.source?.toLowerCase() ?? "task") as CalSource,
+        title: item.title,
+        start: new Date(item.start),
+        end: new Date(item.end),
+        isAllDay: item.isAllDay ?? false,
+        status: item.status ?? "",
+        taskId: item.taskId ?? null,
+        subTaskId: item.subTaskId ?? null,
+        projectId: item.projectId ?? null,
+        task: item.taskId ? tasksById[item.taskId] : undefined,
+      }));
+    }
+
+    // Fallback: build từ local tasks/subtasks/slots
     const list: CalEvent[] = [];
     for (const t of tasks) {
       // 1) Task có fixedStart/fixedEnd -> event timed
@@ -337,7 +534,7 @@ export function SchedulePage() {
         if (!Number.isNaN(s.getTime()) && !Number.isNaN(e.getTime())) {
           list.push({
             id: `task-fixed-${t.id}`,
-            source: "task",
+            source: "task" as CalSource,
             title: t.title,
             start: s,
             end: e,
@@ -360,7 +557,7 @@ export function SchedulePage() {
           dayEnd.setHours(23, 59, 59, 999);
           list.push({
             id: `task-deadline-${t.id}`,
-            source: "task",
+            source: "task" as CalSource,
             title: t.title,
             start: dayStart,
             end: dayEnd,
@@ -383,7 +580,7 @@ export function SchedulePage() {
           const parent = tasks.find((t) => t.id === st.taskId);
           list.push({
             id: `subtask-${st.id}`,
-            source: "subtask",
+            source: "subtask" as CalSource,
             title: st.title,
             start: s,
             end: e,
@@ -398,8 +595,90 @@ export function SchedulePage() {
         }
       }
     }
+
+    // 4) Schedule Slots -> event timed (ưu tiên hơn task/subtask event)
+    for (const slot of scheduleSlots) {
+      const s = new Date(slot.startTime);
+      const e = new Date(slot.endTime);
+      if (!Number.isNaN(s.getTime()) && !Number.isNaN(e.getTime())) {
+        // Tìm task/subtask title để hiển thị
+        const parentTask = tasks.find((t) => t.id === slot.taskId);
+        const parentSubtask = subtasks.find((st) => st.id === slot.subTaskId);
+        const title = parentSubtask?.title ?? parentTask?.title ?? "Scheduled Event";
+        list.push({
+          id: `slot-${slot.id}`,
+          source: "slot" as CalSource,
+          title,
+          start: s,
+          end: e,
+          isAllDay: false,
+          status: slot.status,
+          taskId: slot.taskId,
+          subTaskId: slot.subTaskId,
+          projectId: parentTask?.projectId ?? null,
+          scheduleSlot: slot,
+          task: parentTask,
+          subtask: parentSubtask,
+        });
+      }
+    }
+
+    // 5) Gộp các slot cùng taskId thành 1 "task aggregate event" để hiển thị
+    // Giữ lại slot gốc để click vào modal xem chi tiết.
+    const taskAggSource: CalSource = "slot";
+    const aggregateEvents: CalEvent[] = [];
+    const slotsByTask = new Map<string, CalEvent[]>();
+    for (const ev of list) {
+      if (ev.source === "slot" && ev.taskId) {
+        const arr = slotsByTask.get(ev.taskId) ?? [];
+        arr.push(ev);
+        slotsByTask.set(ev.taskId, arr);
+      }
+    }
+    for (const [taskId, evs] of slotsByTask) {
+      if (evs.length <= 1) continue; // Chỉ 1 slot thì hiển thị bình thường
+      const parentTask = evs[0].task;
+      const minStart = evs.reduce(
+        (min, e) => (e.start.getTime() < min.getTime() ? e.start : min),
+        evs[0].start,
+      );
+      const maxEnd = evs.reduce(
+        (max, e) => (e.end.getTime() > max.getTime() ? e.end : max),
+        evs[0].end,
+      );
+      aggregateEvents.push({
+        id: `task-agg-${taskId}`,
+        source: taskAggSource,
+        title: parentTask?.title ?? evs[0].title,
+        start: minStart,
+        end: maxEnd,
+        isAllDay: false,
+        status: parentTask?.status ?? evs[0].status,
+        taskId,
+        subTaskId: null,
+        projectId: parentTask?.projectId ?? evs[0].projectId,
+        task: parentTask,
+        // Gắn các slot gốc vào 1 field phụ qua subtask/scheduleSlot
+        scheduleSlot: evs[0].scheduleSlot,
+        subtask: evs[0].subtask,
+        aggregatedSlots: evs.map((e) => e.scheduleSlot).filter((x): x is ScheduleSlotDto => !!x),
+      });
+      // Xóa các slot event đã gộp (chỉ giữ các event không phải slot, hoặc slot đơn lẻ)
+    }
+    // Lọc: bỏ các slot event thuộc task đã được gộp
+    const aggregatedTaskIds = new Set(
+      Array.from(slotsByTask.entries())
+        .filter(([, evs]) => evs.length > 1)
+        .map(([taskId]) => taskId),
+    );
+    const filtered = list.filter(
+      (ev) => !(ev.source === "slot" && ev.taskId && aggregatedTaskIds.has(ev.taskId)),
+    );
+    list.length = 0;
+    list.push(...filtered, ...aggregateEvents);
+
     return list;
-  }, [tasks, subtasks]);
+  }, [tasks, subtasks, scheduleSlots, calendarItems, tasks]);
 
   /** Map taskId -> TaskDto để enrich chip. */
   const tasksById = useMemo<Record<string, TaskDto>>(() => {
@@ -729,6 +1008,22 @@ export function SchedulePage() {
     return () => document.removeEventListener("mousedown", onDown);
   }, [popover]);
 
+  /* ----- Schedule Slot handlers ----- */
+
+  /** Xóa 1 schedule slot từ modal detail */
+  const handleDeleteScheduleSlot = useCallback(
+    async (slotId: string) => {
+      const res = await deleteScheduleSlot(slotId);
+      if (res.ok) {
+        setScheduleSlots((prev) => prev.filter((s) => s.id !== slotId));
+        toast.success("Đã xoá lịch", "Block thời gian đã được gỡ khỏi calendar.");
+      } else {
+        toast.error("Không xoá được lịch", res.error);
+      }
+    },
+    [toast]
+  );
+
   /* Filtered events: simple status filter for now */
   const visibleWeek = useMemo(() => {
     if (filter === "all") return week;
@@ -1007,7 +1302,12 @@ export function SchedulePage() {
 
       {/* Event detail modal */}
       {selected && (
-        <EventDetailModal event={selected} onClose={() => setSelected(null)} />
+        <EventDetailModal
+          event={selected}
+          subtasks={subtasks}
+          onClose={() => setSelected(null)}
+          onDelete={handleDeleteScheduleSlot}
+        />
       )}
 
       {/* Cell popover: hiện khi click 1 cell có nhiều projects/tasks */}
@@ -1019,6 +1319,8 @@ export function SchedulePage() {
           onSelectEvent={(e) => setSelected(e)}
         />
       )}
+
+      <CenterToasts toasts={toasts} onDismiss={toastDismiss} />
     </section>
   );
 }
@@ -1619,20 +1921,70 @@ function CellPopover({
 /* ===========================================================
  * Event detail modal
  * =========================================================== */
+
+/** Rút gọn ms → "1h 30m" / "45m" */
+function formatMinutesShort(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 60000));
+  if (total < 60) return `${total}m`;
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+/** Sub-component: badge trạng thái thời gian thực của 1 subtask */
+function NowBadge({ start, end }: { start: Date; end: Date }) {
+  const [now, setNow] = useState<Date>(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  if (now < start) {
+    const diff = Math.round((start.getTime() - now.getTime()) / 60000);
+    if (diff > 60 * 24) return null;
+    return (
+      <span className="sch-aggregate__now sch-aggregate__now--soon">
+        <span className="sch-aggregate__now-dot" />
+        in {diff < 60 ? `${diff}m` : `${Math.round(diff / 60)}h`}
+      </span>
+    );
+  }
+  if (now >= start && now <= end) {
+    const remain = Math.round((end.getTime() - now.getTime()) / 60000);
+    return (
+      <span className="sch-aggregate__now sch-aggregate__now--live">
+        <span className="sch-aggregate__now-dot sch-aggregate__now-dot--pulse" />
+        Live · {remain}m left
+      </span>
+    );
+  }
+  return (
+    <span className="sch-aggregate__now sch-aggregate__now--done">
+      <span className="material-symbols-outlined sch-icon-12">check_circle</span>
+      Done
+    </span>
+  );
+}
+
 function EventDetailModal({
-  event, onClose,
+  event, subtasks, onClose, onDelete,
 }: {
   event: CalEvent;
+  subtasks: SubtaskDto[];
   onClose: () => void;
+  onDelete?: (slotId: string) => void;
 }) {
   const task = event.task;
   const subtask = event.subtask;
+  const slot = event.scheduleSlot;
+  const isSlotEvent = event.source === "slot";
+  const isAggregate = !!event.aggregatedSlots && event.aggregatedSlots.length > 0;
+
   return (
     <div className="sch-modal" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="sch-modal__panel" role="dialog" aria-modal="true">
+      <div className={`sch-modal__panel ${isAggregate ? "sch-modal__panel--two-col" : ""}`} role="dialog" aria-modal="true">
         <div className="sch-modal__head">
           <div>
-            <span className="sch-card__eyebrow">{sourceLabel(event.source)}</span>
+            <span className="sch-card__eyebrow">{isAggregate ? "Task (scheduled)" : sourceLabel(event.source)}</span>
             <h2 className="sch-card__title">{event.title}</h2>
           </div>
           <button type="button" className="sch-icon-btn" aria-label="Close" onClick={onClose}>
@@ -1640,63 +1992,218 @@ function EventDetailModal({
           </button>
         </div>
 
-        <div className="sch-side-meta">
-          <div className="sch-side-meta__row">
-            <span>Start</span>
-            <strong>{event.start.toLocaleString()}</strong>
-          </div>
-          <div className="sch-side-meta__row">
-            <span>End</span>
-            <strong>{event.end.toLocaleString()}</strong>
-          </div>
-          <div className="sch-side-meta__row">
-            <span>Duration</span>
-            <strong>{durationHours(event).toFixed(1)}h {event.isAllDay ? "· all day" : ""}</strong>
-          </div>
-          <div className="sch-side-meta__row">
-            <span>Status</span>
-            <strong>{event.status || "—"}</strong>
-          </div>
-          {task && (
-            <>
+        <div className="sch-modal__body">
+          {/* Cột trái: Task detail */}
+          <div className="sch-modal__col sch-modal__col--info">
+            <div className="sch-side-meta">
               <div className="sch-side-meta__row">
-                <span>Type</span>
-                <strong>{task.taskType || "—"}</strong>
+                <span>Start</span>
+                <strong>{event.start.toLocaleString()}</strong>
               </div>
-              {task.deadline && (
+              <div className="sch-side-meta__row">
+                <span>End</span>
+                <strong>{event.end.toLocaleString()}</strong>
+              </div>
+              <div className="sch-side-meta__row">
+                <span>Duration</span>
+                <strong>{durationHours(event).toFixed(1)}h {event.isAllDay ? "· all day" : ""}</strong>
+              </div>
+              <div className="sch-side-meta__row">
+                <span>Status</span>
+                <strong>{event.status || "—"}</strong>
+              </div>
+
+              {slot && (
+                <>
+                  {slot.isManualOverride && (
+                    <div className="sch-side-meta__row">
+                      <span>Override</span>
+                      <strong>Manual</strong>
+                    </div>
+                  )}
+                  {slot.kbiasUsed > 0 && (
+                    <div className="sch-side-meta__row">
+                      <span>KBias Used</span>
+                      <strong>{slot.kbiasUsed}%</strong>
+                    </div>
+                  )}
+                  {slot.explanation && (
+                    <div className="sch-side-meta__row">
+                      <span>Explanation</span>
+                      <strong>{slot.explanation}</strong>
+                    </div>
+                  )}
+                  {slot.googleEventId && (
+                    <div className="sch-side-meta__row">
+                      <span>Google Event</span>
+                      <strong>{slot.syncFailed ? "⚠️ Sync failed" : "✓ Synced"}</strong>
+                    </div>
+                  )}
+                </>
+              )}
+              {task && (
+                <>
+                  <div className="sch-side-meta__row">
+                    <span>Type</span>
+                    <strong>{task.taskType || "—"}</strong>
+                  </div>
+                  {task.deadline && (
+                    <div className="sch-side-meta__row">
+                      <span>Deadline</span>
+                      <strong>{new Date(task.deadline).toLocaleDateString()}</strong>
+                    </div>
+                  )}
+                  {task.estimatedMinutes > 0 && (
+                    <div className="sch-side-meta__row">
+                      <span>Estimated</span>
+                      <strong>
+                        {task.estimatedMinutes >= 60
+                          ? `${(task.estimatedMinutes / 60).toFixed(1)}h`
+                          : `${task.estimatedMinutes}m`}
+                      </strong>
+                    </div>
+                  )}
+                </>
+              )}
+              {subtask && (
                 <div className="sch-side-meta__row">
-                  <span>Deadline</span>
-                  <strong>{new Date(task.deadline).toLocaleDateString()}</strong>
+                  <span>Subtask</span>
+                  <strong>{subtask.title}</strong>
                 </div>
               )}
-              {task.estimatedMinutes > 0 && (
+              {event.taskId && (
                 <div className="sch-side-meta__row">
-                  <span>Estimated</span>
-                  <strong>
-                    {task.estimatedMinutes >= 60
-                      ? `${(task.estimatedMinutes / 60).toFixed(1)}h`
-                      : `${task.estimatedMinutes}m`}
-                  </strong>
+                  <span>Task ID</span>
+                  <code>{event.taskId.slice(0, 8)}...</code>
                 </div>
               )}
-            </>
-          )}
-          {subtask && (
-            <div className="sch-side-meta__row">
-              <span>Subtask</span>
-              <strong>{subtask.title}</strong>
+              {event.subTaskId && (
+                <div className="sch-side-meta__row">
+                  <span>SubTask ID</span>
+                  <code>{event.subTaskId.slice(0, 8)}...</code>
+                </div>
+              )}
             </div>
-          )}
-          {event.taskId && (
-            <div className="sch-side-meta__row">
-              <span>Task ID</span>
-              <code>{event.taskId}</code>
+          </div>
+
+          {/* Cột phải: Subtasks list (chỉ với aggregate event) */}
+          {isAggregate && task && (
+            <div className="sch-modal__col sch-modal__col--sub">
+              <div className="sch-aggregate">
+                <div className="sch-aggregate__head">
+                  <span className="material-symbols-outlined sch-icon-18">account_tree</span>
+                  <strong>Subtasks ({event.aggregatedSlots!.length})</strong>
+                  <span className="sch-aggregate__head-total">
+                    {durationHours(event).toFixed(1)}h total
+                  </span>
+                </div>
+                <ul className="sch-aggregate__list">
+                  {event.aggregatedSlots!
+                    .slice()
+                    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+                    .map((s, i) => {
+                    const st = s.subTaskId ? subtasks.find((x) => x.id === s.subTaskId) : undefined;
+                    const stTitle = st?.title ?? (s.subTaskId ? "Subtask" : "Whole task");
+                    const stStatus = st?.status;
+                    const sStart = new Date(s.startTime);
+                    const sEnd = new Date(s.endTime);
+                    const durMs = Math.max(0, sEnd.getTime() - sStart.getTime());
+                    const totalMs = Math.max(1, event.end.getTime() - event.start.getTime());
+                    const pct = Math.min(100, Math.round((durMs / totalMs) * 100));
+                    const offsetPct = Math.min(100, Math.max(0, Math.round(((sStart.getTime() - event.start.getTime()) / totalMs) * 100)));
+                    return (
+                      <li key={s.id} className="sch-aggregate__item">
+                        <div className="sch-aggregate__rail">
+                          <span className="sch-aggregate__dot">{i + 1}</span>
+                        </div>
+                        <div className="sch-aggregate__body">
+                          <div className="sch-aggregate__item-row">
+                            <strong>{stTitle}</strong>
+                            {stStatus && (
+                              <span className="sch-aggregate__badge">{stStatus}</span>
+                            )}
+                            <span className="sch-aggregate__dur">
+                              {(durMs / 3600000).toFixed(1)}h
+                            </span>
+                          </div>
+                          {/* Time chip nổi bật: giờ bắt đầu lớn + duration + trạng thái */}
+                          <div className="sch-aggregate__time">
+                            <div className="sch-aggregate__time-start">
+                              <span className="sch-aggregate__time-label">Starts</span>
+                              <div className="sch-aggregate__time-value">
+                                {sStart.toLocaleTimeString(undefined, {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </div>
+                              <span className="sch-aggregate__time-date">
+                                {sStart.toLocaleDateString(undefined, {
+                                  weekday: "short",
+                                  month: "short",
+                                  day: "numeric",
+                                })}
+                              </span>
+                            </div>
+                            <div className="sch-aggregate__time-arrow">
+                              <span className="material-symbols-outlined sch-icon-16">arrow_forward</span>
+                              <span className="sch-aggregate__time-dur">{formatMinutesShort(durMs)}</span>
+                            </div>
+                            <div className="sch-aggregate__time-end">
+                              <span className="sch-aggregate__time-label">Ends</span>
+                              <div className="sch-aggregate__time-value sch-aggregate__time-value--muted">
+                                {sEnd.toLocaleTimeString(undefined, {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </div>
+                              <span className="sch-aggregate__time-date">
+                                {sEnd.toLocaleDateString(undefined, {
+                                  weekday: "short",
+                                  month: "short",
+                                  day: "numeric",
+                                })}
+                              </span>
+                            </div>
+                          </div>
+                          {/* Trạng thái thời gian thực: đặt dưới chip, không overlap nhãn */}
+                          <div className="sch-aggregate__now-row">
+                            <NowBadge start={sStart} end={sEnd} />
+                            <span className="sch-aggregate__now-span">
+                              {formatMinutesShort(Math.max(0, sStart.getTime() - event.start.getTime()))} before start
+                            </span>
+                          </div>
+                          {/* Bar thời lượng so với tổng thời gian task */}
+                          <div className="sch-aggregate__bar-track">
+                            <div
+                              className="sch-aggregate__bar"
+                              style={{ marginLeft: `${offsetPct}%`, width: `${pct}%` }}
+                            />
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
             </div>
           )}
         </div>
 
         <div className="sch-modal__actions">
           <button type="button" className="sch-btn sch-btn--soft" onClick={onClose}>Close</button>
+          {isSlotEvent && !isAggregate && slot && onDelete && (
+            <button
+              type="button"
+              className="sch-btn sch-btn--error"
+              onClick={() => {
+                onDelete(slot.id);
+                onClose();
+              }}
+            >
+              <span className="material-symbols-outlined sch-icon-18">delete</span>
+              Remove Slot
+            </button>
+          )}
           {event.taskId && (
             <Link
               to={`/projects/${event.projectId ?? ""}/planning`}

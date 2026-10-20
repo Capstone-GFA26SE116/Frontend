@@ -378,6 +378,84 @@ export async function filterProjects(
   return get<ProjectDto[]>(path);
 }
 
+/* ---------- project actions ---------- */
+
+export interface UpdateProjectRequest {
+  name?: string;
+  description?: string;
+  startDate?: string;
+  deadline?: string;
+  clientId?: string | null;
+}
+
+/**
+ * PUT /api/projects/{projectId}
+ * Cập nhật thông tin project.
+ */
+export async function updateProject(
+  projectId: string,
+  body: UpdateProjectRequest,
+): Promise<ApiResult<ProjectDto>> {
+  return put<ProjectDto>(`/api/projects/${encodeURIComponent(projectId)}`, body);
+}
+
+/**
+ * POST /api/projects/{projectId}/archive
+ * Đưa project vào trạng thái archive.
+ */
+export async function archiveProject(
+  projectId: string,
+): Promise<ApiResult<ProjectDto>> {
+  return post<ProjectDto>(`/api/projects/${encodeURIComponent(projectId)}/archive`);
+}
+
+/**
+ * POST /api/projects/{projectId}/restore
+ * Khôi phục project từ archive.
+ */
+export async function restoreProject(
+  projectId: string,
+): Promise<ApiResult<ProjectDto>> {
+  return post<ProjectDto>(`/api/projects/${encodeURIComponent(projectId)}/restore`);
+}
+
+/** Task con bên trong progress response. */
+export interface ProjectProgressTaskDto {
+  taskId: string;
+  title: string;
+  status: string;
+  isCompleted: boolean;
+  estimatedMinutes: number;
+  actualMinutes: number;
+}
+
+/** Response từ GET /api/projects/{projectId}/progress. */
+export interface ProjectProgressDto {
+  projectId: string;
+  name: string;
+  status: string;
+  deadline: string;
+  totalTasks: number;
+  completedTasks: number;
+  progressPercent: number;
+  estimatedMinutes: number;
+  actualMinutes: number;
+  varianceMinutes: number;
+  tasks: ProjectProgressTaskDto[];
+}
+
+/**
+ * GET /api/projects/{projectId}/progress
+ * Lấy tiến độ chi tiết của 1 project.
+ */
+export async function getProjectProgress(
+  projectId: string,
+): Promise<ApiResult<ProjectProgressDto>> {
+  return get<ProjectProgressDto>(
+    `/api/projects/${encodeURIComponent(projectId)}/progress`,
+  );
+}
+
 /* ---------- clients (cho dropdown clientId) ---------- */
 
 export interface ClientDto {
@@ -649,6 +727,334 @@ export async function deleteMilestone(
 }
 
 /* ================================================================
+ * SCHEDULE SLOTS
+ * ----------------------------------------------------------
+ * Schedule Slot = "khung giờ đặt lịch" cho task/subtask trên calendar.
+ * Sau khi tạo task/subtask, cần tạo slot để:
+ *   - Hiển thị trên calendar
+ *   - Trigger notification
+ *   - Sync với Google Calendar (nếu có googleEventId)
+ *
+ * Các endpoint:
+ *   GET  /api/tasks/{taskId}/schedule-slots    → danh sách slot của task
+ *   POST /api/tasks/{taskId}/schedule-slots    → tạo slot mới
+ *   GET  /api/schedule-slots/{slotId}          → lấy 1 slot
+ *   PUT  /api/schedule-slots/{slotId}          → update slot
+ *   DELETE /api/schedule-slots/{slotId}        → xóa slot
+ *   GET  /api/schedule-slots/{slotId}/changes  → lịch sử thay đổi
+ *   POST /api/schedule-slots/{slotId}/changes  → log thay đổi mới
+ *   GET  /api/schedule-change-logs/{logId}     → lấy 1 log
+ * ================================================================ */
+
+/** Schedule Slot DTO — trả về từ GET/POST/PUT */
+export interface ScheduleSlotDto {
+  id: string;
+  taskId: string;
+  subTaskId: string | null;
+  scheduleProposalId: string | null;
+  startTime: string; // ISO 8601
+  endTime: string; // ISO 8601
+  originalStartTime: string | null;
+  isManualOverride: boolean;
+  proposedMinutes: number;
+  kbiasUsed: number;
+  explanation: string | null;
+  status: "scheduled" | "in_progress" | "completed" | "cancelled";
+  googleEventId: string | null;
+  syncFailed: boolean;
+}
+
+/** Request body cho POST /api/tasks/{taskId}/schedule-slots */
+export interface CreateScheduleSlotRequest {
+  subTaskId?: string | null;
+  scheduleProposalId?: string | null;
+  startTime: string; // ISO 8601
+  endTime: string; // ISO 8601
+  originalStartTime?: string | null;
+  isManualOverride?: boolean;
+  kbiasUsed?: number;
+  explanation?: string | null;
+  status?: "scheduled" | "in_progress" | "completed" | "cancelled";
+}
+
+/** Request body cho PUT /api/schedule-slots/{slotId} */
+export interface UpdateScheduleSlotRequest {
+  subTaskId?: string | null;
+  scheduleProposalId?: string | null;
+  startTime?: string;
+  endTime?: string;
+  originalStartTime?: string | null;
+  isManualOverride?: boolean;
+  kbiasUsed?: number;
+  explanation?: string | null;
+  status?: "scheduled" | "in_progress" | "completed" | "cancelled";
+}
+
+/** Schedule Slot Change DTO — log thay đổi của 1 slot */
+export interface ScheduleSlotChangeDto {
+  id: string;
+  scheduleSlotId: string;
+  changeType: "rescheduled" | "duration_changed" | "status_changed" | "manual_override";
+  source: string; // "user" | "ai" | "calendar_sync" | "notification_reminder"
+  oldStart: string | null;
+  oldEnd: string | null;
+  newStart: string | null;
+  newEnd: string | null;
+  changedAt: string; // ISO 8601
+}
+
+/** Request body cho POST /api/schedule-slots/{slotId}/changes */
+export interface CreateScheduleSlotChangeRequest {
+  changeType: "rescheduled" | "duration_changed" | "status_changed" | "manual_override";
+  source: string;
+  oldStart?: string | null;
+  oldEnd?: string | null;
+  newStart?: string | null;
+  newEnd?: string | null;
+}
+
+/* ----- Mock stores (in-memory) ----- */
+const MOCK_SCHEDULE_SLOTS: Map<string, ScheduleSlotDto> = new Map();
+const MOCK_SCHEDULE_SLOT_CHANGES: Map<string, ScheduleSlotChangeDto> = new Map();
+
+/**
+ * Tạo UUID v4 mock (giống pattern đã dùng ở payments).
+ */
+function genSlotId(): string {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+/**
+ * GET /api/tasks/{taskId}/schedule-slots
+ * Lấy danh sách tất cả slot thuộc 1 task.
+ */
+export async function listScheduleSlotsByTask(
+  taskId: string,
+): Promise<ApiResult<ScheduleSlotDto[]>> {
+  if (!taskId) {
+    return { ok: false, status: 0, error: "Task id is required" };
+  }
+  const slots = Array.from(MOCK_SCHEDULE_SLOTS.values()).filter(
+    (s) => s.taskId === taskId,
+  );
+  return delay({ ok: true, data: slots });
+}
+
+/**
+ * POST /api/tasks/{taskId}/schedule-slots
+ * Tạo slot mới cho task.
+ */
+export async function createScheduleSlot(
+  taskId: string,
+  body: CreateScheduleSlotRequest,
+): Promise<ApiResult<ScheduleSlotDto>> {
+  if (!taskId) {
+    return { ok: false, status: 0, error: "Task id is required" };
+  }
+
+  const id = genSlotId();
+  const now = new Date().toISOString();
+
+  const slot: ScheduleSlotDto = {
+    id,
+    taskId,
+    subTaskId: body.subTaskId ?? null,
+    scheduleProposalId: body.scheduleProposalId ?? null,
+    startTime: body.startTime,
+    endTime: body.endTime,
+    originalStartTime: body.originalStartTime ?? null,
+    isManualOverride: body.isManualOverride ?? false,
+    proposedMinutes: body.startTime && body.endTime
+      ? Math.round((new Date(body.endTime).getTime() - new Date(body.startTime).getTime()) / 60000)
+      : 0,
+    kbiasUsed: body.kbiasUsed ?? 0,
+    explanation: body.explanation ?? null,
+    status: body.status ?? "scheduled",
+    googleEventId: null,
+    syncFailed: false,
+  };
+
+  MOCK_SCHEDULE_SLOTS.set(id, slot);
+
+  // Auto-log tạo slot
+  const change: ScheduleSlotChangeDto = {
+    id: genSlotId(),
+    scheduleSlotId: id,
+    changeType: "manual_override",
+    source: "user",
+    oldStart: null,
+    oldEnd: null,
+    newStart: body.startTime,
+    newEnd: body.endTime,
+    changedAt: now,
+  };
+  MOCK_SCHEDULE_SLOT_CHANGES.set(change.id, change);
+
+  return delay({ ok: true, data: slot });
+}
+
+/**
+ * GET /api/schedule-slots/{slotId}
+ * Lấy chi tiết 1 slot.
+ */
+export async function getScheduleSlot(
+  slotId: string,
+): Promise<ApiResult<ScheduleSlotDto>> {
+  const slot = MOCK_SCHEDULE_SLOTS.get(slotId);
+  if (!slot) {
+    return { ok: false, status: 404, error: "Schedule slot not found" };
+  }
+  return delay({ ok: true, data: slot });
+}
+
+/**
+ * PUT /api/schedule-slots/{slotId}
+ * Cập nhật slot (đổi giờ, status, v.v.).
+ */
+export async function updateScheduleSlot(
+  slotId: string,
+  body: UpdateScheduleSlotRequest,
+): Promise<ApiResult<ScheduleSlotDto>> {
+  const existing = MOCK_SCHEDULE_SLOTS.get(slotId);
+  if (!existing) {
+    return { ok: false, status: 404, error: "Schedule slot not found" };
+  }
+
+  const now = new Date().toISOString();
+
+  // Log thay đổi nếu có thay đổi thời gian
+  if (
+    body.startTime !== undefined || body.endTime !== undefined ||
+    body.status !== undefined
+  ) {
+    const change: ScheduleSlotChangeDto = {
+      id: genSlotId(),
+      scheduleSlotId: slotId,
+      changeType: body.isManualOverride ? "manual_override" : "rescheduled",
+      source: body.isManualOverride ? "user" : "ai",
+      oldStart: existing.startTime,
+      oldEnd: existing.endTime,
+      newStart: body.startTime ?? existing.startTime,
+      newEnd: body.endTime ?? existing.endTime,
+      changedAt: now,
+    };
+    MOCK_SCHEDULE_SLOT_CHANGES.set(change.id, change);
+  }
+
+  const updated: ScheduleSlotDto = {
+    ...existing,
+    subTaskId: body.subTaskId !== undefined ? body.subTaskId : existing.subTaskId,
+    scheduleProposalId: body.scheduleProposalId !== undefined ? body.scheduleProposalId : existing.scheduleProposalId,
+    startTime: body.startTime ?? existing.startTime,
+    endTime: body.endTime ?? existing.endTime,
+    originalStartTime: body.originalStartTime !== undefined ? body.originalStartTime : existing.originalStartTime,
+    isManualOverride: body.isManualOverride ?? existing.isManualOverride,
+    proposedMinutes: body.startTime && body.endTime
+      ? Math.round((new Date(body.endTime).getTime() - new Date(body.startTime).getTime()) / 60000)
+      : existing.proposedMinutes,
+    kbiasUsed: body.kbiasUsed ?? existing.kbiasUsed,
+    explanation: body.explanation !== undefined ? body.explanation : existing.explanation,
+    status: body.status ?? existing.status,
+  };
+
+  MOCK_SCHEDULE_SLOTS.set(slotId, updated);
+  return delay({ ok: true, data: updated });
+}
+
+/**
+ * DELETE /api/schedule-slots/{slotId}
+ * Xóa slot.
+ */
+export async function deleteScheduleSlot(
+  slotId: string,
+): Promise<ApiResult<{ deleted: boolean; slotId: string }>> {
+  const exists = MOCK_SCHEDULE_SLOTS.has(slotId);
+  if (!exists) {
+    return { ok: false, status: 404, error: "Schedule slot not found" };
+  }
+
+  // Xóa tất cả changes liên quan
+  for (const [changeId, change] of MOCK_SCHEDULE_SLOT_CHANGES) {
+    if (change.scheduleSlotId === slotId) {
+      MOCK_SCHEDULE_SLOT_CHANGES.delete(changeId);
+    }
+  }
+
+  MOCK_SCHEDULE_SLOTS.delete(slotId);
+  return delay({ ok: true, data: { deleted: true, slotId } });
+}
+
+/**
+ * GET /api/schedule-slots/{slotId}/changes
+ * Lấy lịch sử thay đổi của 1 slot.
+ */
+export async function listScheduleSlotChanges(
+  slotId: string,
+): Promise<ApiResult<ScheduleSlotChangeDto[]>> {
+  if (!MOCK_SCHEDULE_SLOTS.has(slotId)) {
+    return { ok: false, status: 404, error: "Schedule slot not found" };
+  }
+
+  const changes = Array.from(MOCK_SCHEDULE_SLOT_CHANGES.values())
+    .filter((c) => c.scheduleSlotId === slotId)
+    .sort((a, b) => new Date(b.changedAt).getTime() - new Date(a.changedAt).getTime());
+
+  return delay({ ok: true, data: changes });
+}
+
+/**
+ * POST /api/schedule-slots/{slotId}/changes
+ * Log thay đổi mới cho slot (dùng khi có sự kiện từ bên ngoài như calendar sync).
+ */
+export async function createScheduleSlotChange(
+  slotId: string,
+  body: CreateScheduleSlotChangeRequest,
+): Promise<ApiResult<ScheduleSlotChangeDto>> {
+  if (!MOCK_SCHEDULE_SLOTS.has(slotId)) {
+    return { ok: false, status: 404, error: "Schedule slot not found" };
+  }
+
+  const change: ScheduleSlotChangeDto = {
+    id: genSlotId(),
+    scheduleSlotId: slotId,
+    changeType: body.changeType,
+    source: body.source,
+    oldStart: body.oldStart ?? null,
+    oldEnd: body.oldEnd ?? null,
+    newStart: body.newStart ?? null,
+    newEnd: body.newEnd ?? null,
+    changedAt: new Date().toISOString(),
+  };
+
+  MOCK_SCHEDULE_SLOT_CHANGES.set(change.id, change);
+  return delay({ ok: true, data: change });
+}
+
+/**
+ * GET /api/schedule-change-logs/{logId}
+ * Lấy chi tiết 1 log thay đổi.
+ */
+export async function getScheduleSlotChange(
+  logId: string,
+): Promise<ApiResult<ScheduleSlotChangeDto>> {
+  const change = MOCK_SCHEDULE_SLOT_CHANGES.get(logId);
+  if (!change) {
+    return { ok: false, status: 404, error: "Schedule slot change not found" };
+  }
+  return delay({ ok: true, data: change });
+}
+
+/** Reset tất cả mock schedule slots (test teardown). */
+export function __resetMockScheduleSlots(): void {
+  MOCK_SCHEDULE_SLOTS.clear();
+  MOCK_SCHEDULE_SLOT_CHANGES.clear();
+}
+
+/* ================================================================
  * DOMAINS (domain = lĩnh vực / chủ đề của task)
  * ================================================================ */
 
@@ -669,7 +1075,7 @@ export async function listDomains(): Promise<ApiResult<DomainDto[]>> {
 /* ================================================================
  * CALENDAR
  * GET /api/calendar?from=&to=&includeCancelled=
- * Response: { from, to, googleCalendarStatus, items[] }
+ * Response: { from, to, googleCalendarStatus, timeZone, workDayStart, workDayEnd, worksOnWeekend, items[] }
  * ================================================================ */
 
 export interface CalendarItemDto {
@@ -683,12 +1089,29 @@ export interface CalendarItemDto {
   taskId: string | null;
   subTaskId: string | null;
   projectId: string | null;
+  /** Chi tiết mở rộng (từ task/subtask gốc) */
+  subTaskTitle?: string | null;
+  projectName?: string | null;
+  clientName?: string | null;
+  domainName?: string | null;
+  taskType?: string | null;
+  taskStatus?: string | null;
+  taskDeadline?: string | null;
+  proposedMinutes?: number;
+  explanation?: string | null;
+  isManualOverride?: boolean;
+  syncFailed?: boolean;
 }
 
 export interface CalendarResponseDto {
   from: string;
   to: string;
   googleCalendarStatus: string;
+  /** Thông tin timezone & work hours */
+  timeZone?: string;
+  workDayStart?: string | null;
+  workDayEnd?: string | null;
+  worksOnWeekend?: boolean;
   items: CalendarItemDto[];
 }
 

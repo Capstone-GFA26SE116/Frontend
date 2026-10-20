@@ -174,18 +174,38 @@ export function LoginPage() {
       else setError("Chế độ phát triển: Google OAuth chưa được cấu hình. Vui lòng thêm VITE_GOOGLE_CLIENT_ID vào .env");
       return;
     }
-    // Có Client ID → kích hoạt One Tap / Sign In With Google prompt.
-    // accounts.id đã được initialize trong useEffect, gọi prompt() để mở UI.
-    const w = window as unknown as { google?: unknown };
-    const g = w.google as {
-      accounts?: { id?: { prompt?: () => void } };
-    };
-    if (g.accounts?.id?.prompt) {
-      g.accounts.id.prompt();
+    // Có Client ID → forward click xuống nút GIS chính chủ đã được renderButton()
+    // trong useEffect. Forwarding click (thay vì gọi prompt() trực tiếp) đảm bảo:
+    //   1. GIS popup OAuth mở đúng cách cho cả user chưa có session Google
+    //      (One Tap prompt() fail với "Not signed in" trong trường hợp này).
+    //   2. Toàn bộ flow OAuth (popup, callback id_token) do GIS xử lý — không bị
+    //      custom logic can thiệp.
+    //   3. Mọi error từ GIS sẽ bị catch bởi callback 'error' đã đăng ký trong
+    //      initialize() → hiển thị qua setError(...).
+    const host = document.getElementById("google-signin-host");
+    const innerBtn = host?.querySelector<HTMLElement>(
+      'div[role="button"], button, iframe',
+    );
+    if (innerBtn) {
+      innerBtn.click();
+      // GIS sẽ tự mở popup OAuth. Callback đã đăng ký trong useEffect sẽ nhận
+      // id_token và xử lý navigate / setError. Reset loading ở đây cho UI
+      // không bị kẹt "Đang kết nối..." khi user đóng popup.
+      // (GIS callback cũng setGoogleLoading(false) khi nhận được response/error.)
+      window.setTimeout(() => setGoogleLoading(false), 800);
     } else {
-      // Fallback: GIS chưa load xong
-      setGoogleLoading(false);
-      setError("Đang tải Google Sign-In, vui lòng thử lại sau giây lát.");
+      // GIS chưa load xong hoặc chưa renderButton xong — fallback về prompt().
+      const w = window as unknown as { google?: unknown };
+      const g = w.google as {
+        accounts?: { id?: { prompt?: () => void } };
+      };
+      if (g.accounts?.id?.prompt) {
+        g.accounts.id.prompt();
+        window.setTimeout(() => setGoogleLoading(false), 800);
+      } else {
+        setGoogleLoading(false);
+        setError("Đang tải Google Sign-In, vui lòng thử lại sau giây lát.");
+      }
     }
   }
 
@@ -232,7 +252,7 @@ export function LoginPage() {
           id="google-signin-btn"
           onClick={handleGoogle}
           disabled={googleLoading || submitting}
-          className="login-google-btn"
+          className="metanoia-google-btn login-google-btn"
         >
           <GoogleIcon />
           <span>
@@ -378,7 +398,7 @@ export function LoginPage() {
 function GoogleIcon() {
   return (
     <svg
-      className="login-google-icon"
+      className="metanoia-google-icon login-google-icon"
       viewBox="0 0 24 24"
       aria-hidden="true"
     >

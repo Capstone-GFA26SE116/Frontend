@@ -1,0 +1,97 @@
+/* ============================================================================
+   METANOIA — OAuth Google button (shared giữa /login và /register)
+   ----------------------------------------------------------------------------
+   Class chung: .metanoia-google-btn + .metanoia-google-icon.
+   Áp dụng cho MỌI nút OAuth Google để đảm bảo visual đồng nhất 100%
+   giữa các trang (kích thước, padding, gap, animation…).
+   ----------------------------------------------------------------------------
+   Spec (xem DESIGN.md §button-outline-on-dark):
+     • Chiều rộng: 100% container, max 320px, căn giữa bằng margin auto.
+     • Box: bg canvas, hairline border, radius 6px, không shadow.
+     • Text: 14px / medium / line-height 20px (khớp icon height).
+     • Icon Google: 20×20, flex-shrink 0, gap 10px với text.
+     • Hiệu ứng: hover tint soft + border ink, active scale 0.99,
+       focus-visible ring offset.
+   ============================================================================ */
+
+.metanoia-google-btn {
+  /* Layout */
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 20rem;          /* 320px */
+  margin: 0 auto;
+  padding: 0.75rem 1rem;     /* 12px 16px */
+  gap: 0.625rem;             /* 10px — baseline align giữa icon và text */
+
+  /* Visual */
+  background-color: var(--voltagent-canvas);
+  border: 1px solid var(--voltagent-hairline);
+  border-radius: var(--voltagent-radius-sm);
+  color: var(--voltagent-ink-strong);
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 0.875rem;       /* 14px */
+  font-weight: 500;
+  line-height: 1.25rem;      /* 20px — khớp icon height */
+  text-decoration: none;
+  cursor: pointer;
+
+  /* Motion */
+  transition:
+    border-color 200ms ease,
+    background-color 200ms ease,
+    transform 200ms ease,
+    box-shadow 200ms ease;
+}
+
+/* Hover: tint soft + đổi border sang ink */
+.metanoia-google-btn:hover:not(:disabled) {
+  background-color: var(--voltagent-canvas-soft);
+  border-color: var(--voltagent-body);
+}
+
+.metanoia-google-btn:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.metanoia-google-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Focus keyboard: ring offset (a11y) */
+.metanoia-google-btn:focus-visible {
+  outline: 2px solid var(--voltagent-accent, #5e6ad2);
+  outline-offset: 2px;
+}
+
+/* ============================================================================
+   Sub-element: icon Google (SVG 24×24 viewBox)
+   ----------------------------------------------------------------------------
+   Hard-cap w/h = 20px để icon không phình to theo intrinsic dimension khi
+   viewBox lệch. flex-shrink: 0 để icon không bị nén khi text dài.
+   ============================================================================ */
+.metanoia-google-icon {
+  display: block;
+  width: 1.25rem;            /* 20px */
+  height: 1.25rem;           /* 20px */
+  max-width: 1.25rem;
+  max-height: 1.25rem;
+  flex: 0 0 1.25rem;
+  flex-shrink: 0;
+  object-fit: contain;
+  align-self: center;
+}
+
+/* Text wrapper trong button */
+.metanoia-google-btn > span {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--voltagent-ink-strong);
+  flex: 0 1 auto;
+}

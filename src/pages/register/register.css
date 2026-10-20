@@ -1,15 +1,23 @@
 /* ===========================================================
- * Trang đăng ký — Register
- * Dark glassmorphism, scope theo `.register-*`.
- * Đồng bộ visual với Login.tsx + login.css.
+ * Trang đăng ký — Register (Voltagent — trích từ DESIGN.md)
+ *
+ * Mirror toàn bộ quy tắc với login.css:
+ *  - canvas fill, canvas-soft input, hairline border, 6px radius
+ *  - electric-green primary fill cho CTA, primary-deep cho inline links
+ *  - Inter (weight 400) cho body, Mono (SF Mono / JetBrains Mono) cho tag
+ *  - Không gradient, không box-shadow material, chỉ Inset Glow Level 2
+ *
+ * OAuth Google button (.metanoia-google-btn / -icon) được share qua file chung
+ * để đảm bảo /login và /register hiển thị GIỐNG HỆT nhau 100%.
  * =========================================================== */
+@import "../../styles/metanoia-google-btn.css";
 
 .register {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
   width: 100%;
-  color: var(--auth-text);
+  color: var(--voltagent-ink);
   font-family: "Inter", system-ui, sans-serif;
 }
 
@@ -22,41 +30,44 @@
 }
 
 .register-eyebrow {
-  font-family: "JetBrains Mono", "Inter", monospace;
-  font-size: 0.625rem;
-  letter-spacing: 0.1em;
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 0.75rem;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   font-weight: 600;
-  color: var(--auth-primary);
+  color: var(--voltagent-primary);
   padding: 0.25rem 0.625rem;
-  border-radius: 9999px;
-  background-color: rgba(192, 193, 255, 0.1);
-  border: 1px solid rgba(192, 193, 255, 0.2);
+  border-radius: var(--voltagent-radius-pill);
+  background-color: rgba(0, 217, 146, 0.1);
+  border: 1px solid rgba(0, 217, 146, 0.3);
 }
 
 .register-title {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: var(--auth-text);
-  letter-spacing: -0.02em;
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: var(--voltagent-display-md-size);
+  font-weight: 400;
+  color: var(--voltagent-ink-strong);
+  letter-spacing: var(--voltagent-display-md-tracking);
   margin: 0.25rem 0 0;
-  line-height: 1.2;
+  line-height: var(--voltagent-display-md-lh);
 }
 
 @media (min-width: 640px) {
   .register-title {
-    font-size: 1.875rem;
+    font-size: var(--voltagent-display-lg-size);
+    line-height: var(--voltagent-display-lg-lh);
+    letter-spacing: var(--voltagent-display-lg-tracking);
   }
 }
 
 .register-subtitle {
   font-size: 0.875rem;
-  color: var(--auth-text-mute);
+  color: var(--voltagent-body);
   line-height: 1.5;
   margin: 0;
 }
 
-/* ---------- Google SSO ---------- */
+/* ---------- Google SSO (button-outline-on-dark token) ---------- */
 .register-sso {
   display: flex;
   flex-direction: column;
@@ -66,26 +77,31 @@
 
 .register-google-btn {
   position: relative;
-  display: flex;
+  display: inline-flex;
   width: 100%;
+  max-width: 20rem;            /* 320px — centered OAuth button, không full-width */
+  margin: 0 auto;
   align-items: center;
   justify-content: center;
-  gap: 0.75rem;
-  background-color: var(--auth-bg-4);
-  border: 1px solid var(--auth-border);
-  padding: 0.875rem 1rem;
-  border-radius: 0.75rem;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
-  color: var(--auth-text);
+  gap: 0.625rem;
+  background-color: var(--voltagent-canvas);
+  border: 1px solid var(--voltagent-hairline);
+  padding: 0.75rem 1rem;
+  border-radius: var(--voltagent-radius-sm);
+  color: var(--voltagent-ink-strong);
   font-size: 0.875rem;
   font-weight: 500;
+  line-height: 1.25rem;          /* = icon height 20px → baseline align */
+  font-family: "Inter", system-ui, sans-serif;
   cursor: pointer;
-  transition: all 200ms ease;
+  text-decoration: none;
+  transition: border-color 200ms ease, background-color 200ms ease,
+    transform 200ms ease;
 }
 
 .register-google-btn:hover:not(:disabled) {
-  background-color: #353942;
-  border-color: var(--auth-border-3);
+  background-color: var(--voltagent-canvas-soft);
+  border-color: var(--voltagent-body);
 }
 
 .register-google-btn:active:not(:disabled) {
@@ -97,10 +113,39 @@
   opacity: 0.6;
 }
 
+/* Di chuyển vô giữa: slide từ trái → vị trí center sau khi .register-sso parent xong (160ms + 80ms = 240ms). */
+.register-google-btn {
+  opacity: 0;
+  animation: register-slide-in-center 520ms cubic-bezier(0.22, 1, 0.36, 1) 240ms forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .register-google-btn {
+    animation: none;
+    opacity: 1;
+  }
+}
+
 .register-google-icon {
-  width: 1.25rem;
-  height: 1.25rem;
-  flex-shrink: 0;
+  display: block !important;
+  width: 1.25rem !important;
+  height: 1.25rem !important;
+  max-width: 1.25rem !important;
+  max-height: 1.25rem !important;
+  flex: 0 0 1.25rem !important;
+  flex-shrink: 0 !important;
+  object-fit: contain !important;
+  align-self: center !important;
+}
+
+.register-google-btn > span {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--voltagent-ink-strong);
+  flex: 0 1 auto;
 }
 
 .register-sso-hint {
@@ -108,8 +153,8 @@
   align-items: center;
   justify-content: center;
   gap: 0.375rem;
-  color: var(--auth-text-mute);
-  font-family: "JetBrains Mono", "Inter", monospace;
+  color: var(--voltagent-mute);
+  font-family: "SFMono-Regular", "JetBrains Mono", "Inter", monospace;
   font-size: 0.75rem;
   padding-top: 0.25rem;
 }
@@ -118,7 +163,7 @@
   width: 0.375rem;
   height: 0.375rem;
   border-radius: 9999px;
-  background-color: var(--auth-secondary);
+  background-color: var(--voltagent-primary);
 }
 
 /* ---------- Divider ---------- */
@@ -132,17 +177,18 @@
 .register-divider-line {
   flex-grow: 1;
   height: 1px;
-  background-color: var(--auth-border);
+  background-color: var(--voltagent-hairline);
 }
 
 .register-divider-text {
   flex-shrink: 0;
   margin: 0 1rem;
-  font-family: "JetBrains Mono", "Inter", monospace;
+  font-family: "Inter", system-ui, sans-serif;
   font-size: 0.6875rem;
-  color: var(--auth-text-dim);
+  color: var(--voltagent-mute);
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.18em;
+  font-weight: 600;
 }
 
 /* ---------- Form ---------- */
@@ -160,23 +206,24 @@
 }
 
 .register-field-label {
-  font-family: "JetBrains Mono", "Inter", monospace;
+  font-family: "Inter", system-ui, sans-serif;
   font-size: 0.75rem;
-  color: var(--auth-text-mute);
-  letter-spacing: 0.02em;
+  color: var(--voltagent-mute);
+  letter-spacing: 0.01em;
+  font-weight: 500;
 }
 
 .register-field-hint {
   font-size: 0.75rem;
-  color: rgba(144, 143, 160, 0.7);
+  color: var(--voltagent-mute);
 }
 
 .register-field-error {
   font-size: 0.75rem;
-  color: #fca5a5;
+  color: var(--voltagent-red-text);
 }
 
-/* ---------- Input ---------- */
+/* ---------- Input (Voltagent text-input token) ---------- */
 .register-input-wrap {
   position: relative;
   display: flex;
@@ -186,24 +233,33 @@
 .register-input {
   display: block;
   width: 100%;
-  background-color: var(--auth-bg-2);
-  color: var(--auth-text);
+  background-color: var(--voltagent-canvas-soft);
+  color: var(--voltagent-ink-strong);
   font-size: 0.875rem;
   font-family: "Inter", system-ui, sans-serif;
   padding: 0.75rem 0.875rem;
-  border-radius: 0.75rem;
-  border: 1px solid var(--auth-border);
+  border-radius: var(--voltagent-radius-sm);
+  border: 1px solid var(--voltagent-hairline);
   outline: none;
-  transition: all 150ms ease;
+  transition: border-color 150ms ease, box-shadow 200ms ease,
+    background-color 200ms ease;
 }
 
 .register-input::placeholder {
-  color: rgba(144, 143, 160, 0.5);
+  color: var(--voltagent-mute);
+  opacity: 0.55;
 }
 
 .register-input:focus {
-  border-color: var(--auth-accent-1);
-  box-shadow: 0 0 0 1px var(--auth-accent-1);
+  border-color: var(--voltagent-primary);
+  box-shadow:
+    0 0 0 1px var(--voltagent-primary),
+    0 0 24px -8px rgba(0, 217, 146, 0.35);
+}
+
+.register-input:hover:not(:focus) {
+  border-color: var(--voltagent-body);
+  background-color: var(--voltagent-canvas);
 }
 
 .register-input--with-toggle {
@@ -213,7 +269,7 @@
 .register-input-icon {
   position: absolute;
   right: 0.875rem;
-  color: rgba(144, 143, 160, 0.5);
+  color: var(--voltagent-mute);
   pointer-events: none;
   font-size: 1.125rem;
 }
@@ -226,29 +282,30 @@
   align-items: center;
   justify-content: center;
   padding: 0.25rem;
-  color: var(--auth-text-dim);
+  color: var(--voltagent-mute);
   background: transparent;
   border: none;
-  border-radius: 0.375rem;
+  border-radius: var(--voltagent-radius-xs);
   cursor: pointer;
-  transition: color 150ms ease;
+  transition: color 150ms ease, background-color 150ms ease;
 }
 
 .register-toggle:hover {
-  color: var(--auth-text);
+  color: var(--voltagent-ink-strong);
+  background-color: rgba(255, 255, 255, 0.06);
 }
 
 .register-toggle .material-symbols-outlined {
   font-size: 1.125rem;
 }
 
-/* ---------- Terms (custom checkbox) ---------- */
+/* ---------- Terms (custom checkbox, electric-green when checked) ---------- */
 .register-terms {
   display: flex;
   align-items: flex-start;
   gap: 0.625rem;
   font-size: 0.75rem;
-  color: var(--auth-text-mute);
+  color: var(--voltagent-mute);
 }
 
 .register-checkbox-input {
@@ -271,13 +328,13 @@
 .register-checkbox-box {
   width: 1rem;
   height: 1rem;
-  border-radius: 0.25rem;
-  background-color: var(--auth-bg-2);
-  border: 1px solid var(--auth-border-3);
+  border-radius: var(--voltagent-radius-xs);
+  background-color: var(--voltagent-canvas-soft);
+  border: 1px solid var(--voltagent-hairline);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 150ms ease;
+  transition: border-color 150ms ease, background-color 150ms ease;
   flex-shrink: 0;
   margin-top: 0.125rem;
 }
@@ -285,7 +342,7 @@
 .register-checkbox-check {
   width: 0.75rem;
   height: 0.75rem;
-  color: #ffffff;
+  color: var(--voltagent-on-primary);
   opacity: 0;
   transition: opacity 150ms ease;
 }
@@ -293,8 +350,8 @@
 .register-checkbox-input:checked
   + .register-checkbox-label
   .register-checkbox-box {
-  background-color: var(--auth-accent-1);
-  border-color: var(--auth-accent-1);
+  background-color: var(--voltagent-primary);
+  border-color: var(--voltagent-primary);
 }
 
 .register-checkbox-input:checked
@@ -306,30 +363,31 @@
 .register-checkbox-input:focus-visible
   + .register-checkbox-label
   .register-checkbox-box {
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.45);
+  box-shadow: 0 0 0 1px var(--voltagent-primary);
 }
 
-/* ---------- Alert ---------- */
+/* ---------- Alert (Voltagent red semantic) ---------- */
 .register-alert {
-  border-radius: 0.5rem;
-  border: 1px solid rgba(248, 113, 113, 0.3);
-  background-color: rgba(127, 29, 29, 0.4);
-  color: #fecaca;
+  border-radius: var(--voltagent-radius-sm);
+  border: 1px solid var(--voltagent-red-border);
+  background-color: var(--voltagent-red-bg);
+  color: var(--voltagent-red-text);
   padding: 0.5rem 0.75rem;
   font-size: 0.875rem;
 }
 
-/* ---------- Links ---------- */
+/* ---------- Links (DESIGN.md: link color = primary-deep) ---------- */
 .register-link {
-  font-family: "JetBrains Mono", "Inter", monospace;
+  font-family: "Inter", system-ui, sans-serif;
   font-size: inherit;
-  color: var(--auth-primary);
+  color: var(--voltagent-primary-deep);
   text-decoration: none;
+  font-weight: 500;
   transition: color 150ms ease;
 }
 
 .register-link:hover {
-  color: #e1e0ff;
+  color: var(--voltagent-primary-soft);
   text-decoration: underline;
 }
 
@@ -337,36 +395,33 @@
   font-weight: 600;
 }
 
-/* ---------- Submit (gradient) ---------- */
+/* ---------- Submit (button-primary: solid electric-green, 6px, NO shadow) ---------- */
 .register-submit {
   display: flex;
   width: 100%;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  background-image: linear-gradient(
-    to right,
-    var(--auth-accent-1),
-    var(--auth-accent-2)
-  );
-  color: #ffffff;
+  background-color: var(--voltagent-primary);
+  color: var(--voltagent-on-primary);
   font-size: 0.875rem;
   font-weight: 600;
   font-family: "Inter", system-ui, sans-serif;
-  padding: 0.875rem 1rem;
-  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--voltagent-radius-sm);
   border: none;
-  box-shadow: 0 10px 25px -5px rgba(99, 102, 241, 0.25);
   cursor: pointer;
-  transition: all 200ms ease;
+  transition: background-color 200ms ease, transform 200ms ease, box-shadow 200ms ease;
 }
 
 .register-submit:hover:not(:disabled) {
-  background-image: linear-gradient(to right, #5558e6, #7c4def);
+  background-color: var(--voltagent-primary-soft);
+  transform: translateY(-1px);
+  box-shadow: 0 0 15px rgba(92, 88, 85, 0.2);
 }
 
 .register-submit:active:not(:disabled) {
-  transform: scale(0.99);
+  transform: scale(0.99) translateY(0);
 }
 
 .register-submit:disabled {
@@ -382,7 +437,7 @@
 .register-mobile-link {
   display: block;
   font-size: 0.875rem;
-  color: var(--auth-text-mute);
+  color: var(--voltagent-mute);
   text-align: center;
   margin: 0;
 }
@@ -452,10 +507,11 @@
 @keyframes register-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.45);
+    /* CHECKBOX check ripple — Voltagent primary tint thay vì indigo */
+    box-shadow: 0 0 0 0 rgba(0, 217, 146, 0.45);
   }
   50% {
-    box-shadow: 0 0 0 8px rgba(99, 102, 241, 0);
+    box-shadow: 0 0 0 8px rgba(0, 217, 146, 0);
   }
 }
 
@@ -493,6 +549,22 @@
   100% {
     transform: scale(1.6);
     opacity: 0;
+  }
+}
+
+/* "Continue with Google" — di chuyển vô giữa (slide-in-center).
+   Mirror với login.css, delay 240ms để chạy sau .register-sso parent. */
+@keyframes register-slide-in-center {
+  0% {
+    transform: translateX(-12px);
+    opacity: 0;
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
   }
 }
 
@@ -572,7 +644,7 @@
   right: -6rem;
   background: radial-gradient(
     circle,
-    rgba(128, 131, 255, 0.22),
+    rgba(0, 217, 146, 0.1),  /* primary green tint */
     transparent 70%
   );
   animation: register-blob-a 14s ease-in-out infinite;
@@ -583,7 +655,7 @@
   left: -5rem;
   background: radial-gradient(
     circle,
-    rgba(6, 182, 212, 0.14),
+    rgba(61, 58, 57, 0.14),   /* hairline hue */
     transparent 70%
   );
   animation: register-blob-b 18s ease-in-out infinite;
@@ -596,15 +668,15 @@
 }
 
 .register-input:focus {
-  border-color: var(--auth-accent-1);
+  border-color: var(--voltagent-primary);
   box-shadow:
-    0 0 0 1px var(--auth-accent-1),
-    0 0 24px -8px rgba(99, 102, 241, 0.55);
+    0 0 0 1px var(--voltagent-primary),
+    0 0 24px -8px rgba(0, 217, 146, 0.35);
 }
 
 .register-input:hover:not(:focus) {
-  border-color: var(--auth-border-3);
-  background-color: var(--auth-bg-3);
+  border-color: var(--voltagent-body);
+  background-color: var(--voltagent-canvas);
 }
 
 /* ----- Toggle visibility: rotate icon khi đổi trạng thái ----- */
@@ -648,11 +720,9 @@
 }
 
 .register-submit:hover:not(:disabled) {
+  /* DESIGN.md Level 2 Inset Glow — single soft glow, no material shadow.
+     Đã set ở static block trên; giữ transform translateY để có tactile feedback. */
   transform: translateY(-1px);
-  box-shadow:
-    0 14px 30px -8px rgba(99, 102, 241, 0.4),
-    0 0 0 1px rgba(192, 193, 255, 0.2);
-  background-image: linear-gradient(to right, #5558e6, #7c4def);
 }
 
 .register-submit:active:not(:disabled) {
@@ -663,22 +733,32 @@
 .register-google-btn {
   position: relative;
   overflow: hidden;
+  /* Giữ layout — cascade-safe, button OAuth nằm giữa form.
+     KHÔNG đặt display: inline-flex !important để tránh đè inline display:none
+     nếu sau này cần ẩn button mock khi GIS render xong (xem login.css để biết
+     lý do). !important chỉ giữ cho các property layout thuần (size, padding...). */
+  width: 100% !important;
+  max-width: 20rem !important;            /* 320px */
+  margin: 0 auto !important;
+  padding: 0.75rem 1rem !important;
+  font-size: 0.875rem !important;
+  line-height: 1.25rem !important;
+  border-radius: var(--voltagent-radius-sm) !important;
   transition: background-color 200ms ease, border-color 200ms ease,
     transform 200ms ease, box-shadow 200ms ease;
 }
 
 .register-google-btn:hover:not(:disabled) {
   transform: translateY(-1px);
-  background-color: #353942;
-  border-color: var(--auth-border-3);
-  box-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.6);
+  background-color: var(--voltagent-canvas-soft);
+  border-color: var(--voltagent-body);
 }
 
 .register-google-btn:active:not(:disabled) {
   transform: scale(0.99);
 }
 
-/* ----- SSO hint dot: pulse ----- */
+/* ----- SSO hint dot: pulse (Voltagent primary green) ----- */
 .register-sso-dot {
   position: relative;
 }
@@ -687,11 +767,11 @@
   position: absolute;
   inset: 0;
   border-radius: 9999px;
-  background-color: var(--auth-secondary);
+  background-color: var(--voltagent-primary);
   animation: register-ring-pulse 2.2s ease-out infinite;
 }
 
-/* ----- Eyebrow badge: sheen ngang rất nhẹ ----- */
+/* ----- Eyebrow badge: sheen ngang rất nhẹ (green-tint) ----- */
 .register-eyebrow {
   position: relative;
   overflow: hidden;
@@ -703,7 +783,7 @@
   background-image: linear-gradient(
     100deg,
     transparent 30%,
-    rgba(192, 193, 255, 0.12) 50%,
+    rgba(0, 217, 146, 0.12) 50%,
     transparent 70%
   );
   background-size: 200% 100%;
@@ -711,7 +791,7 @@
   pointer-events: none;
 }
 
-/* ----- Link: underline chạy từ trái sang ----- */
+/* ----- Link: underline chạy từ trái sang (Voltagent primary-soft hover) ----- */
 .register-link {
   position: relative;
   background-image: linear-gradient(currentColor, currentColor);
@@ -723,7 +803,7 @@
 .register-link:hover {
   background-size: 100% 1px;
   text-decoration: none;
-  color: #e1e0ff;
+  color: var(--voltagent-primary-soft);
 }
 
 /* ----- Respect prefers-reduced-motion ----- */

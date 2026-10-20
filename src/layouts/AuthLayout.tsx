@@ -1,13 +1,18 @@
-import { Outlet } from "react-router-dom";
+import { Link, Outlet, useLocation } from "react-router-dom";
+import { MetanoiaLogo } from "../components/MetanoiaLogo";
 import "./auth-layout.css";
 
 /**
- * Layout 2 cột dùng cho trang Login & Register:
- *  - Cột trái (≥lg): hero panel — ảnh nền, glassmorphism card giới thiệu METANOIA.
+ * Layout 2 cột dùng cho trang Login & Register (theo DESIGN.md — Voltagent):
+ *  - Cột trái (≥lg): hero panel — hairline card trên canvas, dot grid depth cue,
+ *    quote `display-lg` 36px / weight 400 / tracking -0.9px, bullets body-md.
  *  - Cột phải: form đăng nhập / đăng ký render qua <Outlet />.
  *
- * Theme: dark (#0f131c) + glassmorphism, lấy cảm hứng từ Material 3 / Tailwind UI
- * với typography Inter + Material Symbols.
+ * Brand rules đã được apply:
+ *  - Single electric-green accent cho monogram + bullets + pulse.
+ *  - KHÔNG backdrop-filter blur, KHÔNG box-shadow material.
+ *  - Wordmark "METANOIA" qua component MetanoiaLogo (đã re-skin voltagent).
+ *  - Inter (weight 400) làm body & quote; Mono (SF Mono / JetBrains Mono) cho tag.
  *
  * Responsive: dưới `lg` ẩn hero panel, chỉ hiển thị cột form.
  */
@@ -17,29 +22,18 @@ export function AuthLayout() {
       <div className="auth-grid">
         {/* LEFT: Hero — chỉ hiện từ lg trở lên */}
         <aside className="auth-hero" aria-hidden="true">
-          {/* Ảnh nền + vignettes gradient để chữ nổi */}
-          <div className="auth-hero-bg">
-            <img
-              alt=""
-              className="auth-hero-img"
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuBp4M2S4u6ciWwouxOwCu7IYEc7uWsul3Y1-WcBM30HWp6QXMn599UplaFHo7Uz5dTaS7bcWy46CiRDk1h4Ozpf9iZO7iTYAn04ZDpXo4o_Msdp1QBlVp1xILcJ8p9Knxp_18RjFPKY2vnYYmxPyYeQ-av7fdDqxGcVlPd-w8m3EUIFKeHd8tl2oRFwZ-R4ofjwqPF6qTDMmOp8pzC6NYrF4opq86gtB9x2KkLYrAs8wt-KP-qWh2glig"
-            />
-            <div className="auth-hero-vignette auth-hero-vignette--bottom" />
-            <div className="auth-hero-vignette auth-hero-vignette--sides" />
-            <div className="auth-hero-blob auth-hero-blob--tr" />
-            <div className="auth-hero-blob auth-hero-blob--bl" />
-          </div>
+          {/* Subtle dot-grid depth cue (1px primary @ 8% trên canvas, mask radial fade) */}
+          <div className="auth-hero-bg" />
 
-          {/* Branding bar trên cùng */}
+          {/* Branding bar trên cùng — dùng MetanoiaLogo component (đã voltagent) */}
           <div className="auth-hero-brand">
-            <div className="auth-monogram">M</div>
+            <MetanoiaLogo size={36} tone="dark" />
             <div className="auth-hero-brand-text">
-              <span className="auth-wordmark">METANOIA</span>
               <span className="auth-version-pill">v2.4 Cognitive Engine</span>
             </div>
           </div>
 
-          {/* Glassmorphism card chính giữa */}
+          {/* Hairline card giữa hero — DESIGN.md card-feature chrome */}
           <div className="auth-hero-card-wrap">
             <div className="auth-hero-card">
               <div className="auth-hero-card-divider" />
@@ -82,7 +76,7 @@ export function AuthLayout() {
             </div>
           </div>
 
-          {/* Footer micro social proof */}
+          {/* Footer micro social proof — Voltagent hairline divider + green live dot */}
           <div className="auth-hero-footer">
             <span className="auth-pulse" aria-hidden="true">
               <span className="auth-pulse-ring" />
@@ -100,8 +94,7 @@ export function AuthLayout() {
           {/* Top bar: link Register + logo mobile */}
           <div className="auth-form-topbar">
             <div className="auth-mobile-logo">
-              <div className="auth-monogram auth-monogram--sm">M</div>
-              <span className="auth-wordmark auth-wordmark--sm">METANOIA</span>
+              <MetanoiaLogo size={28} tone="dark" />
             </div>
             <OutletTopRightLink />
           </div>
@@ -126,7 +119,6 @@ export function AuthLayout() {
  * Link "Đăng ký ngay" / "Đăng nhập" ở góc trên bên phải form.
  * Đặt tách component riêng để không phụ thuộc path hiện tại.
  */
-import { Link, useLocation } from "react-router-dom";
 function OutletTopRightLink() {
   const location = useLocation();
   const isLogin = location.pathname.startsWith("/login");

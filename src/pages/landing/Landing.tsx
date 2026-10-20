@@ -13,6 +13,10 @@ import "./landing.css";
  * Mount → đánh dấu user đã xem landing để login lần sau đi thẳng /dashboard.
  *
  * Toàn bộ class prefix `.landing-*`.
+ *
+ * NOTE: Bố cục HTML giữ nguyên bản gốc — chỉ áp lại CSS theo tokens
+ * trong /DESIGN.md (canvas đen, accent electric-green, hairline borders,
+ * Inter + SF Mono). Không thêm section mới, không đổi chữ.
  */
 export function LandingPage() {
   useEffect(() => {
@@ -36,9 +40,9 @@ export function LandingPage() {
       <main className="landing-main">
         <p className="landing-eyebrow">Tác tử LLM nhận biết ngữ cảnh</p>
         <h1 className="landing-headline">
-          Lịch ngày càng sát
+          Lịch ngày càng
           <br />
-          thực tế của bạn.
+          <span className="landing-headline-accent">sát thực tế</span> của bạn.
         </h1>
         <p className="landing-subhead">
           METANOIA học thói quen làm việc thật của bạn và tự điều chỉnh — không

@@ -1,140 +1,222 @@
 /* ===========================================================
- * Trang Landing — giới thiệu sản phẩm METANOIA.
- * Mọi class prefix `.landing-*`.
+ * Landing — DESIGN.md tokens applied.
+ * HTML y cũ, chỉ đổi CSS theo Voltagent design language:
+ *   - canvas #101010 (dark only)
+ *   - accent #00d992 (electric green) cho CTA
+ *   - hairline #3d3a39 thay shadow
+ *   - Inter + SF Mono, eyebrow tracking 2.52px, hero weight 400
+ * Tokens lấy từ /DESIGN.md (xem src/styles/voltagent-tokens.css).
  * =========================================================== */
 
 .landing {
   min-height: 100vh;
-  background-color: #ffffff;
-  color: #0f172a; /* slate-900 */
+  display: flex;
+  flex-direction: column;
+  background-color: var(--voltagent-canvas, #101010);
+  color: var(--voltagent-ink, #f2f2f2);
+  font-family: var(--font-sans), Inter, system-ui, -apple-system, "Segoe UI",
+    Roboto, sans-serif;
+  font-feature-settings: "calt", "rlig";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-/* --- header --- */
+/* ─── header ─── */
 .landing-header {
   margin: 0 auto;
   display: flex;
+  width: 100%;
   max-width: 72rem;
   align-items: center;
   justify-content: space-between;
-  padding: 1.5rem;
+  padding: var(--voltagent-space-md, 12px) var(--voltagent-space-3xl, 32px);
+  border-bottom: 1px solid var(--voltagent-hairline, #3d3a39);
 }
 
 .landing-nav {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--voltagent-space-sm, 8px);
   font-size: 0.875rem;
 }
 
 .landing-nav-link {
-  border-radius: 0.375rem;
-  padding: 0.5rem 0.75rem;
+  /* nav-link: text body, body-sm */
+  border-radius: var(--voltagent-radius-sm, 6px);
+  padding: var(--voltagent-space-xs, 4px) var(--voltagent-space-md, 12px);
   font-weight: 500;
-  color: #475569; /* slate-600 */
+  color: var(--voltagent-body, #bdbdbd);
   text-decoration: none;
-  transition: background-color 150ms ease;
+  transition: color 150ms ease, background-color 150ms ease;
 }
 
 .landing-nav-link:hover {
-  background-color: #f1f5f9; /* slate-100 */
+  color: var(--voltagent-ink-strong, #ffffff);
+  background-color: var(--voltagent-canvas-soft, #1a1a1a);
 }
 
+/* button-ghost-green — "Bắt đầu miễn phí"
+   dùng hairline border thay vì fill violet như cũ */
 .landing-nav-cta {
-  border-radius: 0.375rem;
-  background-color: #7c3aed; /* metanoia-600 */
-  padding: 0.5rem 0.75rem;
+  border-radius: var(--voltagent-radius-sm, 6px);
+  background-color: var(--voltagent-canvas, #101010);
+  border: 1px solid var(--voltagent-primary, #00d992);
+  padding: var(--voltagent-space-sm, 8px) var(--voltagent-space-lg, 16px);
   font-weight: 600;
-  color: #ffffff;
+  color: var(--voltagent-primary, #00d992);
   text-decoration: none;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  transition: background-color 150ms ease;
+  transition: background-color 150ms ease, color 150ms ease;
 }
 
 .landing-nav-cta:hover {
-  background-color: #6d28d9; /* metanoia-700 */
+  background-color: var(--voltagent-primary, #00d992);
+  color: var(--voltagent-on-primary, #101010);
 }
 
-/* --- hero --- */
+/* ─── main ─── */
 .landing-main {
   margin: 0 auto;
-  max-width: 48rem;
-  padding: 6rem 1.5rem;
+  width: 100%;
+  max-width: 64rem; /* 1024 — cho hero thoáng */
+  padding: var(--voltagent-space-5xl, 48px) var(--voltagent-space-3xl, 32px) var(--voltagent-space-6xl, 64px);
   text-align: center;
+  flex: 1; /* đẩy footer xuống đáy khi content ngắn */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
+/* eyebrow-mono: 14px, weight 600, tracking 2.52px, uppercase,
+   green nhạt (primary-soft) để không "hét" */
 .landing-eyebrow {
-  font-size: 0.875rem;
+  font-family: var(--voltagent-font-sans, Inter, sans-serif);
+  font-size: 14px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: #7c3aed;
+  letter-spacing: 2.52px;
+  color: var(--voltagent-primary-soft, #2fd6a1);
 }
 
+/* display-xl: 60px / weight 500 / tracking -0.65px / white
+   - Lifted từ 400 → 500 (giữ tinh thần "calm, NOT billboard" của DESIGN.md
+     nhưng bớt hiền — vẫn là Inter "documentation voice").
+   - Thêm letter-spacing -1px tinh tế để "snap" hơn khi size lớn.
+   - Gradient accent cho phần "sát thực tế" theo cung Inter Tight. */
 .landing-headline {
-  margin-top: 1rem;
+  margin-top: var(--voltagent-space-lg, 16px);
   font-size: 2.25rem;
-  font-weight: 600;
-  line-height: 1.1;
-  letter-spacing: -0.02em;
+  font-weight: 500;
+  line-height: 1.05;
+  letter-spacing: -0.5px;
+  color: var(--voltagent-ink-strong, #ffffff);
 }
 
-@media (min-width: 640px) {
+@media (min-width: 768px) {
   .landing-headline {
-    font-size: 3.75rem;
+    font-size: 3.5rem;
+    line-height: 1.05;
+    letter-spacing: -0.8px;
   }
 }
 
-.landing-subhead {
-  margin: 1.5rem auto 0;
-  max-width: 36rem;
-  font-size: 1.125rem;
-  color: #475569; /* slate-600 */
+@media (min-width: 1024px) {
+  .landing-headline {
+    font-size: 64px;
+    line-height: 64px;
+    letter-spacing: -1px;
+  }
 }
 
+/* Accent: chữ "sát thực tế" tô gradient electric-green +
+   subtle text-shadow glow. Đây là focal point duy nhất của brand
+   (DESIGN.md: "Reserve primary cho CTA, status pills, lightning glyph")
+   nhưng dùng cho highlight copy trong hero là acceptable khi nó
+   vẫn là typographic moment, không phải fill body. */
+.landing-headline-accent {
+  display: inline-block;
+  background: linear-gradient(
+    135deg,
+    var(--voltagent-primary, #00d992) 0%,
+    var(--voltagent-primary-soft, #2fd6a1) 50%,
+    var(--voltagent-primary-deep, #10b981) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  /* subtle glow — không material-shadow, chỉ là outer color blur */
+  filter: drop-shadow(0 0 18px rgba(0, 217, 146, 0.18));
+}
+
+/* body-lg: 18px, weight 400, line-height 28px — body grey */
+.landing-subhead {
+  margin: var(--voltagent-space-xl, 20px) auto 0;
+  max-width: 36rem;
+  font-size: 1rem;
+  line-height: 1.65;
+  color: var(--voltagent-body, #bdbdbd);
+}
+
+@media (min-width: 768px) {
+  .landing-subhead {
+    font-size: 1.125rem;
+  }
+}
+
+/* ─── CTA row ─── */
 .landing-cta-row {
-  margin-top: 2.5rem;
+  margin-top: var(--voltagent-space-3xl, 32px);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.75rem;
+  gap: var(--voltagent-space-md, 12px);
+  flex-wrap: wrap;
 }
 
+/* button-primary: green fill, near-black text, 6px radius */
 .landing-cta-primary {
-  border-radius: 0.5rem;
-  background-color: #7c3aed;
-  padding: 0.75rem 1.25rem;
-  font-size: 0.875rem;
+  border-radius: var(--voltagent-radius-sm, 6px);
+  background-color: var(--voltagent-primary, #00d992);
+  border: 1px solid var(--voltagent-primary, #00d992);
+  padding: var(--voltagent-space-md, 12px) var(--voltagent-space-xl, 20px);
+  font-size: 16px;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--voltagent-on-primary, #101010);
   text-decoration: none;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  transition: background-color 150ms ease;
+  transition: filter 150ms ease, transform 100ms ease;
 }
 
 .landing-cta-primary:hover {
-  background-color: #6d28d9;
+  filter: brightness(1.05);
 }
 
+.landing-cta-primary:active {
+  transform: translateY(1px);
+}
+
+/* button-outline-on-dark: hairline, body text */
 .landing-cta-secondary {
-  border-radius: 0.5rem;
-  border: 1px solid #e2e8f0;
-  padding: 0.75rem 1.25rem;
-  font-size: 0.875rem;
+  border-radius: var(--voltagent-radius-sm, 6px);
+  background-color: var(--voltagent-canvas, #101010);
+  border: 1px solid var(--voltagent-hairline, #3d3a39);
+  padding: var(--voltagent-space-md, 12px) var(--voltagent-space-xl, 20px);
+  font-size: 16px;
   font-weight: 600;
-  color: #334155;
+  color: var(--voltagent-ink, #f2f2f2);
   text-decoration: none;
-  transition: background-color 150ms ease;
+  transition: border-color 150ms ease, background-color 150ms ease;
 }
 
 .landing-cta-secondary:hover {
-  background-color: #f8fafc;
+  border-color: var(--voltagent-mute, #8b949e);
+  background-color: var(--voltagent-canvas-soft, #1a1a1a);
 }
 
-/* --- footer --- */
+/* ─── footer ─── */
 .landing-footer {
-  border-top: 1px solid #f1f5f9;
-  padding: 2rem 0;
+  border-top: 1px solid var(--voltagent-hairline, #3d3a39);
+  padding: var(--voltagent-space-2xl, 24px) 0;
   text-align: center;
-  font-size: 0.75rem;
-  color: #94a3b8; /* slate-400 */
+  font-size: 0.75rem; /* caption */
+  color: var(--voltagent-mute, #8b949e);
 }

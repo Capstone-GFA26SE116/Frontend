@@ -1,14 +1,29 @@
 /* ===========================================================
- * Trang đăng nhập — Login
- * Dark glassmorphism, scope theo `.login-*`.
+ * Trang đăng nhập — Login (Voltagent — trích từ DESIGN.md)
+ *
+ * Tokens bind (single source of truth: auth-layout.css :root):
+ *   --voltagent-canvas        nền form  (dark)
+ *   --voltagent-canvas-soft   input fill
+ *   --voltagent-hairline      1px borders (input/divider/card)
+ *   --voltagent-primary       electric-green CTA accent
+ *   --voltagent-primary-soft  text on dark ghost CTA
+ *   --voltagent-primary-deep  inline links
+ *   --voltagent-ink           text on canvas
+ *   --voltagent-mute          captions
+ *
+ * Giữ nguyên layout, structure, animation cascade (timing + delays).
+ *
+ * OAuth Google button (.metanoia-google-btn / -icon) được share qua file chung
+ * để đảm bảo /login và /register hiển thị GIỐNG HỆT nhau 100%.
  * =========================================================== */
+@import "../../styles/metanoia-google-btn.css";
 
 .login {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
   width: 100%;
-  color: var(--auth-text);
+  color: var(--voltagent-ink);
   font-family: "Inter", system-ui, sans-serif;
 }
 
@@ -20,42 +35,49 @@
   gap: 0.5rem;
 }
 
+/* eyebrow-mono token (DESIGN.md): Inter weight 600, tracked, UPPERCASE.
+   Đổi font từ JetBrains Mono sang Inter — eyebrow của Voltagent LUÔN là Inter,
+   mono chỉ dành cho code blocks / inline command snippets. */
 .login-eyebrow {
-  font-family: "JetBrains Mono", "Inter", monospace;
-  font-size: 0.625rem;
-  letter-spacing: 0.1em;
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 0.75rem;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   font-weight: 600;
-  color: var(--auth-primary);
+  color: var(--voltagent-primary);
   padding: 0.25rem 0.625rem;
-  border-radius: 9999px;
-  background-color: rgba(192, 193, 255, 0.1);
-  border: 1px solid rgba(192, 193, 255, 0.2);
+  border-radius: var(--voltagent-radius-pill);
+  background-color: rgba(0, 217, 146, 0.1);
+  border: 1px solid rgba(0, 217, 146, 0.3);
 }
 
+/* display-md (mobile → 24px) → display-lg (sm → 36px), weight 400 (Voltagent calm) */
 .login-title {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: var(--auth-text);
-  letter-spacing: -0.02em;
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: var(--voltagent-display-md-size);
+  font-weight: 400;
+  color: var(--voltagent-ink-strong);
+  letter-spacing: var(--voltagent-display-md-tracking);
   margin: 0.25rem 0 0;
-  line-height: 1.2;
+  line-height: var(--voltagent-display-md-lh);
 }
 
 @media (min-width: 640px) {
   .login-title {
-    font-size: 1.875rem;
+    font-size: var(--voltagent-display-lg-size);
+    line-height: var(--voltagent-display-lg-lh);
+    letter-spacing: var(--voltagent-display-lg-tracking);
   }
 }
 
 .login-subtitle {
   font-size: 0.875rem;
-  color: var(--auth-text-mute);
+  color: var(--voltagent-body);
   line-height: 1.5;
   margin: 0;
 }
 
-/* ---------- Google SSO ---------- */
+/* ---------- Google SSO (button-outline-on-dark token) ---------- */
 .login-sso {
   display: flex;
   flex-direction: column;
@@ -65,26 +87,35 @@
 
 .login-google-btn {
   position: relative;
-  display: flex;
+  display: inline-flex;
+  /* width: 100% → max-width: 320px để button OAuth nằm giữa form-shell
+     (form-shell max-width 28rem = 448px). Center với margin auto. */
   width: 100%;
+  max-width: 20rem;            /* 320px — đủ chứa icon + label, không full-width */
+  margin: 0 auto;
   align-items: center;
   justify-content: center;
-  gap: 0.75rem;
-  background-color: var(--auth-bg-4);
-  border: 1px solid var(--auth-border);
-  padding: 0.875rem 1rem;
-  border-radius: 0.75rem;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
-  color: var(--auth-text);
+  gap: 0.625rem;
+  /* DESIGN.md button-outline-on-dark: bg canvas, text ink, hairline border, radius 6px.
+     No box-shadow. */
+  background-color: var(--voltagent-canvas);
+  border: 1px solid var(--voltagent-hairline);
+  padding: 0.75rem 1rem;
+  border-radius: var(--voltagent-radius-sm);
+  color: var(--voltagent-ink-strong);
   font-size: 0.875rem;
   font-weight: 500;
+  line-height: 1.25rem;        /* 20px — khớp icon height để baseline cân */
+  font-family: "Inter", system-ui, sans-serif;
   cursor: pointer;
-  transition: all 200ms ease;
+  text-decoration: none;       /* chặn underline nếu là <a> */
+  transition: border-color 200ms ease, background-color 200ms ease,
+    transform 200ms ease;
 }
 
 .login-google-btn:hover:not(:disabled) {
-  background-color: #353942; /* surface-bright */
-  border-color: var(--auth-border-3);
+  background-color: var(--voltagent-canvas-soft);
+  border-color: var(--voltagent-body);
 }
 
 .login-google-btn:active:not(:disabled) {
@@ -96,10 +127,48 @@
   opacity: 0.6;
 }
 
+/* "Continue with Google" di chuyển vô giữa:
+   slide từ trái (translateX(-12px)) → vị trí gốc (translateX(0), đã margin: 0 auto).
+   Chạy SAU khi .login-sso parent fade-up xong (delay 140ms) → button con delay thêm 80ms = 220ms tổng.
+   Chỉ chạy 1 lần (forwards) để không gây khó chịu khi re-render. */
+.login-google-btn {
+  opacity: 0;
+  animation: login-slide-in-center 520ms cubic-bezier(0.22, 1, 0.36, 1) 220ms forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-google-btn {
+    animation: none;
+    opacity: 1;
+  }
+}
+
 .login-google-icon {
-  width: 1.25rem;
-  height: 1.25rem;
-  flex-shrink: 0;
+  /* 20px height = line-height của text → baseline align 1:1.
+     display: block loại bỏ baseline whitespace của <img> trong flex container.
+     !important để chắc chắn SVG không tự phình theo intrinsic dimension khi viewBox
+     chỉ định lệch (vd 0 0 512 512). */
+  display: block !important;
+  width: 1.25rem !important;
+  height: 1.25rem !important;
+  max-width: 1.25rem !important;          /* hard-cap chống SVG intrinsic phình ra */
+  max-height: 1.25rem !important;
+  flex: 0 0 1.25rem !important;            /* chống icon bị nén do text dài */
+  flex-shrink: 0 !important;
+  object-fit: contain !important;          /* SVG vẽ chính giữa box 20px */
+  align-self: center !important;
+}
+
+/* Text wrapper trong Google button — line-height cố định khớp icon,
+   align-self center để baseline align với SVG. */
+.login-google-btn > span {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.25rem;          /* = 20px = icon height */
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--voltagent-ink-strong);
+  flex: 0 1 auto;
 }
 
 .login-sso-hint {
@@ -107,8 +176,8 @@
   align-items: center;
   justify-content: center;
   gap: 0.375rem;
-  color: var(--auth-text-mute);
-  font-family: "JetBrains Mono", "Inter", monospace;
+  color: var(--voltagent-mute);
+  font-family: "SFMono-Regular", "JetBrains Mono", "Inter", monospace;
   font-size: 0.75rem;
   padding-top: 0.25rem;
 }
@@ -117,7 +186,7 @@
   width: 0.375rem;
   height: 0.375rem;
   border-radius: 9999px;
-  background-color: var(--auth-secondary);
+  background-color: var(--voltagent-primary);
 }
 
 /* ---------- Divider ---------- */
@@ -131,17 +200,18 @@
 .login-divider-line {
   flex-grow: 1;
   height: 1px;
-  background-color: var(--auth-border);
+  background-color: var(--voltagent-hairline);
 }
 
 .login-divider-text {
   flex-shrink: 0;
   margin: 0 1rem;
-  font-family: "JetBrains Mono", "Inter", monospace;
+  font-family: "Inter", system-ui, sans-serif;
   font-size: 0.6875rem;
-  color: var(--auth-text-dim);
+  color: var(--voltagent-mute);
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.18em;
+  font-weight: 600;
 }
 
 /* ---------- Form ---------- */
@@ -164,19 +234,21 @@
   justify-content: space-between;
 }
 
+/* caption-strong token: 12px, weight 500 */
 .login-field-label {
-  font-family: "JetBrains Mono", "Inter", monospace;
+  font-family: "Inter", system-ui, sans-serif;
   font-size: 0.75rem;
-  color: var(--auth-text-mute);
-  letter-spacing: 0.02em;
+  color: var(--voltagent-mute);
+  letter-spacing: 0.01em;
+  font-weight: 500;
 }
 
 .login-field-error {
   font-size: 0.75rem;
-  color: #fca5a5; /* red-300 cho nền tối */
+  color: var(--voltagent-red-text);
 }
 
-/* ---------- Input ---------- */
+/* ---------- Input (text-input token: canvas-soft fill, hairline border, 6px radius) ---------- */
 .login-input-wrap {
   position: relative;
   display: flex;
@@ -186,24 +258,27 @@
 .login-input {
   display: block;
   width: 100%;
-  background-color: var(--auth-bg-2);
-  color: var(--auth-text);
+  background-color: var(--voltagent-canvas-soft);
+  color: var(--voltagent-ink-strong);
   font-size: 0.875rem;
   font-family: "Inter", system-ui, sans-serif;
   padding: 0.75rem 0.875rem;
-  border-radius: 0.75rem;
-  border: 1px solid var(--auth-border);
+  border-radius: var(--voltagent-radius-sm);
+  border: 1px solid var(--voltagent-hairline);
   outline: none;
-  transition: all 150ms ease;
+  transition: border-color 150ms ease, box-shadow 200ms ease;
 }
 
 .login-input::placeholder {
-  color: rgba(144, 143, 160, 0.5);
+  color: var(--voltagent-mute);
+  opacity: 0.55;
 }
 
+/* Focus: DESIGN.md Level 2 Inset Glow — hairline đậm + 1px primary ring.
+   KHÔNG box-shadow material. */
 .login-input:focus {
-  border-color: var(--auth-accent-1);
-  box-shadow: 0 0 0 1px var(--auth-accent-1);
+  border-color: var(--voltagent-primary);
+  box-shadow: 0 0 0 1px var(--voltagent-primary);
 }
 
 .login-input--with-toggle {
@@ -213,7 +288,7 @@
 .login-input-icon {
   position: absolute;
   right: 0.875rem;
-  color: rgba(144, 143, 160, 0.5);
+  color: var(--voltagent-mute);
   pointer-events: none;
   font-size: 1.125rem;
 }
@@ -226,23 +301,24 @@
   align-items: center;
   justify-content: center;
   padding: 0.25rem;
-  color: var(--auth-text-dim);
+  color: var(--voltagent-mute);
   background: transparent;
   border: none;
-  border-radius: 0.375rem;
+  border-radius: var(--voltagent-radius-xs);
   cursor: pointer;
-  transition: color 150ms ease;
+  transition: color 150ms ease, background-color 150ms ease;
 }
 
 .login-toggle:hover {
-  color: var(--auth-text);
+  color: var(--voltagent-ink-strong);
+  background-color: rgba(255, 255, 255, 0.06);
 }
 
 .login-toggle .material-symbols-outlined {
   font-size: 1.125rem;
 }
 
-/* ---------- Remember (custom checkbox) ---------- */
+/* ---------- Remember (custom checkbox, electric-green when checked) ---------- */
 .login-remember {
   display: flex;
   align-items: center;
@@ -250,7 +326,6 @@
 }
 
 .login-checkbox-input {
-  /* ẩn native, dùng custom */
   position: absolute;
   opacity: 0;
   width: 0;
@@ -265,38 +340,38 @@
   cursor: pointer;
   user-select: none;
   font-size: 0.75rem;
-  color: var(--auth-text-mute);
+  color: var(--voltagent-mute);
   transition: color 150ms ease;
 }
 
 .login-checkbox-label:hover {
-  color: var(--auth-text);
+  color: var(--voltagent-ink);
 }
 
 .login-checkbox-box {
   width: 1rem;
   height: 1rem;
-  border-radius: 0.25rem;
-  background-color: var(--auth-bg-2);
-  border: 1px solid var(--auth-border-3);
+  border-radius: var(--voltagent-radius-xs);
+  background-color: var(--voltagent-canvas-soft);
+  border: 1px solid var(--voltagent-hairline);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 150ms ease;
+  transition: border-color 150ms ease, background-color 150ms ease;
   flex-shrink: 0;
 }
 
 .login-checkbox-check {
   width: 0.75rem;
   height: 0.75rem;
-  color: #ffffff;
+  color: var(--voltagent-on-primary);
   opacity: 0;
   transition: opacity 150ms ease;
 }
 
 .login-checkbox-input:checked + .login-checkbox-label .login-checkbox-box {
-  background-color: var(--auth-accent-1);
-  border-color: var(--auth-accent-1);
+  background-color: var(--voltagent-primary);
+  border-color: var(--voltagent-primary);
 }
 
 .login-checkbox-input:checked + .login-checkbox-label .login-checkbox-check {
@@ -304,30 +379,31 @@
 }
 
 .login-checkbox-input:focus-visible + .login-checkbox-label .login-checkbox-box {
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.45);
+  box-shadow: 0 0 0 1px var(--voltagent-primary);
 }
 
-/* ---------- Alert ---------- */
+/* ---------- Alert (Voltagent không có semantic palette riêng; dùng red subtle) ---------- */
 .login-alert {
-  border-radius: 0.5rem;
-  border: 1px solid rgba(248, 113, 113, 0.3);
-  background-color: rgba(127, 29, 29, 0.4);
-  color: #fecaca;
+  border-radius: var(--voltagent-radius-sm);
+  border: 1px solid var(--voltagent-red-border);
+  background-color: var(--voltagent-red-bg);
+  color: var(--voltagent-red-text);
   padding: 0.5rem 0.75rem;
   font-size: 0.875rem;
 }
 
-/* ---------- Links ---------- */
+/* ---------- Links (DESIGN.md: link color = primary-deep) ---------- */
 .login-link {
-  font-family: "JetBrains Mono", "Inter", monospace;
+  font-family: "Inter", system-ui, sans-serif;
   font-size: 0.75rem;
-  color: var(--auth-primary);
+  color: var(--voltagent-primary-deep);
   text-decoration: none;
+  font-weight: 500;
   transition: color 150ms ease;
 }
 
 .login-link:hover {
-  color: #e1e0ff; /* primary-fixed */
+  color: var(--voltagent-primary-soft);
   text-decoration: underline;
 }
 
@@ -335,7 +411,7 @@
   font-weight: 600;
 }
 
-/* ---------- Submit (gradient) ---------- */
+/* ---------- Submit (button-primary token: electric-green fill + on-primary text, 6px, NO shadow) ---------- */
 .login-submit {
   margin-top: 0.5rem;
   display: flex;
@@ -343,33 +419,27 @@
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  background-image: linear-gradient(
-    to right,
-    var(--auth-accent-1),
-    var(--auth-accent-2)
-  );
-  color: #ffffff;
+  background-color: var(--voltagent-primary);
+  color: var(--voltagent-on-primary);
   font-size: 0.875rem;
   font-weight: 600;
   font-family: "Inter", system-ui, sans-serif;
-  padding: 0.875rem 1rem;
-  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--voltagent-radius-sm);
   border: none;
-  box-shadow: 0 10px 25px -5px rgba(99, 102, 241, 0.25);
   cursor: pointer;
-  transition: all 200ms ease;
+  transition: background-color 200ms ease, transform 200ms ease, box-shadow 200ms ease;
 }
 
 .login-submit:hover:not(:disabled) {
-  background-image: linear-gradient(
-    to right,
-    #5558e6,
-    #7c4def
-  );
+  /* DESIGN.md Level 2 Inset Glow — 0 0 15px rgba(92,88,85,0.2). KHÔNG material shadow. */
+  background-color: var(--voltagent-primary-soft);
+  transform: translateY(-1px);
+  box-shadow: 0 0 15px rgba(92, 88, 85, 0.2);
 }
 
 .login-submit:active:not(:disabled) {
-  transform: scale(0.99);
+  transform: scale(0.99) translateY(0);
 }
 
 .login-submit:disabled {
@@ -385,7 +455,7 @@
 .login-mobile-link {
   display: block;
   font-size: 0.875rem;
-  color: var(--auth-text-mute);
+  color: var(--voltagent-mute);
   text-align: center;
   margin: 0;
 }
@@ -455,10 +525,11 @@
 @keyframes login-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.45);
+    /* CHECKBOX check ripple — Voltagent primary tint thay vì indigo */
+    box-shadow: 0 0 0 0 rgba(0, 217, 146, 0.45);
   }
   50% {
-    box-shadow: 0 0 0 8px rgba(99, 102, 241, 0);
+    box-shadow: 0 0 0 8px rgba(0, 217, 146, 0);
   }
 }
 
@@ -496,6 +567,23 @@
   100% {
     transform: scale(1.6);
     opacity: 0;
+  }
+}
+
+/* "Continue with Google" — slide từ trái vào vị trí giữa (di chuyển vô giữa).
+   Bắt đầu translateX(-12px) + opacity 0, kết thúc ở vị trí gốc (đã margin: 0 auto).
+   520ms với ease-out-expo để "chạm tâm" rồi từ từ đứng yên — calm motion của Voltagent. */
+@keyframes login-slide-in-center {
+  0% {
+    transform: translateX(-12px);
+    opacity: 0;
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
   }
 }
 
@@ -569,7 +657,7 @@
   right: -6rem;
   background: radial-gradient(
     circle,
-    rgba(128, 131, 255, 0.22),
+    rgba(0, 217, 146, 0.1),  /* primary green tint */
     transparent 70%
   );
   animation: login-blob-a 14s ease-in-out infinite;
@@ -580,7 +668,7 @@
   left: -5rem;
   background: radial-gradient(
     circle,
-    rgba(6, 182, 212, 0.14),
+    rgba(61, 58, 57, 0.14),   /* hairline hue */
     transparent 70%
   );
   animation: login-blob-b 18s ease-in-out infinite;
@@ -593,15 +681,15 @@
 }
 
 .login-input:focus {
-  border-color: var(--auth-accent-1);
+  border-color: var(--voltagent-primary);
   box-shadow:
-    0 0 0 1px var(--auth-accent-1),
-    0 0 24px -8px rgba(99, 102, 241, 0.55);
+    0 0 0 1px var(--voltagent-primary),
+    0 0 24px -8px rgba(0, 217, 146, 0.35);
 }
 
 .login-input:hover:not(:focus) {
-  border-color: var(--auth-border-3);
-  background-color: var(--auth-bg-3);
+  border-color: var(--voltagent-body);
+  background-color: var(--voltagent-canvas);
 }
 
 /* ----- Toggle visibility: rotate icon khi đổi trạng thái ----- */
@@ -645,11 +733,9 @@
 }
 
 .login-submit:hover:not(:disabled) {
+  /* DESIGN.md Level 2 Inset Glow — single soft glow, no material shadow.
+     Đã set ở static block trên; giữ transform translateY để có tactile feedback. */
   transform: translateY(-1px);
-  box-shadow:
-    0 14px 30px -8px rgba(99, 102, 241, 0.4),
-    0 0 0 1px rgba(192, 193, 255, 0.2);
-  background-image: linear-gradient(to right, #5558e6, #7c4def);
 }
 
 .login-submit:active:not(:disabled) {
@@ -660,22 +746,35 @@
 .login-google-btn {
   position: relative;
   overflow: hidden;
+  /* Giữ layout đồng bộ với .register-google-btn — button OAuth nằm giữa form,
+     không full-width. Lặp lại ở đây để override mọi rule trước (cascade-safe).
+     KHÔNG đặt display: inline-flex !important ở đây — useEffect set inline
+     display:none để ẩn button mock khi GIS đã render. !important sẽ đè inline,
+     khiến button mock không bao giờ ẩn được → hiện đúp với button trắng.
+     Các property khác (max-width, padding, font-size, border-radius) vẫn cần
+     !important để chống bị override bởi cascade. */
+  width: 100% !important;
+  max-width: 20rem !important;            /* 320px */
+  margin: 0 auto !important;
+  padding: 0.75rem 1rem !important;       /* chống bất kỳ breakpoint nào đè padding */
+  font-size: 0.875rem !important;         /* chống bất kỳ typography scale nào đè */
+  line-height: 1.25rem !important;        /* = icon height */
+  border-radius: var(--voltagent-radius-sm) !important;
   transition: background-color 200ms ease, border-color 200ms ease,
     transform 200ms ease, box-shadow 200ms ease;
 }
 
 .login-google-btn:hover:not(:disabled) {
   transform: translateY(-1px);
-  background-color: #353942;
-  border-color: var(--auth-border-3);
-  box-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.6);
+  background-color: var(--voltagent-canvas-soft);
+  border-color: var(--voltagent-body);
 }
 
 .login-google-btn:active:not(:disabled) {
   transform: scale(0.99);
 }
 
-/* ----- SSO hint dot: pulse ----- */
+/* ----- SSO hint dot: pulse (Voltagent primary green) ----- */
 .login-sso-dot {
   position: relative;
 }
@@ -684,11 +783,11 @@
   position: absolute;
   inset: 0;
   border-radius: 9999px;
-  background-color: var(--auth-secondary);
+  background-color: var(--voltagent-primary);
   animation: login-ring-pulse 2.2s ease-out infinite;
 }
 
-/* ----- Eyebrow badge: sheen ngang rất nhẹ ----- */
+/* ----- Eyebrow badge: sheen ngang rất nhẹ (green-tint, không violet) ----- */
 .login-eyebrow {
   position: relative;
   overflow: hidden;
@@ -700,7 +799,7 @@
   background-image: linear-gradient(
     100deg,
     transparent 30%,
-    rgba(192, 193, 255, 0.12) 50%,
+    rgba(0, 217, 146, 0.12) 50%,
     transparent 70%
   );
   background-size: 200% 100%;
@@ -708,7 +807,7 @@
   pointer-events: none;
 }
 
-/* ----- Link: underline chạy từ trái sang ----- */
+/* ----- Link: underline chạy từ trái sang (Voltagent primary-soft hover) ----- */
 .login-link {
   position: relative;
   background-image: linear-gradient(currentColor, currentColor);
@@ -720,7 +819,7 @@
 .login-link:hover {
   background-size: 100% 1px;
   text-decoration: none;
-  color: #e1e0ff;
+  color: var(--voltagent-primary-soft);
 }
 
 /* ----- Respect prefers-reduced-motion ----- */
@@ -769,25 +868,24 @@
   align-items: flex-start;
   gap: 0.625rem;
   padding: 0.75rem 0.875rem;
-  border-radius: 0.625rem;
+  border-radius: var(--voltagent-radius-sm);
   font-size: 0.8125rem;
   line-height: 1.25rem;
-  background-color: rgba(78, 222, 163, 0.08); /* secondary / 8% */
-  border: 1px solid rgba(78, 222, 163, 0.35);
-  color: #c7c4d7;
+  background-color: rgba(0, 217, 146, 0.08);  /* primary 8% */
+  border: 1px solid rgba(0, 217, 146, 0.3);
+  color: var(--voltagent-body);
   animation: login-banner-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  /* chừa chỗ giữa header và sso */
   margin-top: 0.25rem;
 }
 
 .login-banner--success {
-  background-color: rgba(78, 222, 163, 0.1);
-  border-color: rgba(78, 222, 163, 0.4);
-  color: #d6f4e6;
+  background-color: rgba(0, 217, 146, 0.1);
+  border-color: rgba(0, 217, 146, 0.4);
+  color: var(--voltagent-canvas-text-soft, #f5f6f7);
 }
 
 .login-banner-icon {
-  color: #4edea3; /* secondary */
+  color: var(--voltagent-primary);
   font-size: 1.25rem;
   flex-shrink: 0;
   margin-top: 0.0625rem;
@@ -804,12 +902,12 @@
 .login-banner-title {
   font-size: 0.8125rem;
   font-weight: 600;
-  color: #6ffbbe; /* secondary-fixed */
+  color: var(--voltagent-primary-soft);
   letter-spacing: -0.005em;
 }
 
 .login-banner-text {
-  color: #c7c4d7;
+  color: var(--voltagent-body);
   font-size: 0.75rem;
   line-height: 1.25rem;
 }
@@ -819,9 +917,9 @@
   border: none;
   padding: 0.125rem;
   margin: -0.125rem -0.25rem 0 0;
-  color: #c7c4d7;
+  color: var(--voltagent-mute);
   cursor: pointer;
-  border-radius: 0.25rem;
+  border-radius: var(--voltagent-radius-xs);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -830,7 +928,7 @@
 }
 
 .login-banner-close:hover {
-  color: #dfe2ee;
+  color: var(--voltagent-ink-strong);
   background-color: rgba(255, 255, 255, 0.05);
 }
 

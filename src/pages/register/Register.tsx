@@ -105,7 +105,7 @@ export function RegisterPage() {
           type="button"
           onClick={handleGoogle}
           disabled={googleLoading || submitting}
-          className="register-google-btn"
+          className="metanoia-google-btn register-google-btn"
         >
           <GoogleIcon />
           <span>
@@ -320,7 +320,7 @@ export function RegisterPage() {
 function GoogleIcon() {
   return (
     <svg
-      className="register-google-icon"
+      className="metanoia-google-icon register-google-icon"
       viewBox="0 0 24 24"
       aria-hidden="true"
     >

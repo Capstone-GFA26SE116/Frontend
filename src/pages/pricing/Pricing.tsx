@@ -1,11 +1,17 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../auth/AuthContext";
+import {
+  getCurrentPlan,
+  setCurrentPlan,
+  type PlanKey,
+} from "../../lib/api-client";
 import { useStaggeredMount } from "../../hooks/useStaggeredMount";
 import "./pricing.css";
 
 /* ----- Types ----- */
 type BillingCycle = "monthly" | "annual";
-type PlanId = "starter" | "pro" | "team";
+type PlanId = PlanKey;
 
 interface PlanPricing {
   monthly: { price: string; period: string; total: string };
@@ -58,7 +64,55 @@ const PLAN_PRICING: Record<"pro" | "team", PlanPricing> = {
  */
 export function PricingPage() {
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
   const [billing, setBilling] = useState<BillingCycle>("annual");
+
+  /** Plan user đang dùng thật sự (chỉ meaningful khi đã login). */
+  const currentPlan: PlanId | null = isAuthenticated
+    ? getCurrentPlan()
+    : null;
+
+  /**
+   * Auto-select default plan (chỉ khi user chưa login):
+   *  - Chưa login           → Pro (gợi ý nâng cấp)
+   *  - Đã login + chưa plan → Starter (Khởi đầu — gói user đang dùng)
+   *  - Đã login + có plan   → plan hiện tại của user (nhưng sẽ render disabled)
+   */
+  const initialPlan: PlanId = (() => {
+    if (!isAuthenticated) return "pro";
+    return currentPlan ?? "starter";
+  })();
+
+  /* ----- Selected plan (click anywhere on card).
+     Khi user đã login + có plan → mặc định null, vì plan đó sẽ tự "current"
+     chứ không phải "selected". ---------- */
+  const [selectedPlan, setSelectedPlan] = useState<PlanId | null>(
+    currentPlan ? null : initialPlan,
+  );
+  /* Ripple position (px within card) for click feedback */
+  const [ripple, setRipple] = useState<
+    | { variant: PlanId; x: number; y: number; key: number }
+    | null
+  >(null);
+
+  function selectPlan(variant: PlanId, e?: React.MouseEvent) {
+    // Card đang là plan hiện tại → block toggle, không ripple.
+    if (variant === currentPlan) return;
+
+    // ripple effect
+    if (e && e.currentTarget instanceof HTMLElement) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      setRipple({ variant, x, y, key: Date.now() });
+      // tự clear ripple sau khi animation chạy xong
+      window.setTimeout(
+        () => setRipple((r) => (r?.key === ripple?.key ? null : r)),
+        650,
+      );
+    }
+    setSelectedPlan((prev) => (prev === variant ? null : variant));
+  }
 
   /**
    * Stagger groups — pattern giống Dashboard:
@@ -155,12 +209,14 @@ export function PricingPage() {
           <div className="pricing-plan-grid">
             <PlanCard
               variant="starter"
-              eyebrow="Khởi đầu"
+              eyebrow={isAuthenticated ? "Gói của bạn" : "Khởi đầu"}
               icon="person"
               title="Cá nhân khởi đầu"
               desc="Phù hợp cho freelancer và cá nhân làm việc độc lập bước đầu thiết lập kỷ luật và quản lý lịch trình cơ bản."
-              price="0đ"
-              priceSuffix="/ trọn đời"
+              price={currentPlan === "starter" ? "Đang dùng" : "0đ"}
+              priceSuffix={
+                currentPlan === "starter" ? "— miễn phí" : "/ trọn đời"
+              }
               features={[
                 { ok: true, text: "Sắp xếp theo hạn chót & khung giờ rảnh" },
                 { ok: true, text: "Đồng bộ 1 Google Calendar" },
@@ -168,7 +224,44 @@ export function PricingPage() {
                 { ok: false, text: "Ma trận Eisenhower AI tự động" },
                 { ok: false, text: "Vector memory lưu trữ ngữ cảnh" },
               ]}
-              cta={{ label: "Gói hiện tại của bạn", disabled: true }}
+              cta={
+                isAuthenticated
+                  ? currentPlan === "starter"
+                    ? {
+                        // User đã login + đang ở Starter → disabled
+                        label: "Đang dùng gói này",
+                        onClick: () => navigate("/dashboard"),
+                        icon: "arrow_forward",
+                      }
+                    : currentPlan === "pro" || currentPlan === "team"
+                      ? {
+                          // User đã login + đang ở Pro/Team → downgrade về Starter
+                          label: "Chuyển về Khởi đầu",
+                          onClick: () => {
+                            setCurrentPlan("starter");
+                            navigate("/dashboard");
+                          },
+                          icon: "arrow_downward",
+                        }
+                      : {
+                          // User đã login + CHƯA có plan → đăng ký Starter (miễn phí)
+                          label: "Bắt đầu miễn phí",
+                          onClick: () => {
+                            setCurrentPlan("starter");
+                            navigate("/dashboard");
+                          },
+                          icon: "arrow_forward",
+                        }
+                  : {
+                      label: "Đăng ký miễn phí",
+                      onClick: () => navigate("/register"),
+                      icon: "arrow_forward",
+                    }
+              }
+              current={currentPlan === "starter"}
+              selected={selectedPlan === "starter"}
+              onSelect={(e) => selectPlan("starter", e)}
+              ripple={ripple && ripple.variant === "starter" ? ripple : null}
               animation={{
                 mounted: plansAnim.mounted,
                 delayStyle: plansAnim.getDelay(0),
@@ -203,12 +296,33 @@ export function PricingPage() {
                   text: "Tích hợp pgvector lưu trữ ngữ cảnh khách hàng trọn đời",
                 },
               ]}
-              cta={{
-                label: "Nâng cấp gói Pro ngay",
-                onClick: () => goCheckout("pro", billing),
-                primary: true,
-                icon: "arrow_forward",
-              }}
+              cta={
+                isAuthenticated
+                  ? currentPlan === "pro"
+                    ? {
+                        // Đã login + đang ở Pro → disabled
+                        label: "Đang dùng gói này",
+                        onClick: () => navigate("/dashboard"),
+                        icon: "arrow_forward",
+                      }
+                    : {
+                        // Đã login + chưa ở Pro (starter/null/team) → nâng cấp lên Pro
+                        label: "Nâng cấp lên Pro",
+                        onClick: () => goCheckout("pro", billing),
+                        primary: true,
+                        icon: "arrow_forward",
+                      }
+                  : {
+                      label: "Nâng cấp gói Pro ngay",
+                      onClick: () => goCheckout("pro", billing),
+                      primary: true,
+                      icon: "arrow_forward",
+                    }
+              }
+              current={currentPlan === "pro"}
+              selected={selectedPlan === "pro"}
+              onSelect={(e) => selectPlan("pro", e)}
+              ripple={ripple && ripple.variant === "pro" ? ripple : null}
               animation={{
                 mounted: plansAnim.mounted,
                 delayStyle: plansAnim.getDelay(1),
@@ -237,10 +351,34 @@ export function PricingPage() {
                 },
                 { ok: true, text: "Bộ nhớ ngữ cảnh dự án dùng chung (Shared Team Vector)" },
               ]}
-              cta={{
-                label: "Chọn gói Studio",
-                onClick: () => goCheckout("team", billing),
-              }}
+              cta={
+                isAuthenticated
+                  ? currentPlan === "team"
+                    ? {
+                        // Đã login + đang ở Team → disabled
+                        label: "Đang dùng gói này",
+                        onClick: () => navigate("/dashboard"),
+                        accent: true,
+                        icon: "arrow_forward",
+                      }
+                    : {
+                        // Đã login + chưa ở Team (starter/null/pro) → nâng cấp lên Team
+                        label: "Chọn gói Studio",
+                        onClick: () => goCheckout("team", billing),
+                        accent: true,
+                        icon: "arrow_forward",
+                      }
+                  : {
+                      label: "Chọn gói Studio",
+                      onClick: () => goCheckout("team", billing),
+                      accent: true,
+                      icon: "arrow_forward",
+                    }
+              }
+              current={currentPlan === "team"}
+              selected={selectedPlan === "team"}
+              onSelect={(e) => selectPlan("team", e)}
+              ripple={ripple && ripple.variant === "team" ? ripple : null}
               animation={{
                 mounted: plansAnim.mounted,
                 delayStyle: plansAnim.getDelay(2),
@@ -485,7 +623,10 @@ interface PlanCardProps {
     label: string;
     onClick?: () => void;
     disabled?: boolean;
+    /** Primary style (tím - cho Pro). */
     primary?: boolean;
+    /** Accent style (emerald gradient - cho Team). */
+    accent?: boolean;
     icon?: string;
   };
   /* Pricing: nếu là starter thì price cố định; pro/team thì đổi theo billing */
@@ -503,6 +644,19 @@ interface PlanCardProps {
     mounted: boolean;
     bumpKey: number;
   };
+  /** Plan đang được chọn (highlight + "Selected" badge). */
+  selected?: boolean;
+  /**
+   * Card này là plan user ĐANG dùng (chỉ khi đã login và có plan):
+   *  - disabled: bỏ ripple, click không toggle selected, CTA disabled.
+   *  - hiển thị badge "Đang dùng" thay "Đã chọn" / "Khuyên dùng".
+   *  - CSS: opacity nhẹ + grayscale + cursor not-allowed.
+   */
+  current?: boolean;
+  /** Click handler cho toàn bộ card (CTA vẫn hoạt động bình thường). */
+  onSelect?: (e: React.MouseEvent) => void;
+  /** Ripple effect: tọa độ trong card + key để remount animation. */
+  ripple?: { x: number; y: number; key: number } | null;
 }
 
 function PlanCard(props: PlanCardProps) {
@@ -533,16 +687,57 @@ function PlanCard(props: PlanCardProps) {
         "pricing-plan" +
         (isPro ? " pricing-plan--pro" : "") +
         (isStarter ? " pricing-plan--starter" : "") +
-        (props.animation.mounted ? " pricing-plan--in" : "")
+        (props.animation.mounted ? " pricing-plan--in" : "") +
+        (props.selected ? " pricing-plan--selected" : "") +
+        (props.current ? " pricing-plan--current" : "")
       }
       style={props.animation.delayStyle}
+      onClick={props.current ? undefined : props.onSelect}
+      role="button"
+      tabIndex={props.cta.disabled || props.current ? -1 : 0}
+      aria-pressed={props.selected ?? false}
+      aria-current={props.current ? "true" : undefined}
+      onKeyDown={(e) => {
+        if (props.current || !props.onSelect) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          props.onSelect(e as unknown as React.MouseEvent);
+        }
+      }}
     >
-      {isPro && (
+      {/* Ripple effect khi click (bỏ qua nếu card là plan hiện tại) */}
+      {props.ripple && !props.current && (
+        <span
+          key={props.ripple.key}
+          className="pricing-plan-ripple"
+          style={{
+            left: props.ripple.x,
+            top: props.ripple.y,
+          }}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Badge logic:
+          - current: "Đang dùng ✓" (ưu tiên cao nhất)
+          - selected: "Đã chọn"
+          - pro mặc định: "Khuyên dùng" */}
+      {props.current ? (
+        <span className="pricing-plan-badge pricing-plan-badge--current">
+          <span className="material-symbols-outlined">verified</span>
+          Đang dùng
+        </span>
+      ) : props.selected ? (
+        <span className="pricing-plan-badge pricing-plan-badge--selected">
+          <span className="material-symbols-outlined">check_circle</span>
+          Đã chọn
+        </span>
+      ) : isPro ? (
         <span className="pricing-plan-badge">
           <span className="material-symbols-outlined">auto_awesome</span>
           Khuyên dùng
         </span>
-      )}
+      ) : null}
 
       <div className="pricing-plan-body">
         <div className="pricing-plan-head">
@@ -629,18 +824,33 @@ function PlanCard(props: PlanCardProps) {
 
       <button
         type="button"
-        onClick={props.cta.onClick}
-        disabled={props.cta.disabled}
+        onClick={(e) => {
+          e.stopPropagation();
+          props.cta.onClick?.();
+        }}
+        disabled={props.cta.disabled || props.current}
+        aria-disabled={props.cta.disabled || props.current || undefined}
         className={
           "pricing-plan-cta" +
           (props.cta.primary ? " pricing-plan-cta--primary" : "") +
-          (props.cta.disabled ? " pricing-plan-cta--disabled" : "")
+          (props.cta.accent && !props.cta.primary
+            ? " pricing-plan-cta--accent"
+            : "") +
+          (props.cta.disabled || props.current
+            ? " pricing-plan-cta--disabled"
+            : "")
         }
       >
-        <span>{props.cta.label}</span>
-        {props.cta.icon && (
-          <span className="material-symbols-outlined">{props.cta.icon}</span>
-        )}
+        <span>
+          {props.current
+            ? props.variant === "starter"
+              ? "Đang dùng gói này"
+              : "Đang dùng gói này"
+            : props.cta.label}
+        </span>
+        <span className="material-symbols-outlined">
+          {props.current ? "verified" : props.cta.icon}
+        </span>
       </button>
     </article>
   );

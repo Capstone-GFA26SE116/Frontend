@@ -524,6 +524,28 @@
   box-shadow: 0 14px 30px -8px rgba(99, 102, 241, 0.5);
 }
 
+/* ----- Team plan CTA: emerald accent (gradient + glow) ----- */
+.pricing-plan-cta--accent {
+  background: linear-gradient(135deg, #10b981 0%, #14b8a6 100%);
+  color: #ffffff;
+  box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.45);
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.pricing-plan-cta--accent:hover {
+  background: linear-gradient(135deg, #059669 0%, #0d9488 100%);
+  box-shadow: 0 14px 30px -8px rgba(20, 184, 166, 0.55);
+  transform: translateY(-1px);
+}
+
+/* Focus ring cho cả 2 variants nổi bật */
+.pricing-plan-cta--primary:focus-visible,
+.pricing-plan-cta--accent:focus-visible {
+  outline: 2px solid rgba(99, 102, 241, 0.5);
+  outline-offset: 3px;
+}
+
 .pricing-plan-cta--disabled {
   background-color: #262a33;
   color: #908fa0;
@@ -539,6 +561,215 @@
 
 .pricing-plan-cta .material-symbols-outlined {
   font-size: 1.125rem;
+}
+
+/* ================= CARD SELECTOR (click anywhere) ================= */
+
+/* ----- Current plan (user đang dùng) — disabled + dim ----- */
+.pricing-plan--current {
+  opacity: 0.62;
+  filter: grayscale(0.35);
+  cursor: default;
+  transition: opacity 220ms ease, filter 220ms ease, box-shadow 220ms ease;
+}
+
+.pricing-plan--current:hover {
+  transform: none; /* override hover translateY */
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3); /* base shadow */
+  opacity: 0.7; /* hover nhẹ tăng opacity cho biết "đang ở đây" */
+  filter: grayscale(0.2);
+}
+
+/* Pro + Starter thì bỏ translateY của pro */
+.pricing-plan--pro.pricing-plan--current {
+  transform: none;
+}
+
+.pricing-plan--current .pricing-plan-cta {
+  /* "Đã mua rồi" - CTA primary nhưng disabled */
+  background-color: #4edea3;
+  color: #052016;
+  opacity: 0.85;
+  cursor: default;
+  box-shadow: 0 6px 18px -6px rgba(78, 222, 163, 0.4);
+}
+
+.pricing-plan--current .pricing-plan-cta:hover {
+  /* KHÔNG hiệu ứng hover trên CTA hiện tại */
+  background-color: #4edea3;
+  color: #052016;
+  box-shadow: 0 6px 18px -6px rgba(78, 222, 163, 0.4);
+  transform: none;
+}
+
+/* Pro thì giữ accent khi current */
+.pricing-plan--pro.pricing-plan--current .pricing-plan-cta {
+  background-color: #c0c1ff;
+  color: #1000a9;
+  box-shadow: 0 6px 18px -6px rgba(192, 193, 255, 0.4);
+}
+.pricing-plan--pro.pricing-plan--current .pricing-plan-cta:hover {
+  background-color: #c0c1ff;
+  color: #1000a9;
+  box-shadow: 0 6px 18px -6px rgba(192, 193, 255, 0.4);
+  transform: none;
+}
+
+/* Team thì giữ accent emerald khi current */
+.pricing-plan--team.pricing-plan--current .pricing-plan-cta {
+  background: #a7f3d0;
+  color: #064e3b;
+  box-shadow: 0 6px 18px -6px rgba(167, 243, 208, 0.4);
+}
+.pricing-plan--team.pricing-plan--current .pricing-plan-cta:hover {
+  background: #a7f3d0;
+  color: #064e3b;
+  box-shadow: 0 6px 18px -6px rgba(167, 243, 208, 0.4);
+  transform: none;
+}
+
+/* Badge "Đang dùng" */
+.pricing-plan-badge--current {
+  background: #4edea3;
+  color: #052016;
+  box-shadow: 0 6px 18px -4px rgba(78, 222, 163, 0.5);
+}
+.pricing-plan-badge--current .material-symbols-outlined {
+  color: #052016;
+}
+
+/* Pro thì dùng accent tím khi current */
+.pricing-plan--pro .pricing-plan-badge--current {
+  background: #c0c1ff;
+  color: #1000a9;
+  box-shadow: 0 6px 18px -4px rgba(192, 193, 255, 0.55);
+}
+.pricing-plan--pro .pricing-plan-badge--current .material-symbols-outlined {
+  color: #1000a9;
+}
+
+/* Team thì dùng accent emerald khi current */
+.pricing-plan--team .pricing-plan-badge--current {
+  background: #a7f3d0;
+  color: #064e3b;
+  box-shadow: 0 6px 18px -4px rgba(167, 243, 208, 0.55);
+}
+.pricing-plan--team .pricing-plan-badge--current .material-symbols-outlined {
+  color: #064e3b;
+}
+
+/* Selected state — nổi bật với ring primary + pulse mềm */
+.pricing-plan--selected {
+  border-color: #c0c1ff;
+  box-shadow:
+    0 0 0 2px rgba(192, 193, 255, 0.5),
+    0 20px 30px -8px rgba(0, 0, 0, 0.5),
+    0 0 32px -4px rgba(192, 193, 255, 0.25);
+  cursor: pointer;
+  animation: pricing-plan-pulse 1.8s ease-out 1;
+}
+
+.pricing-plan--selected.pricing-plan--pro {
+  border-color: #c0c1ff;
+  box-shadow:
+    0 0 0 2px rgba(192, 193, 255, 0.6),
+    0 20px 30px -8px rgba(0, 0, 0, 0.5),
+    0 0 36px -4px rgba(192, 193, 255, 0.35);
+}
+
+.pricing-plan--starter.pricing-plan--selected {
+  border-color: #4edea3;
+  box-shadow:
+    0 0 0 2px rgba(78, 222, 163, 0.4),
+    0 20px 30px -8px rgba(0, 0, 0, 0.5),
+    0 0 28px -4px rgba(78, 222, 163, 0.25);
+}
+
+@keyframes pricing-plan-pulse {
+  0% {
+    transform: scale(1);
+    box-shadow:
+      0 0 0 0 rgba(192, 193, 255, 0.45),
+      0 20px 30px -8px rgba(0, 0, 0, 0.5);
+  }
+  40% {
+    transform: scale(1.015);
+    box-shadow:
+      0 0 0 8px rgba(192, 193, 255, 0.18),
+      0 20px 30px -8px rgba(0, 0, 0, 0.5);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow:
+      0 0 0 2px rgba(192, 193, 255, 0.5),
+      0 20px 30px -8px rgba(0, 0, 0, 0.5);
+  }
+}
+
+/* Hover hint khi không phải selected */
+.pricing-plan[role="button"]:hover {
+  transform: translateY(-2px);
+}
+.pricing-plan--pro[role="button"]:hover {
+  transform: translateY(-0.75rem); /* ghi đè translateY của pro */
+}
+
+/* "Đã chọn" badge — đè lên "Khuyên dùng" khi selected */
+.pricing-plan-badge--selected {
+  background: #c0c1ff;
+  color: #1000a9;
+  box-shadow: 0 6px 18px -4px rgba(192, 193, 255, 0.55);
+}
+.pricing-plan-badge--selected .material-symbols-outlined {
+  color: #1000a9;
+}
+
+/* Ripple — overlay tròn bắt đầu 0px, expand ra 600px trong 600ms */
+.pricing-plan-ripple {
+  position: absolute;
+  border-radius: 9999px;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0);
+  background: radial-gradient(
+    circle,
+    rgba(192, 193, 255, 0.55) 0%,
+    rgba(192, 193, 255, 0.25) 40%,
+    rgba(192, 193, 255, 0) 70%
+  );
+  width: 600px;
+  height: 600px;
+  opacity: 1;
+  animation: pricing-plan-ripple 600ms cubic-bezier(0.22, 1, 0.36, 1)
+    forwards;
+  z-index: 0;
+}
+
+.pricing-plan--starter .pricing-plan-ripple {
+  background: radial-gradient(
+    circle,
+    rgba(78, 222, 163, 0.5) 0%,
+    rgba(78, 222, 163, 0.22) 40%,
+    rgba(78, 222, 163, 0) 70%
+  );
+}
+
+@keyframes pricing-plan-ripple {
+  0% {
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0;
+  }
+}
+
+/* Đảm bảo content hiển thị trên ripple */
+.pricing-plan-body,
+.pricing-plan-cta,
+.pricing-plan-badge {
+  position: relative;
+  z-index: 1;
 }
 
 /* ================= COMPARE ================= */

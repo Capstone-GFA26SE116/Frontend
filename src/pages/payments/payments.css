@@ -1,0 +1,676 @@
+/* ===========================================================
+ * Payments (Checkout) page
+ * Route: /checkout?plan=pro&cycle=annual
+ *
+ * Theme: Cognitive Minimalist Dark — đồng bộ với
+ * ProjectDetail / Pricing. Class prefix: `.pay-*`.
+ * =========================================================== */
+
+.pay {
+  position: relative;
+  isolation: isolate;
+  color: #dfe2ee;
+  font-family: "Inter", system-ui, sans-serif;
+  padding: 1.5rem 0 4rem;
+  min-height: 100%;
+}
+
+.pay-ambient {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(120px);
+  pointer-events: none;
+  z-index: -1;
+}
+.pay-ambient--top {
+  top: -6rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40rem;
+  height: 18rem;
+  background: linear-gradient(
+    180deg,
+    rgba(192, 193, 255, 0.1),
+    rgba(208, 188, 255, 0.05),
+    transparent
+  );
+}
+
+.pay-container {
+  position: relative;
+  max-width: 80rem;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* ----- Top bar / back link + security pill ----- */
+.pay-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.pay-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #c7c4d7;
+  text-decoration: none;
+  font-size: 13px;
+  transition: color 160ms ease;
+}
+.pay-back:hover { color: #dfe2ee; }
+.pay-back .material-symbols-outlined { font-size: 18px; }
+
+.pay-secure {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 9999px;
+  background: #181c24;
+  color: #c0c1ff;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.pay-secure .material-symbols-outlined { font-size: 16px; }
+
+/* ----- Header ----- */
+.pay-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.pay-title {
+  margin: 0;
+  font-size: 32px;
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: #dfe2ee;
+}
+.pay-subtitle {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: #c7c4d7;
+  max-width: 48rem;
+}
+
+/* ----- Layout grid ----- */
+.pay-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+@media (min-width: 1024px) {
+  .pay-grid { grid-template-columns: 6fr 6fr; }
+}
+
+/* ===========================================================
+ * Left column: Order summary + Activation info
+ * =========================================================== */
+.pay-col { display: flex; flex-direction: column; gap: 1rem; }
+
+/* ----- Order summary card ----- */
+.pay-summary {
+  background: #181c24;
+  border-radius: 1rem;
+  padding: 1.75rem 2rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  animation: pay-fade-up 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.pay-summary.is-loading { opacity: 0.5; pointer-events: none; }
+
+.pay-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #262a33;
+  flex-wrap: wrap;
+}
+.pay-summary-head-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.pay-summary-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 0.75rem;
+  background: rgba(192, 193, 255, 0.12);
+  color: #c0c1ff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.pay-summary-icon .material-symbols-outlined { font-size: 22px; }
+.pay-summary-title {
+  margin: 0;
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 600;
+  color: #dfe2ee;
+}
+.pay-summary-cycle {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: #c0c1ff;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  display: block;
+  margin-top: 2px;
+}
+.pay-summary-badge {
+  padding: 4px 10px;
+  border-radius: 9999px;
+  background: rgba(78, 222, 163, 0.12);
+  color: #4edea3;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.pay-summary-desc {
+  margin: 0;
+  font-size: 13px;
+  color: #908fa0;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #262a33;
+  line-height: 1.6;
+}
+
+.pay-summary-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  font-size: 13px;
+  color: #c7c4d7;
+}
+.pay-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+.pay-summary-row .strike { text-decoration: line-through; color: #908fa0; }
+.pay-summary-row .discount { color: #4edea3; }
+.pay-summary-row .mono { font-family: "JetBrains Mono", monospace; }
+
+.pay-summary-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #262a33;
+  flex-wrap: wrap;
+}
+.pay-summary-total-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #dfe2ee;
+}
+.pay-summary-total-value {
+  text-align: right;
+}
+.pay-summary-total-price {
+  display: block;
+  font-size: 28px;
+  line-height: 1.15;
+  font-weight: 700;
+  color: #c0c1ff;
+  letter-spacing: -0.02em;
+}
+.pay-summary-total-equiv {
+  margin: 4px 0 0;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: #908fa0;
+}
+
+/* ===========================================================
+ * Activation card
+ * =========================================================== */
+.pay-form-card {
+  background: #181c24;
+  border-radius: 1rem;
+  padding: 1.75rem 2rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.pay-form-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.pay-form-head .material-symbols-outlined { color: #4edea3; font-size: 20px; }
+.pay-form-head h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #dfe2ee;
+}
+
+.pay-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.pay-label {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: #908fa0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 500;
+}
+.pay-input {
+  width: 100%;
+  padding: 0.7rem 1rem;
+  background: #262a33;
+  color: #dfe2ee;
+  border: 1px solid #31353e;
+  border-radius: 0.5rem;
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.pay-input:focus {
+  border-color: #c0c1ff;
+  box-shadow: 0 0 0 3px rgba(192, 193, 255, 0.15);
+}
+
+.pay-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 13px;
+  color: #c7c4d7;
+  cursor: pointer;
+}
+.pay-checkbox-row input { accent-color: #c0c1ff; }
+
+.pay-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+  font-size: 12px;
+  color: #908fa0;
+}
+.pay-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.pay-badge .material-symbols-outlined {
+  color: #4edea3;
+  font-size: 16px;
+}
+
+/* ===========================================================
+ * Right column: Payment method + Trust strip
+ * =========================================================== */
+
+/* ----- Method tabs ----- */
+.pay-method {
+  background: #262a33;
+  border: 1px solid rgba(192, 193, 255, 0.3);
+  border-radius: 1rem;
+  padding: 1.75rem 2rem;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  animation: pay-fade-up 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: 100ms;
+}
+.pay-method-eyebrow {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: #908fa0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.pay-method-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+.pay-method-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0.85rem 0.5rem;
+  background: #181c24;
+  border: 1px solid transparent;
+  border-radius: 0.75rem;
+  color: #c7c4d7;
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease,
+    color 160ms ease, transform 100ms ease;
+}
+.pay-method-tab:hover { background: #31353e; }
+.pay-method-tab:active { transform: scale(0.98); }
+.pay-method-tab.is-active {
+  background: #262a33;
+  border-color: #c0c1ff;
+  color: #c0c1ff;
+}
+.pay-method-tab .tab-icon {
+  font-size: 24px !important;
+}
+.pay-method-tab .tab-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #dfe2ee;
+}
+.pay-method-tab.is-active .tab-name { color: #c0c1ff; }
+.pay-method-tab .tab-sub {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: #908fa0;
+  letter-spacing: 0.02em;
+}
+.pay-method-tab.is-active .tab-sub { color: #4edea3; }
+.pay-method-tab.momo .tab-icon { color: #d0bcff; }
+.pay-method-tab.card .tab-icon { color: #c7c4d7; }
+
+/* ----- QR / wallet / card panel ----- */
+.pay-panel {
+  background: #181c24;
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+.pay-panel-qr {
+  padding: 0.75rem;
+  background: #ffffff;
+  border-radius: 0.75rem;
+  width: 144px;
+  height: 144px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+.pay-panel-qr svg { width: 100%; height: 100%; }
+/* QR thật từ gateway (ảnh vietqr.io hoặc momo qr image) */
+.pay-qr-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+/* Khi gateway chưa trả qrData */
+.pay-qr-empty {
+  font-size: 11px;
+  line-height: 1.35;
+  color: #555;
+  text-align: center;
+  padding: 0.5rem;
+}
+/* Nút "Open MoMo app" (deeplink) */
+.pay-momo-open {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #a82d8a 0%, #d63384 100%);
+  color: #fff;
+  text-decoration: none;
+  border-radius: 0.5rem;
+  font-size: 13px;
+  font-weight: 600;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+.pay-momo-open:hover { filter: brightness(1.1); }
+.pay-momo-open:active { transform: scale(0.97); }
+.pay-momo-open .material-symbols-outlined { font-size: 32px; }
+.pay-panel-info { flex: 1; min-width: 0; }
+.pay-panel-info h5 {
+  margin: 0 0 0.4rem;
+  font-size: 15px;
+  font-weight: 600;
+  color: #dfe2ee;
+}
+.pay-panel-info p {
+  margin: 0;
+  font-size: 13px;
+  color: #c7c4d7;
+  line-height: 1.55;
+}
+.pay-panel-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding-top: 0.5rem;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: #4edea3;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.pay-panel-status .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: #4edea3;
+  position: relative;
+}
+.pay-panel-status .dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: #4edea3;
+  animation: pay-ping 1.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+  opacity: 0.6;
+}
+.pay-panel-status .dot.is-static {
+  background: #464554;
+}
+.pay-panel-status .dot.is-static::after { display: none; }
+.pay-panel-status.is-waiting { color: #4edea3; }
+.pay-panel-status.is-paid { color: #4edea3; }
+.pay-panel-status.is-cancelled,
+.pay-panel-status.is-failed { color: #ffb4ab; }
+
+.pay-panel-bank {
+  background: #181c24;
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  font-size: 13px;
+  color: #c7c4d7;
+}
+.pay-panel-bank-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+.pay-panel-bank-row .key { color: #908fa0; }
+.pay-panel-bank-row .val { color: #dfe2ee; font-weight: 500; }
+.pay-panel-bank-row .mono {
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 600;
+}
+.pay-panel-bank-row .primary { color: #c0c1ff; font-weight: 700; }
+.pay-transfer-content {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: #4edea3;
+  background: #262a33;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+/* ----- Action button ----- */
+.pay-cta {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1.25rem;
+  border-radius: 0.5rem;
+  background: #6366f1;
+  color: #ffffff;
+  border: 0;
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 160ms ease, transform 100ms ease,
+    box-shadow 160ms ease;
+  box-shadow: 0 12px 28px rgba(99, 102, 241, 0.25);
+}
+.pay-cta:hover { background: #4f46e5; }
+.pay-cta:active { transform: scale(0.985); }
+.pay-cta:disabled { opacity: 0.6; cursor: not-allowed; }
+.pay-cta .material-symbols-outlined { font-size: 18px; }
+
+.pay-secondary-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: 0.5rem;
+  background: transparent;
+  border: 1px solid #31353e;
+  color: #c7c4d7;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+.pay-secondary-btn:hover { background: #262a33; color: #dfe2ee; }
+.pay-secondary-btn .material-symbols-outlined { font-size: 16px; }
+
+/* ===========================================================
+ * Trust strip
+ * =========================================================== */
+.pay-trust {
+  background: #181c24;
+  border-radius: 0.75rem;
+  padding: 1rem 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: #908fa0;
+  letter-spacing: 0.02em;
+}
+.pay-trust > div { display: inline-flex; align-items: center; gap: 0.4rem; }
+.pay-trust .material-symbols-outlined { font-size: 16px; }
+.pay-trust .ico-shield { color: #4edea3; }
+.pay-trust .ico-support { color: #c0c1ff; }
+
+/* ===========================================================
+ * States (loading / error / success)
+ * =========================================================== */
+.pay-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 4rem 1.5rem;
+  text-align: center;
+  background: #181c24;
+  border-radius: 1rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+.pay-state-icon {
+  font-size: 44px;
+  color: #c0c1ff;
+  opacity: 0.85;
+}
+.pay-state h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #dfe2ee;
+}
+.pay-state p {
+  margin: 0;
+  color: #908fa0;
+  font-size: 14px;
+  max-width: 30rem;
+}
+.pay-state h2.ok { color: #4edea3; }
+.pay-state h2.bad { color: #ffb4ab; }
+.pay-state--success .pay-state-icon { color: #4edea3; }
+.pay-state--error .pay-state-icon { color: #ffb4ab; }
+
+/* ===========================================================
+ * Animations
+ * =========================================================== */
+@keyframes pay-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes pay-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes pay-ping {
+  75%, 100% { transform: scale(2); opacity: 0; }
+}
+
+.spin { animation: pay-spin 0.9s linear infinite; }
+
+/* ----- Responsive ----- */
+@media (max-width: 640px) {
+  .pay-title { font-size: 24px; }
+  .pay-summary,
+  .pay-form-card,
+  .pay-method { padding: 1.25rem; }
+  .pay-method-tabs { grid-template-columns: repeat(3, 1fr); }
+  .pay-panel { flex-direction: column; align-items: stretch; }
+  .pay-panel-qr { margin: 0 auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pay-summary,
+  .pay-method { animation: none !important; opacity: 1 !important; }
+  .pay-cta { transition: none !important; }
+}

@@ -12,6 +12,7 @@ import { ProjectDetailPage } from "./pages/project-detail/ProjectDetail";
 import { PlanningPage } from "./pages/planning/Planning";
 import { SchedulePage } from "./pages/schedule/Schedule";
 import { CopilotPage } from "./pages/copilot/Copilot";
+import { PaymentsPage } from "./pages/payments/Payments";
 import {
   ProtectedRoute,
   RedirectIfAuthenticated,
@@ -22,6 +23,7 @@ import {
  *
  *  /                  -> Landing (công khai)
  *  /pricing           -> Bảng giá & Lựa chọn gói (công khai, SiteLayout)
+ *  /checkout          -> Trang thanh toán (public, SiteLayout) — nhận ?plan=pro&cycle=annual
  *  /login             -> Trang đăng nhập (nếu đã login -> /dashboard)
  *  /register          -> Trang đăng ký (nếu đã login -> /dashboard)
  *  /onboarding        -> Cần đăng nhập; lần đầu sẽ được ProtectedRoute đẩy vào đây
@@ -51,6 +53,7 @@ function App() {
       {/* SiteLayout: header + footer chuẩn, cho trang marketing public. */}
       <Route element={<SiteLayout />}>
         <Route path="/pricing" element={<PricingPage />} />
+        <Route path="/checkout" element={<PaymentsPage />} />
       </Route>
 
       {/* Dashboard + Onboarding: cần auth, vẫn dùng SiteLayout để có

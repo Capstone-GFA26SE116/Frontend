@@ -1,273 +1,242 @@
 /* ===========================================================
  * Pricing — trang Bảng giá & Lựa chọn gói.
- * Scope `.pricing-*`. Dark cognitive minimalist.
+ * Route: /pricing
  *
- * Tokens:
- *   surface                        #0f131c
- *   surface-container               #1c2028
- *   surface-container-high          #262a33
- *   surface-container-highest       #31353e
- *   surface-container-low           #181c24
- *   on-surface                      #dfe2ee
- *   on-surface-variant              #c7c4d7
- *   outline                         #908fa0
- *   outline-variant                 #464554
- *   primary                         #c0c1ff
- *   primary-container               #8083ff
- *   on-primary-container            #0d0096
- *   secondary                       #4edea3
- *   tertiary                        #d0bcff
- *   surface-variant                 #31353e
+ * Voltagent design language: near-black canvas #101010, hairline
+ * chrome #3d3a39, single electric-green accent #00d992,
+ * Inter + SF Mono. Scope prefix `.pricing-*` (DOM giữ nguyên).
  * =========================================================== */
 
 .pricing {
+  /* ── Design tokens ── */
+  --pr-canvas: #101010;
+  --pr-soft: #1a1a1a;
+  --pr-hairline: #3d3a39;
+  --pr-ink: #f2f2f2;
+  --pr-ink-strong: #ffffff;
+  --pr-body: #bdbdbd;
+  --pr-mute: #8b949e;
+  --pr-code: #f5f6f7;
+
+  --pr-primary: #00d992;
+  --pr-primary-soft: #2fd6a1;
+  --pr-primary-deep: #10b981;
+  --pr-on-primary: #101010;
+  --pr-primary-wash: rgba(0, 217, 146, 0.1);
+  --pr-primary-glow: rgba(0, 217, 146, 0.45);
+
+  --pr-error: #ff6b6b;
+  --pr-error-wash: rgba(255, 107, 107, 0.1);
+
+  --pr-r-xs: 4px;
+  --pr-r-sm: 6px;
+  --pr-r-md: 8px;
+  --pr-r-pill: 9999px;
+
+  --pr-sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --pr-mono: "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono",
+    "JetBrains Mono", monospace;
+
   position: relative;
   isolation: isolate;
-  color: #dfe2ee;
-  font-family: "Inter", system-ui, sans-serif;
+  color: var(--pr-body);
+  font-family: var(--pr-sans);
+  font-feature-settings: "calt", "rlig";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .pricing-container {
-  max-width: 80rem; /* 7xl */
+  max-width: 80rem;
   margin: 0 auto;
-  padding-left: 1.5rem;
-  padding-right: 1.5rem;
+  padding-left: 32px;
+  padding-right: 32px;
 }
 
 .pricing-section {
   position: relative;
   z-index: 1;
-  padding-top: 2rem;
-  padding-bottom: 2rem;
+  padding-top: 48px;
+  padding-bottom: 48px;
 }
 
-@media (min-width: 768px) {
-  .pricing-section {
-    padding-top: 3rem;
-    padding-bottom: 3rem;
-  }
+@media (max-width: 640px) {
+  .pricing-container { padding-left: 16px; padding-right: 16px; }
+  .pricing-section { padding-top: 32px; padding-bottom: 32px; }
 }
 
-/* ================= AMBIENT ================= */
-.pricing-ambient {
-  position: absolute;
-  z-index: -1;
-  top: -6rem;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 640px;
-  height: 280px;
-  background: linear-gradient(
-    to bottom,
-    rgba(128, 131, 255, 0.1),
-    rgba(208, 188, 255, 0.05),
-    transparent
-  );
-  filter: blur(48px);
-  border-radius: 9999px;
-  pointer-events: none;
-}
+/* Ambient: bỏ gradient blob — brand dùng flat canvas. */
+.pricing-ambient { display: none; }
 
 /* ================= HERO ================= */
-.pricing-hero {
-  text-align: center;
-}
+.pricing-hero { text-align: center; }
 
 .pricing-hero > .pricing-container {
   display: flex;
   flex-direction: column;
   align-items: center;
-  max-width: 48rem; /* 3xl */
+  max-width: 48rem;
 }
 
+/* eyebrow-mono: 14px / 600 / 2.52px tracking */
 .pricing-eyebrow {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.25rem 0.75rem;
-  border-radius: 9999px;
-  background-color: #262a33;
-  color: #c0c1ff;
-  font-family: "JetBrains Mono", "Inter", monospace;
-  font-size: 0.6875rem;
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  margin-bottom: 1rem;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-}
-
-.pricing-eyebrow .material-symbols-outlined {
-  font-size: 1rem;
-}
-
-.pricing-title {
-  font-size: 1.875rem;
-  line-height: 2.25rem;
+  gap: 8px;
+  padding: 4px 16px;
+  border-radius: var(--pr-r-pill);
+  border: 1px solid var(--pr-primary-glow);
+  background: var(--pr-primary-wash);
+  color: var(--pr-primary);
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: -0.03em;
-  color: #dfe2ee;
-  margin: 0 0 1rem;
+  line-height: 20px;
+  letter-spacing: 2.52px;
+  text-transform: uppercase;
+  margin-bottom: 24px;
+}
+.pricing-eyebrow .material-symbols-outlined { font-size: 16px; }
+
+/* display-lg: 36px / 400 / -0.9px */
+.pricing-title {
+  font-size: 36px;
+  line-height: 40px;
+  font-weight: 400;
+  letter-spacing: -0.9px;
+  color: var(--pr-ink-strong);
+  margin: 0 0 20px;
+}
+@media (max-width: 640px) {
+  .pricing-title { font-size: 28px; line-height: 34px; }
 }
 
-@media (min-width: 768px) {
-  .pricing-title {
-    font-size: 2.5rem;
-    line-height: 3rem;
-  }
-}
-
+/* body-lg: 18px / 400 / 28px */
 .pricing-subtitle {
-  font-size: 1rem;
-  line-height: 1.5rem;
-  letter-spacing: -0.01em;
-  color: #c7c4d7;
+  font-size: 18px;
+  line-height: 28px;
+  color: var(--pr-body);
   max-width: 42rem;
   margin: 0;
-  line-height: 1.625;
 }
 
 /* ================= TOGGLE ================= */
 .pricing-toggle {
-  margin-top: 3rem;
+  margin-top: 48px;
   display: inline-flex;
   align-items: center;
   position: relative;
-  padding: 0.375rem;
-  border-radius: 9999px;
-  background-color: rgba(24, 28, 36, 0.9);
-  border: 1px solid rgba(70, 69, 84, 0.4);
-  box-shadow:
-    0 20px 25px -5px rgba(0, 0, 0, 0.3),
-    0 0 0 1px rgba(192, 193, 255, 0.2);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  padding: 4px;
+  border-radius: var(--pr-r-pill);
+  background: var(--pr-canvas);
+  border: 1px solid var(--pr-hairline);
 }
 
 .pricing-toggle-btn {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1.5rem;
-  border-radius: 9999px;
+  gap: 8px;
+  padding: 8px 24px;
+  border-radius: var(--pr-r-pill);
   background: transparent;
   border: none;
-  color: #c7c4d7;
-  font-size: 0.875rem;
-  font-weight: 500;
-  font-family: inherit;
+  color: var(--pr-mute);
+  font-family: var(--pr-sans);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
   cursor: pointer;
-  transition: color 200ms ease, background-color 200ms ease,
-    box-shadow 200ms ease;
+  transition: color 200ms ease, background-color 200ms ease;
+  white-space: nowrap;
 }
-
 .pricing-toggle-btn:hover:not(.pricing-toggle-btn--active) {
-  color: #dfe2ee;
+  color: var(--pr-ink);
 }
 
 .pricing-toggle-btn--active {
-  background-color: #262a33;
-  color: #dfe2ee;
-  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.4);
-  box-shadow:
-    0 4px 12px -2px rgba(0, 0, 0, 0.4),
-    0 0 0 1px rgba(192, 193, 255, 0.3);
+  background: var(--pr-soft);
+  color: var(--pr-ink);
+  border: 1px solid var(--pr-hairline);
 }
 
+/* button-pill-tag (save pill) */
 .pricing-save-pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.125rem;
-  padding: 0.125rem 0.5rem;
-  border-radius: 9999px;
-  background-color: rgba(0, 165, 114, 0.9);
-  color: #003824;
-  font-family: "JetBrains Mono", "Inter", monospace;
-  font-size: 0.6875rem;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: var(--pr-r-pill);
+  border: 1px solid var(--pr-primary-glow);
+  background: var(--pr-primary-wash);
+  color: var(--pr-primary);
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  line-height: 16px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
 }
-
-.pricing-save-pill .material-symbols-outlined {
-  font-size: 0.8125rem;
-}
+.pricing-save-pill .material-symbols-outlined { font-size: 14px; }
 
 /* ================= PLANS ================= */
-.pricing-plans {
-  padding-top: 1rem;
-}
+.pricing-plans { padding-top: 32px; }
 
 .pricing-plan-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 1.5rem;
+  gap: 24px;
   align-items: stretch;
 }
-
 @media (min-width: 1024px) {
-  .pricing-plan-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
+  .pricing-plan-grid { grid-template-columns: repeat(3, 1fr); }
 }
 
+/* card-feature: canvas + 1px hairline border */
 .pricing-plan {
   position: relative;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 2rem;
-  border-radius: 0.75rem;
-  background-color: #1c2028; /* surface-container */
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
-  transition: box-shadow 300ms ease, transform 300ms ease,
-    border-color 300ms ease;
-  border: 1px solid transparent;
+  padding: 32px;
+  border-radius: var(--pr-r-md);
+  background: var(--pr-canvas);
+  border: 1px solid var(--pr-hairline);
+  transition: border-color 200ms ease;
 }
-
 .pricing-plan:hover {
-  box-shadow: 0 10px 20px -2px rgba(0, 0, 0, 0.4);
+  border-color: var(--pr-primary-glow);
 }
 
+/* Featured plan (Pro) — thicker border */
 .pricing-plan--pro {
-  background-color: #262a33; /* surface-container-high */
-  box-shadow:
-    0 20px 30px -8px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(192, 193, 255, 0.3);
-  border-color: rgba(192, 193, 255, 0.3);
+  border: 3px solid var(--pr-hairline);
 }
-
 @media (min-width: 1024px) {
-  .pricing-plan--pro {
-    transform: translateY(-0.5rem);
-  }
+  .pricing-plan--pro { transform: translateY(-8px); }
 }
+.pricing-plan--pro:hover { border-color: var(--pr-primary-glow); }
 
+/* Badge: pill tag (rounded.pill = 9999px) */
 .pricing-plan-badge {
   position: absolute;
-  top: -0.875rem;
+  top: -14px;
   left: 50%;
   transform: translateX(-50%);
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.25rem 0.75rem;
-  border-radius: 9999px;
-  background-color: #c0c1ff; /* primary */
-  color: #1000a9; /* on-primary */
-  font-family: "JetBrains Mono", "Inter", monospace;
-  font-size: 0.6875rem;
+  gap: 6px;
+  padding: 4px 16px;
+  border-radius: var(--pr-r-pill);
+  background: var(--pr-canvas);
+  border: 1px solid var(--pr-primary-glow);
+  color: var(--pr-primary);
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  line-height: 16px;
+  letter-spacing: 1.2px;
   text-transform: uppercase;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
   white-space: nowrap;
 }
-
-.pricing-plan-badge .material-symbols-outlined {
-  font-size: 0.875rem;
-}
+.pricing-plan-badge .material-symbols-outlined { font-size: 14px; }
 
 .pricing-plan-body {
   display: flex;
@@ -278,851 +247,596 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 1rem;
+  margin-bottom: 16px;
 }
 
+/* eyebrow-uppercase: 18px / 600 / 0.45px */
 .pricing-plan-eyebrow {
-  font-family: "JetBrains Mono", "Inter", monospace;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  letter-spacing: -0.01em;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  letter-spacing: 2.52px;
   text-transform: uppercase;
-  color: #908fa0;
+  color: var(--pr-mute);
 }
-
 .pricing-plan-eyebrow--pro {
-  color: #c0c1ff;
-  font-weight: 500;
+  color: var(--pr-primary);
 }
 
 .pricing-plan-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 0.5rem;
-  background-color: transparent;
-  color: #908fa0;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--pr-r-sm);
+  background: var(--pr-soft);
+  border: 1px solid var(--pr-hairline);
+  color: var(--pr-mute);
 }
-
-.pricing-plan-icon .material-symbols-outlined {
-  font-size: 1.25rem;
-}
-
+.pricing-plan-icon .material-symbols-outlined { font-size: 20px; }
 .pricing-plan-icon--pro {
-  color: #c0c1ff;
+  border-color: var(--pr-primary-glow);
+  color: var(--pr-primary);
 }
 
+/* display-md: 24px / 700 / -0.6px */
 .pricing-plan-title {
-  font-size: 1.5rem;
-  line-height: 2rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  color: #dfe2ee;
-  margin: 0 0 0.5rem;
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 700;
+  letter-spacing: -0.6px;
+  color: var(--pr-ink);
+  margin: 0 0 8px;
 }
 
+/* body-md: 16px */
 .pricing-plan-desc {
-  font-size: 0.75rem;
-  line-height: 1.125rem;
-  color: #c7c4d7;
-  margin: 0 0 2rem;
-  min-height: 2.25rem;
+  font-size: 16px;
+  line-height: 26px;
+  color: var(--pr-body);
+  margin: 0 0 32px;
+  min-height: 52px;
 }
 
 /* ----- Price block ----- */
-.pricing-price {
-  margin-bottom: 2rem;
-}
+/* Code mockup card chrome */
+.pricing-price { margin-bottom: 32px; }
 
 .pricing-price--static {
   display: flex;
   align-items: baseline;
-  gap: 0.25rem;
+  gap: 4px;
 }
 
 .pricing-price--dynamic {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  border-radius: 0.75rem;
-  background-color: rgba(28, 32, 40, 0.6);
-  border: 1px solid rgba(70, 69, 84, 0.3);
-}
-
-.pricing-plan--pro .pricing-price--dynamic {
-  background-color: rgba(28, 32, 40, 0.6);
-  border-color: rgba(70, 69, 84, 0.3);
-}
-
-.pricing-plan--team .pricing-price--dynamic {
-  background-color: rgba(24, 28, 36, 0.7);
-  border-color: rgba(70, 69, 84, 0.3);
+  gap: 8px;
+  padding: 16px;
+  border-radius: var(--pr-r-md);
+  background: var(--pr-soft);
+  border: 1px solid var(--pr-hairline);
 }
 
 .pricing-price-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
 .pricing-price-main {
   display: flex;
   align-items: baseline;
-  gap: 0.25rem;
+  gap: 4px;
 }
 
+/* display-xl sized counter, weight 400 */
 .pricing-price-amount {
-  font-size: 2.5rem;
-  line-height: 3rem;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  color: #dfe2ee;
+  font-family: var(--pr-mono);
+  font-size: 40px;
+  line-height: 40px;
+  font-weight: 500;
+  letter-spacing: -1px;
+  color: var(--pr-ink);
+  font-variant-numeric: tabular-nums;
 }
 
 .pricing-price-period {
-  font-size: 0.75rem;
-  color: #908fa0;
+  font-size: 14px;
+  color: var(--pr-mute);
 }
 
 .pricing-price-side {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 4px;
 }
 
 .pricing-price-original {
-  font-size: 0.75rem;
-  color: #908fa0;
+  font-family: var(--pr-mono);
+  font-size: 14px;
+  color: var(--pr-mute);
   text-decoration: line-through;
 }
 
 .pricing-price-discount {
-  font-family: "JetBrains Mono", "Inter", monospace;
-  font-size: 0.6875rem;
-  color: #4edea3;
-  background-color: rgba(78, 222, 163, 0.1);
-  padding: 0.125rem 0.375rem;
-  border-radius: 0.125rem;
+  font-family: var(--pr-mono);
+  font-size: 12px;
+  color: var(--pr-primary);
+  background: var(--pr-primary-wash);
+  border: 1px solid var(--pr-primary-glow);
+  padding: 2px 8px;
+  border-radius: var(--pr-r-xs);
   font-weight: 600;
 }
 
+/* code-inline-chip */
 .pricing-price-savings {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
-  font-family: "JetBrains Mono", "Inter", monospace;
-  font-size: 0.6875rem;
-  color: #4edea3;
-  padding-top: 0.25rem;
-  border-top: 1px solid rgba(70, 69, 84, 0.2);
+  gap: 6px;
+  font-family: var(--pr-mono);
+  font-size: 13px;
+  color: var(--pr-primary);
+  padding-top: 8px;
+  border-top: 1px solid var(--pr-hairline);
 }
-
-.pricing-price-savings .material-symbols-outlined {
-  font-size: 0.9375rem;
-}
+.pricing-price-savings .material-symbols-outlined { font-size: 14px; }
 
 /* ----- Divider + features ----- */
 .pricing-plan-divider {
   height: 1px;
   width: 100%;
-  background-color: rgba(49, 53, 62, 0.4);
-  margin-bottom: 1.5rem;
-}
-
-.pricing-plan--pro .pricing-plan-divider {
-  background-color: rgba(49, 53, 62, 0.7);
+  background: var(--pr-hairline);
+  margin-bottom: 24px;
 }
 
 .pricing-plan-features {
   list-style: none;
   padding: 0;
-  margin: 0 0 2rem;
+  margin: 0 0 32px;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 12px;
 }
 
 .pricing-plan-feature {
   display: flex;
   align-items: flex-start;
-  gap: 0.75rem;
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-  color: #c7c4d7;
+  gap: 12px;
+  font-size: 16px;
+  line-height: 26px;
+  color: var(--pr-body);
 }
-
-.pricing-plan-feature--ok {
-  color: #c7c4d7;
-}
-
-.pricing-plan-feature--em {
-  color: #dfe2ee;
-  font-weight: 500;
-}
-
-.pricing-plan-feature--no {
-  color: #908fa0;
-}
+.pricing-plan-feature--ok { color: var(--pr-body); }
+.pricing-plan-feature--em { color: var(--pr-ink); font-weight: 600; }
+.pricing-plan-feature--no { color: var(--pr-mute); }
 
 .pricing-plan-feature-icon {
-  font-size: 1.25rem;
+  font-size: 20px !important;
   flex-shrink: 0;
-  margin-top: 0.125rem;
+  margin-top: 3px;
 }
-
-.pricing-plan-feature--ok .pricing-plan-feature-icon {
-  color: #4edea3;
-}
-
-.pricing-plan-feature--no .pricing-plan-feature-icon {
-  color: #464554;
-}
+.pricing-plan-feature--ok .pricing-plan-feature-icon { color: var(--pr-primary); }
+.pricing-plan-feature--no .pricing-plan-feature-icon { color: var(--pr-hairline); }
 
 /* ----- CTA ----- */
+/* button-outline-on-dark */
 .pricing-plan-cta {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  gap: 8px;
   width: 100%;
-  padding: 0.75rem 1rem;
-  border-radius: 0.5rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  font-family: inherit;
-  border: 1px solid transparent;
+  padding: 12px 16px;
+  min-height: 48px;
+  border-radius: var(--pr-r-sm);
+  font-family: var(--pr-sans);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
   cursor: pointer;
   transition: background-color 200ms ease, color 200ms ease,
-    transform 100ms ease, box-shadow 200ms ease;
-  background-color: #262a33;
-  color: #c7c4d7;
+    border-color 200ms ease, transform 100ms ease;
+  background: var(--pr-canvas);
+  border: 1px solid var(--pr-hairline);
+  color: var(--pr-ink);
 }
-
 .pricing-plan-cta:hover {
-  background-color: #31353e;
-  color: #dfe2ee;
+  border-color: var(--pr-primary);
+  color: var(--pr-primary);
 }
+.pricing-plan-cta:active { transform: scale(0.98); }
 
-.pricing-plan-cta:active {
-  transform: scale(0.98);
-}
-
+/* button-primary (Pro) */
 .pricing-plan-cta--primary {
-  background-color: #6366f1;
-  color: #ffffff;
-  box-shadow: 0 10px 25px -5px rgba(99, 102, 241, 0.4);
-  font-weight: 600;
+  background: var(--pr-primary);
+  border-color: var(--pr-primary);
+  color: var(--pr-on-primary);
 }
-
 .pricing-plan-cta--primary:hover {
-  background-color: #4f46e5;
-  box-shadow: 0 14px 30px -8px rgba(99, 102, 241, 0.5);
+  background: var(--pr-primary-soft);
+  border-color: var(--pr-primary-soft);
+  color: var(--pr-on-primary);
 }
 
-/* ----- Team plan CTA: emerald accent (gradient + glow) ----- */
+/* Team accent — primary-deep for secondary action */
 .pricing-plan-cta--accent {
-  background: linear-gradient(135deg, #10b981 0%, #14b8a6 100%);
-  color: #ffffff;
-  box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.45);
-  font-weight: 600;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--pr-primary-deep);
+  border-color: var(--pr-primary-deep);
+  color: var(--pr-ink-strong);
 }
-
 .pricing-plan-cta--accent:hover {
-  background: linear-gradient(135deg, #059669 0%, #0d9488 100%);
-  box-shadow: 0 14px 30px -8px rgba(20, 184, 166, 0.55);
-  transform: translateY(-1px);
-}
-
-/* Focus ring cho cả 2 variants nổi bật */
-.pricing-plan-cta--primary:focus-visible,
-.pricing-plan-cta--accent:focus-visible {
-  outline: 2px solid rgba(99, 102, 241, 0.5);
-  outline-offset: 3px;
+  background: var(--pr-primary-soft);
+  border-color: var(--pr-primary-soft);
+  color: var(--pr-on-primary);
 }
 
 .pricing-plan-cta--disabled {
-  background-color: #262a33;
-  color: #908fa0;
+  background: var(--pr-soft);
+  border-color: var(--pr-hairline);
+  color: var(--pr-mute);
   cursor: default;
   opacity: 0.7;
 }
-
 .pricing-plan-cta--disabled:hover {
-  background-color: #262a33;
-  color: #908fa0;
+  background: var(--pr-soft);
+  border-color: var(--pr-hairline);
+  color: var(--pr-mute);
   transform: none;
 }
+.pricing-plan-cta .material-symbols-outlined { font-size: 18px !important; }
 
-.pricing-plan-cta .material-symbols-outlined {
-  font-size: 1.125rem;
-}
+/* ================= CARD SELECTOR ================= */
 
-/* ================= CARD SELECTOR (click anywhere) ================= */
-
-/* ----- Current plan (user đang dùng) — disabled + dim ----- */
+/* Current plan (user đang dùng) — dimmed */
 .pricing-plan--current {
-  opacity: 0.62;
-  filter: grayscale(0.35);
+  opacity: 0.5;
+  filter: grayscale(0.3);
   cursor: default;
-  transition: opacity 220ms ease, filter 220ms ease, box-shadow 220ms ease;
 }
-
 .pricing-plan--current:hover {
-  transform: none; /* override hover translateY */
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3); /* base shadow */
-  opacity: 0.7; /* hover nhẹ tăng opacity cho biết "đang ở đây" */
-  filter: grayscale(0.2);
-}
-
-/* Pro + Starter thì bỏ translateY của pro */
-.pricing-plan--pro.pricing-plan--current {
+  opacity: 0.65;
+  filter: grayscale(0.15);
   transform: none;
+  border-color: var(--pr-hairline);
 }
+.pricing-plan--pro.pricing-plan--current { transform: none; }
 
 .pricing-plan--current .pricing-plan-cta {
-  /* "Đã mua rồi" - CTA primary nhưng disabled */
-  background-color: #4edea3;
-  color: #052016;
-  opacity: 0.85;
-  cursor: default;
-  box-shadow: 0 6px 18px -6px rgba(78, 222, 163, 0.4);
+  background: var(--pr-primary-wash);
+  border-color: var(--pr-primary-glow);
+  color: var(--pr-primary);
+  opacity: 1;
 }
-
 .pricing-plan--current .pricing-plan-cta:hover {
-  /* KHÔNG hiệu ứng hover trên CTA hiện tại */
-  background-color: #4edea3;
-  color: #052016;
-  box-shadow: 0 6px 18px -6px rgba(78, 222, 163, 0.4);
-  transform: none;
-}
-
-/* Pro thì giữ accent khi current */
-.pricing-plan--pro.pricing-plan--current .pricing-plan-cta {
-  background-color: #c0c1ff;
-  color: #1000a9;
-  box-shadow: 0 6px 18px -6px rgba(192, 193, 255, 0.4);
-}
-.pricing-plan--pro.pricing-plan--current .pricing-plan-cta:hover {
-  background-color: #c0c1ff;
-  color: #1000a9;
-  box-shadow: 0 6px 18px -6px rgba(192, 193, 255, 0.4);
-  transform: none;
-}
-
-/* Team thì giữ accent emerald khi current */
-.pricing-plan--team.pricing-plan--current .pricing-plan-cta {
-  background: #a7f3d0;
-  color: #064e3b;
-  box-shadow: 0 6px 18px -6px rgba(167, 243, 208, 0.4);
-}
-.pricing-plan--team.pricing-plan--current .pricing-plan-cta:hover {
-  background: #a7f3d0;
-  color: #064e3b;
-  box-shadow: 0 6px 18px -6px rgba(167, 243, 208, 0.4);
+  background: var(--pr-primary-wash);
+  border-color: var(--pr-primary-glow);
+  color: var(--pr-primary);
   transform: none;
 }
 
 /* Badge "Đang dùng" */
 .pricing-plan-badge--current {
-  background: #4edea3;
-  color: #052016;
-  box-shadow: 0 6px 18px -4px rgba(78, 222, 163, 0.5);
+  background: var(--pr-primary-wash);
+  border-color: var(--pr-primary-glow);
+  color: var(--pr-primary);
 }
-.pricing-plan-badge--current .material-symbols-outlined {
-  color: #052016;
-}
+.pricing-plan-badge--current .material-symbols-outlined { color: var(--pr-primary); }
 
-/* Pro thì dùng accent tím khi current */
-.pricing-plan--pro .pricing-plan-badge--current {
-  background: #c0c1ff;
-  color: #1000a9;
-  box-shadow: 0 6px 18px -4px rgba(192, 193, 255, 0.55);
-}
-.pricing-plan--pro .pricing-plan-badge--current .material-symbols-outlined {
-  color: #1000a9;
-}
-
-/* Team thì dùng accent emerald khi current */
-.pricing-plan--team .pricing-plan-badge--current {
-  background: #a7f3d0;
-  color: #064e3b;
-  box-shadow: 0 6px 18px -4px rgba(167, 243, 208, 0.55);
-}
-.pricing-plan--team .pricing-plan-badge--current .material-symbols-outlined {
-  color: #064e3b;
-}
-
-/* Selected state — nổi bật với ring primary + pulse mềm */
+/* Selected state — green ring */
 .pricing-plan--selected {
-  border-color: #c0c1ff;
-  box-shadow:
-    0 0 0 2px rgba(192, 193, 255, 0.5),
-    0 20px 30px -8px rgba(0, 0, 0, 0.5),
-    0 0 32px -4px rgba(192, 193, 255, 0.25);
+  border-color: var(--pr-primary);
+  box-shadow: 0 0 0 1px var(--pr-primary-glow);
   cursor: pointer;
-  animation: pricing-plan-pulse 1.8s ease-out 1;
 }
-
+.pricing-plan--selected:hover {
+  border-color: var(--pr-primary-soft);
+}
 .pricing-plan--selected.pricing-plan--pro {
-  border-color: #c0c1ff;
-  box-shadow:
-    0 0 0 2px rgba(192, 193, 255, 0.6),
-    0 20px 30px -8px rgba(0, 0, 0, 0.5),
-    0 0 36px -4px rgba(192, 193, 255, 0.35);
+  border-color: var(--pr-primary);
+  box-shadow: 0 0 0 1px var(--pr-primary-glow);
 }
 
-.pricing-plan--starter.pricing-plan--selected {
-  border-color: #4edea3;
-  box-shadow:
-    0 0 0 2px rgba(78, 222, 163, 0.4),
-    0 20px 30px -8px rgba(0, 0, 0, 0.5),
-    0 0 28px -4px rgba(78, 222, 163, 0.25);
-}
-
-@keyframes pricing-plan-pulse {
-  0% {
-    transform: scale(1);
-    box-shadow:
-      0 0 0 0 rgba(192, 193, 255, 0.45),
-      0 20px 30px -8px rgba(0, 0, 0, 0.5);
-  }
-  40% {
-    transform: scale(1.015);
-    box-shadow:
-      0 0 0 8px rgba(192, 193, 255, 0.18),
-      0 20px 30px -8px rgba(0, 0, 0, 0.5);
-  }
-  100% {
-    transform: scale(1);
-    box-shadow:
-      0 0 0 2px rgba(192, 193, 255, 0.5),
-      0 20px 30px -8px rgba(0, 0, 0, 0.5);
-  }
-}
-
-/* Hover hint khi không phải selected */
-.pricing-plan[role="button"]:hover {
+/* Hover hint khi chưa selected */
+.pricing-plan[role="button"]:hover:not(.pricing-plan--selected):not(.pricing-plan--current) {
   transform: translateY(-2px);
 }
-.pricing-plan--pro[role="button"]:hover {
-  transform: translateY(-0.75rem); /* ghi đè translateY của pro */
+.pricing-plan--pro[role="button"]:hover:not(.pricing-plan--selected):not(.pricing-plan--current) {
+  transform: translateY(-12px);
 }
 
-/* "Đã chọn" badge — đè lên "Khuyên dùng" khi selected */
-.pricing-plan-badge--selected {
-  background: #c0c1ff;
-  color: #1000a9;
-  box-shadow: 0 6px 18px -4px rgba(192, 193, 255, 0.55);
-}
-.pricing-plan-badge--selected .material-symbols-outlined {
-  color: #1000a9;
-}
-
-/* Ripple — overlay tròn bắt đầu 0px, expand ra 600px trong 600ms */
+/* Ripple — starter: primary wash */
 .pricing-plan-ripple {
   position: absolute;
-  border-radius: 9999px;
+  border-radius: var(--pr-r-pill);
   pointer-events: none;
   transform: translate(-50%, -50%) scale(0);
   background: radial-gradient(
     circle,
-    rgba(192, 193, 255, 0.55) 0%,
-    rgba(192, 193, 255, 0.25) 40%,
-    rgba(192, 193, 255, 0) 70%
+    rgba(0, 217, 146, 0.4) 0%,
+    rgba(0, 217, 146, 0.15) 40%,
+    rgba(0, 217, 146, 0) 70%
   );
   width: 600px;
   height: 600px;
   opacity: 1;
-  animation: pricing-plan-ripple 600ms cubic-bezier(0.22, 1, 0.36, 1)
-    forwards;
+  animation: pricing-plan-ripple 600ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
   z-index: 0;
 }
 
-.pricing-plan--starter .pricing-plan-ripple {
-  background: radial-gradient(
-    circle,
-    rgba(78, 222, 163, 0.5) 0%,
-    rgba(78, 222, 163, 0.22) 40%,
-    rgba(78, 222, 163, 0) 70%
-  );
-}
-
 @keyframes pricing-plan-ripple {
-  0% {
-    transform: translate(-50%, -50%) scale(0);
-    opacity: 1;
-  }
-  100% {
-    transform: translate(-50%, -50%) scale(1);
-    opacity: 0;
-  }
+  0% { transform: translate(-50%, -50%) scale(0); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
 }
 
-/* Đảm bảo content hiển thị trên ripple */
+/* Content z-index above ripple */
 .pricing-plan-body,
 .pricing-plan-cta,
-.pricing-plan-badge {
-  position: relative;
-  z-index: 1;
-}
+.pricing-plan-badge { position: relative; z-index: 1; }
 
 /* ================= COMPARE ================= */
-.pricing-compare {
-  padding-top: 1rem;
-}
+.pricing-compare { padding-top: 32px; }
 
 .pricing-section-head {
   text-align: center;
   max-width: 42rem;
-  margin: 0 auto 3rem;
+  margin: 0 auto 48px;
 }
 
 .pricing-eyebrow--inline {
   display: inline-block;
-  padding: 0.25rem 0.75rem;
-  border-radius: 9999px;
-  background-color: #262a33;
-  color: #c0c1ff;
-  margin-bottom: 0.5rem;
+  margin-bottom: 8px;
 }
 
+/* display-md: 24px / 700 */
 .pricing-section-title {
-  font-size: 1.5rem;
-  line-height: 2rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  color: #dfe2ee;
-  margin: 0 0 0.5rem;
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 700;
+  letter-spacing: -0.6px;
+  color: var(--pr-ink);
+  margin: 0 0 8px;
 }
-
 @media (min-width: 768px) {
-  .pricing-section-title {
-    font-size: 1.75rem;
-  }
+  .pricing-section-title { font-size: 32px; line-height: 40px; }
 }
 
+/* body-md */
 .pricing-section-desc {
-  font-size: 0.875rem;
-  color: #c7c4d7;
-  margin: 0.5rem 0 0;
+  font-size: 16px;
+  line-height: 26px;
+  color: var(--pr-body);
+  margin: 8px 0 0;
 }
 
+/* ex-data-table-cell chrome */
 .pricing-table-wrap {
   overflow-x: auto;
-  border-radius: 1rem;
-  background-color: #181c24;
-  padding: 1rem;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4);
+  border-radius: var(--pr-r-md);
+  background: var(--pr-canvas);
+  border: 1px solid var(--pr-hairline);
+  padding: 24px;
 }
-
-@media (min-width: 768px) {
-  .pricing-table-wrap {
-    padding: 1.5rem;
-  }
+@media (max-width: 640px) {
+  .pricing-table-wrap { padding: 16px; }
 }
 
 .pricing-table {
   width: 100%;
   text-align: left;
   border-collapse: collapse;
-  font-size: 0.75rem;
-  color: #c7c4d7;
+  font-size: 14px;
+  color: var(--pr-body);
 }
 
 .pricing-table thead {
-  border-bottom: 1px solid rgba(70, 69, 84, 0.4);
+  border-bottom: 1px solid var(--pr-hairline);
 }
 
+/* caption-strong: 12px / 500 */
 .pricing-th-feature {
-  padding: 1rem;
-  font-family: "JetBrains Mono", "Inter", monospace;
-  font-size: 0.8125rem;
+  padding: 16px;
+  font-family: var(--pr-mono);
+  font-size: 12px;
   font-weight: 500;
-  letter-spacing: -0.01em;
-  color: #908fa0;
+  line-height: 16px;
+  color: var(--pr-mute);
   text-transform: uppercase;
+  letter-spacing: 0.9px;
   text-align: left;
 }
 
 .pricing-th-plan {
-  padding: 1rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: #c7c4d7;
+  padding: 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--pr-ink);
   text-align: center;
   width: 25%;
 }
 
 .pricing-th-plan--hero {
-  font-weight: 600;
-  color: #c0c1ff;
-  background-color: #1c2028;
-  border-top-left-radius: 0.5rem;
-  border-top-right-radius: 0.5rem;
+  color: var(--pr-primary);
+  background: var(--pr-soft);
+  border-top-left-radius: var(--pr-r-sm);
+  border-top-right-radius: var(--pr-r-sm);
 }
 
 .pricing-tr {
-  border-bottom: 1px solid rgba(70, 69, 84, 0.3);
+  border-bottom: 1px solid var(--pr-hairline);
   transition: background-color 150ms ease;
 }
-
-.pricing-tr:hover {
-  background-color: rgba(28, 32, 40, 0.5);
-}
+.pricing-tr:hover { background: var(--pr-soft); }
+.pricing-tr:last-child { border-bottom: none; }
 
 .pricing-td-feature {
-  padding: 1rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: #dfe2ee;
+  padding: 16px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 23px;
+  color: var(--pr-ink);
 }
 
 .pricing-td {
-  padding: 1rem;
+  padding: 16px;
   text-align: center;
-  font-size: 0.75rem;
-  color: #c7c4d7;
+  font-size: 14px;
+  color: var(--pr-body);
   vertical-align: middle;
 }
 
-.pricing-td--pro {
-  background-color: #1c2028;
-}
+.pricing-td--pro { background: var(--pr-soft); }
 
-.pricing-cell-text {
-  display: inline-block;
-}
-
-.pricing-cell-text--em {
-  font-weight: 600;
-}
-
-.pricing-cell-text--primary {
-  color: #c0c1ff;
-}
-
-.pricing-cell-text--secondary {
-  color: #4edea3;
-}
+.pricing-cell-text { display: inline-block; }
+.pricing-cell-text--em { font-weight: 600; color: var(--pr-ink); }
+.pricing-cell-text--primary { color: var(--pr-primary); }
+.pricing-cell-text--secondary { color: var(--pr-primary-deep); }
 
 .pricing-cell {
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
-
-.pricing-cell .material-symbols-outlined {
-  font-size: 1.125rem;
-}
-
-.pricing-cell--ok .material-symbols-outlined {
-  color: #4edea3;
-  font-size: 1.25rem;
-}
-
-.pricing-cell--no .material-symbols-outlined {
-  color: #464554;
-}
+.pricing-cell .material-symbols-outlined { font-size: 18px !important; }
+.pricing-cell--ok .material-symbols-outlined { color: var(--pr-primary); }
+.pricing-cell--no .material-symbols-outlined { color: var(--pr-hairline); }
 
 /* ================= FAQ ================= */
 .pricing-faq-grid {
-  margin-top: 3rem;
+  margin-top: 48px;
   display: grid;
   grid-template-columns: 1fr;
-  gap: 1rem;
+  gap: 16px;
 }
-
 @media (min-width: 768px) {
-  .pricing-faq-grid {
-    grid-template-columns: 1fr 1fr;
-  }
+  .pricing-faq-grid { grid-template-columns: 1fr 1fr; }
 }
 
+/* card-feature */
 .pricing-faq {
-  padding: 1.5rem;
-  border-radius: 0.75rem;
-  background-color: #1c2028;
-  transition: background-color 200ms ease;
+  padding: 24px;
+  border-radius: var(--pr-r-md);
+  background: var(--pr-canvas);
+  border: 1px solid var(--pr-hairline);
+  transition: border-color 200ms ease;
 }
+.pricing-faq:hover { border-color: var(--pr-primary-glow); }
 
-.pricing-faq:hover {
-  background-color: #262a33;
-}
-
+/* display-sm: 20px / 600 */
 .pricing-faq-q {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 1.125rem;
-  line-height: 1.625rem;
+  gap: 8px;
+  font-size: 20px;
+  line-height: 28px;
   font-weight: 600;
-  color: #dfe2ee;
-  margin: 0 0 0.5rem;
+  color: var(--pr-ink);
+  margin: 0 0 8px;
 }
+.pricing-faq-icon { font-size: 20px !important; color: var(--pr-primary); }
 
-.pricing-faq-icon {
-  color: #c0c1ff;
-  font-size: 1.25rem;
-}
-
+/* body-md */
 .pricing-faq-a {
-  font-size: 0.75rem;
-  line-height: 1.125rem;
-  color: #c7c4d7;
+  font-size: 16px;
+  line-height: 26px;
+  color: var(--pr-body);
   margin: 0;
-  line-height: 1.625;
 }
 
 /* ================= PROOF ================= */
 .pricing-proof {
-  padding-top: 1rem;
-  padding-bottom: 3rem;
+  padding-top: 32px;
+  padding-bottom: 64px;
 }
 
 .pricing-proof-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 1.5rem;
+  gap: 24px;
 }
-
 @media (min-width: 768px) {
-  .pricing-proof-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
+  .pricing-proof-grid { grid-template-columns: repeat(3, 1fr); }
 }
 
+/* card-feature */
 .pricing-proof-card {
-  padding: 1.5rem;
-  border-radius: 0.75rem;
-  background-color: #1c2028;
-  transition: background-color 200ms ease, transform 200ms ease;
+  padding: 24px;
+  border-radius: var(--pr-r-md);
+  background: var(--pr-canvas);
+  border: 1px solid var(--pr-hairline);
+  transition: border-color 200ms ease, transform 200ms ease;
 }
-
 .pricing-proof-card:hover {
-  background-color: #262a33;
+  border-color: var(--pr-primary-glow);
   transform: translateY(-2px);
 }
 
 .pricing-proof-head {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 0.75rem;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
 .pricing-proof-icon {
-  width: 2rem;
-  height: 2rem;
-  border-radius: 0.5rem;
-  background-color: #262a33;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--pr-r-sm);
+  background: var(--pr-soft);
+  border: 1px solid var(--pr-hairline);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
 }
+.pricing-proof-icon .material-symbols-outlined { font-size: 18px !important; }
+.pricing-proof-icon--primary { border-color: var(--pr-primary-glow); color: var(--pr-primary); }
+.pricing-proof-icon--secondary { border-color: rgba(16, 185, 129, 0.4); color: var(--pr-primary-deep); }
+.pricing-proof-icon--tertiary { border-color: var(--pr-hairline); color: var(--pr-primary-soft); }
 
-.pricing-proof-icon .material-symbols-outlined {
-  font-size: 1.125rem;
-}
-
-.pricing-proof-icon--primary {
-  color: #c0c1ff;
-}
-
-.pricing-proof-icon--secondary {
-  color: #4edea3;
-}
-
-.pricing-proof-icon--tertiary {
-  color: #d0bcff;
-}
-
+/* display-sm */
 .pricing-proof-title {
-  font-size: 1.125rem;
-  line-height: 1.625rem;
+  font-size: 20px;
+  line-height: 28px;
   font-weight: 600;
-  color: #dfe2ee;
+  color: var(--pr-ink);
 }
 
+/* body-md */
 .pricing-proof-body {
-  font-size: 0.75rem;
-  line-height: 1.125rem;
-  color: #c7c4d7;
+  font-size: 16px;
+  line-height: 26px;
+  color: var(--pr-body);
   margin: 0;
-  line-height: 1.625;
 }
 
-/* ================= Animation layer (đã thay bằng motion entrance bên dưới) =================
- * Keyframes cũ giữ lại để tương thích ngược với reduced-motion fallback. */
+/* ================= Animation layer ================= */
 @keyframes pricing-fade-up {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes pricing-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-/* (các rule .pricing-hero .pricing-* / .pricing-plan:nth-child cũ đã bỏ —
- *  toàn bộ animation giờ do useStaggeredMount điều khiển qua class `--in`.) */
-
-/* ===========================================================
- * Motion entrance (stagger fade-up, subtle)
- * ===========================================================
- *
- * Pattern giống Dashboard:
- *  - Element bắt đầu với opacity:0 + translateY(8px).
- *  - Khi React thêm class `--in` (qua useStaggeredMount) -> animation chạy.
- *  - Mỗi element lấy `animation-delay` inline từ hook.
- *  - prefers-reduced-motion: reduce -> opacity:1 ngay, không keyframes.
- */
 @keyframes pricing-stagger-up {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes pricing-stagger-up-card {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-/* 4 sections chính: hero / plans / compare / proof */
+/* 4 sections */
 .pricing-hero,
 .pricing-plans,
 .pricing-compare,
 .pricing-proof {
   opacity: 0;
 }
-
 .pricing-hero--in,
 .pricing-plans--in,
 .pricing-compare--in,
@@ -1131,52 +845,36 @@
   animation: pricing-stagger-up 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* 3 plan cards */
-.pricing-plan {
-  opacity: 0;
-}
-
+/* Plan cards */
+.pricing-plan { opacity: 0; }
 .pricing-plan--in {
   animation: pricing-stagger-up-card 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* Price block bên trong plan — re-animate khi toggle billing */
-.pricing-price--dynamic {
-  opacity: 0;
-}
-
+/* Price block — re-animate khi toggle billing */
+.pricing-price--dynamic { opacity: 0; }
 .pricing-price--in {
   animation: pricing-stagger-up 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* 8 dòng trong bảng so sánh */
-.pricing-tr {
-  opacity: 0;
-}
-
+/* Table rows */
+.pricing-tr { opacity: 0; }
 .pricing-tr--in {
   animation: pricing-stagger-up 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* 2 FAQ */
-.pricing-faq {
-  opacity: 0;
-}
-
+/* FAQ */
+.pricing-faq { opacity: 0; }
 .pricing-faq--in {
   animation: pricing-stagger-up 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* 3 proof cards */
-.pricing-proof-card {
-  opacity: 0;
-}
-
+/* Proof cards */
+.pricing-proof-card { opacity: 0; }
 .pricing-proof-card--in {
   animation: pricing-stagger-up-card 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* Reduced motion: tắt keyframes, hiện ngay tất cả. */
 @media (prefers-reduced-motion: reduce) {
   .pricing-hero,
   .pricing-plans,
@@ -1191,9 +889,5 @@
     opacity: 1 !important;
     transform: none !important;
   }
-  .pricing-proof-card:hover,
-  .pricing-plan-cta:active,
-  .pricing-toggle-btn:hover .material-symbols-outlined {
-    transform: none !important;
-  }
+  .pricing-plan-cta:active { transform: none !important; }
 }

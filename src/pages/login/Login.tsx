@@ -118,22 +118,16 @@ export function LoginPage() {
         cancel_on_tap_outside: true,
       });
 
-      // Render nút Google chính chủ vào placeholder, đè lên nút mock.
-      const placeholder = document.getElementById("google-signin-btn");
-      if (placeholder) {
-        // Ẩn nút mock đi (vẫn giữ DOM để không vỡ layout)
-        placeholder.style.display = "none";
-        const host = document.createElement("div");
-        host.id = "google-signin-host";
-        host.style.width = "100%";
-        placeholder.parentElement?.appendChild(host);
+      // Render nút Google chính chủ vào host đã có trong JSX.
+      const host = document.getElementById("google-signin-host");
+      if (host) {
         g.accounts.id.renderButton(host, {
           type: "standard",
           theme: "outline",
           size: "large",
           text: "continue_with",
           shape: "pill",
-          width: 360,
+          width: 320,
         });
       }
     };
@@ -247,6 +241,7 @@ export function LoginPage() {
 
       {/* Google SSO */}
       <div className="login-sso">
+        {/* Button primary hiển thị */}
         <button
           type="button"
           id="google-signin-btn"
@@ -259,6 +254,8 @@ export function LoginPage() {
             {googleLoading ? "Đang kết nối Google..." : "Tiếp tục với Google"}
           </span>
         </button>
+        {/* Host cho GIS renderButton — absolute overlay trên button primary */}
+        <div id="google-signin-host" className="login-google-gis-host" />
         <div className="login-sso-hint">
           <span className="login-sso-dot" aria-hidden="true" />
           <span>Đồng bộ tức thì Google Calendar</span>

@@ -83,6 +83,23 @@
   flex-direction: column;
   gap: 0.5rem;
   padding-top: 0.25rem;
+  position: relative; /* cho absolute GIS host overlay */
+}
+
+/* Host ẩn chứa button GIS trắng (renderButton) — button primary click →
+   forward xuống đây. absolute + opacity:0 để không chiếm layout nhưng
+   vẫn căn giữa bên trong host vì display:flex + justify-content:center. */
+.login-google-gis-host {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  opacity: 0;
+  pointer-events: none;
+  z-index: -1;
+  width: 100%;
+  overflow: hidden;
 }
 
 .login-google-btn {

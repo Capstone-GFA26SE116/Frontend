@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { MetanoiaLogo } from "../components/MetanoiaLogo";
 import "./site-layout.css";
 
 /**
@@ -48,38 +49,7 @@ export function SiteLayout() {
         <div className="site-header-inner">
           <div className="site-header-left">
             <Link to="/" className="site-brand" aria-label="METANOIA">
-              <div className="site-brand-mark" aria-hidden="true">
-                <svg
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <defs>
-                    <linearGradient
-                      id="site-meta-grad"
-                      x1="4"
-                      x2="20"
-                      y1="5"
-                      y2="19"
-                      gradientUnits="userSpaceOnUse"
-                    >
-                      <stop stopColor="#8083ff" />
-                      <stop offset="1" stopColor="#4edea3" />
-                    </linearGradient>
-                  </defs>
-                  <path
-                    d="M4 19V5L12 13L20 5V19"
-                    stroke="url(#site-meta-grad)"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2.5"
-                    fill="none"
-                  />
-                  <circle cx="12" cy="13" fill="#6366F1" r="1.5" />
-                </svg>
-              </div>
-              <span className="site-brand-name">METANOIA</span>
+              <MetanoiaLogo size={28} withWordmark tone="dark" />
             </Link>
 
             <nav className="site-nav" aria-label="Primary">
@@ -266,7 +236,7 @@ export function SiteLayout() {
       <footer className="site-footer">
         <div className="site-footer-inner">
           <div className="site-footer-left">
-            <span className="site-footer-name">METANOIA</span>
+            <MetanoiaLogo size={22} tone="dark" />
             <span className="site-footer-version">v2.4 Neural Sync</span>
           </div>
           <nav className="site-footer-nav" aria-label="Secondary">

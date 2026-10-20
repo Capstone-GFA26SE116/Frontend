@@ -98,6 +98,13 @@ function daysUntil(deadlineIso: string): number {
   return Math.round((b - a) / 86_400_000);
 }
 
+/** Rút gọn chuỗi dài về 1 dòng, thêm "…" nếu bị cắt. */
+function truncate(s: string, max = 120): string {
+  const t = s.trim();
+  if (t.length <= max) return t;
+  return t.slice(0, max).trimEnd() + "…";
+}
+
 /** Map `ProjectDto` từ BE -> view-model `Project` cho UI. */
 /**
  * Map `ProjectDto` từ BE -> view-model `Project` cho UI.
@@ -147,20 +154,9 @@ function dtoToProject(d: ProjectDto): Project {
           ? "Awaiting launch"
           : "AI Orchestrated",
     clientTag: clientName,
-    insightIcon:
-      status === "completed" ? "task_alt" : status === "pending" ? "auto_mode" : "neurology",
-    insightTone:
-      status === "completed"
-        ? "tertiary"
-        : status === "pending"
-          ? "tertiary"
-          : "primary",
-    insight:
-      status === "completed"
-        ? `Project completed. <span class="text-tertiary font-medium">${clientName}</span> has been delivered.`
-        : status === "pending"
-          ? `Project awaiting launch. AI will auto-decompose tasks as soon as you click <strong class="text-on-surface">Start</strong>.`
-          : `AI is tracking progress. <strong class="text-on-surface">${Math.max(days, 0)} days</strong> left until deadline.`,
+    insightIcon: "description",
+    insightTone: "primary",
+    insight: d.description ? truncate(d.description) : "No description",
     primaryAction: {
       label: status === "completed" ? "Open details" : "View & Orchestrate",
       icon: status === "completed" ? "open_in_new" : "arrow_forward",
@@ -567,16 +563,9 @@ export function ProjectsPage() {
           <div className="proj-header-text">
             <div className="proj-eyebrow">
               <span className="proj-eyebrow-dot" />
-              <span>Multi-Project Operations Workspace</span>
-              <span className="proj-eyebrow-sep">/</span>
-              <span className="proj-eyebrow-soft">Cognitive Workspace</span>
+              <span>Project Workspace</span>
             </div>
-            <h1 className="proj-title">Project Management Workspace</h1>
-            <p className="proj-subtitle">
-              Centralize your project portfolio. AI automatically analyzes
-              goals, generates detailed tasks, chunks them into focused sessions
-              and adapts scheduling to your bio-rhythm.
-            </p>
+            <h1 className="proj-title">My Projects</h1>
           </div>
           <div className="proj-header-actions">
             <button
@@ -706,20 +695,20 @@ export function ProjectsPage() {
             delayStyle={kpiAnim.getDelay(0)}
           />
           <KpiCard
-            label="AI allocation progress"
+            label="AI Progress"
             value="84%"
-            unit="+12% this week"
+            unit="+12%"
             unitTone="primary"
             icon="auto_awesome"
             iconTone="primary"
             progress={84}
-            foot="Auto-scheduled & task-chunked"
+            foot="Auto-scheduled"
             valueTone="primary"
             mounted={kpiAnim.mounted}
             delayStyle={kpiAnim.getDelay(1)}
           />
           <KpiCard
-            label="Projected cognitive load"
+            label="Cognitive Load"
             value="1.18x"
             unit="Balanced"
             unitTone="secondary"
@@ -727,7 +716,7 @@ export function ProjectsPage() {
             icon="psychology"
             iconTone="tertiary"
             progress={59}
-            foot="No bio-rhythm conflicts"
+            foot="No conflicts"
             mounted={kpiAnim.mounted}
             delayStyle={kpiAnim.getDelay(2)}
           />
@@ -750,14 +739,11 @@ export function ProjectsPage() {
         <section className="proj-section">
           <div className="proj-section-head">
             <div className="proj-section-head-left">
-              <span className="proj-section-title">Active Project Portfolio</span>
+              <span className="proj-section-title">Portfolio</span>
               <span className="proj-section-pill">
-                {projects.length} Workspaces
+                {projects.length} project{projects.length === 1 ? "" : "s"}
               </span>
             </div>
-            <span className="proj-section-hint">
-              Click the 3 dots to manage (Edit / Delete / Archive)
-            </span>
           </div>
 
           <div
@@ -799,18 +785,7 @@ export function ProjectsPage() {
               <div className="proj-add-icon">
                 <span className="material-symbols-outlined">add</span>
               </div>
-              <div className="proj-add-text">
-                <h4 className="proj-add-title">Create New Project</h4>
-                <p className="proj-add-desc">
-                  Or import quickly from{" "}
-                  <strong>Notion, Trello, GitHub</strong>. Let METANOIA AI
-                  analyze and generate an optimal schedule automatically.
-                </p>
-              </div>
-              <div className="proj-add-arrow">
-                <span>Start scaffolding</span>
-                <span className="material-symbols-outlined">arrow_forward</span>
-              </div>
+              <h4 className="proj-add-title">New Project</h4>
             </button>
           </div>
 
@@ -908,7 +883,6 @@ export function ProjectsPage() {
               icon="flag"
               iconTone="primary"
               title="Initialize Goals"
-              desc="Enter project name, core objectives, deadline and estimated time budget (Scope)."
               delayStyle={pipelineAnim.getDelay(0)}
             />
             <PipelineStep
@@ -917,7 +891,6 @@ export function ProjectsPage() {
               icon="call_split"
               iconTone="secondary"
               title="AI Auto-Decomposition"
-              desc="Breaks down macro goals into 45–90 min sub-tasks, auto-tagged with Eisenhower matrix & focus depth."
               delayStyle={pipelineAnim.getDelay(1)}
             />
             <PipelineStep
@@ -925,7 +898,6 @@ export function ProjectsPage() {
               icon="calendar_clock"
               iconTone="tertiary"
               title="Adaptive Schedule Sync"
-              desc="Aligns with your personal bio-rhythm, auto-reserving recovery buffer time after heavy tasks."
               delayStyle={pipelineAnim.getDelay(2)}
             />
           </div>
@@ -1679,10 +1651,7 @@ function ProjectCard(p: ProjectCardProps) {
         >
           {prj.insightIcon}
         </span>
-        <p
-          className="proj-insight-text"
-          dangerouslySetInnerHTML={{ __html: prj.insight }}
-        />
+        <p className="proj-insight-text">{prj.insight}</p>
       </div>
 
       <div className="proj-card-actions">
@@ -1756,7 +1725,6 @@ function PipelineStep({
   icon,
   iconTone,
   title,
-  desc,
   delayStyle,
 }: {
   step: string;
@@ -1764,7 +1732,8 @@ function PipelineStep({
   icon: string;
   iconTone: "primary" | "secondary" | "tertiary";
   title: string;
-  desc: string;
+  // desc không còn hiển thị — title + icon đủ để truyền tải ý nghĩa.
+  // Prop giữ để tránh vỡ call-sites; nên đã xoá khỏi destructure.
   delayStyle: { animationDelay: string };
 }) {
   return (
@@ -1776,7 +1745,7 @@ function PipelineStep({
         </span>
       </div>
       <h3 className="proj-step-title">{title}</h3>
-      <p className="proj-step-desc">{desc}</p>
+      <p className="proj-step-desc">{title}</p>
     </div>
   );
 }

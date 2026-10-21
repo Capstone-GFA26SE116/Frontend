@@ -1867,6 +1867,40 @@
   box-shadow: 0 0 8px var(--sch-primary-glow);
 }
 
+/* Nút xoá 1 block (slot) trong danh sách subtask của modal */
+.sch-aggregate__body {
+  position: relative;
+}
+.sch-aggregate__del {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--sch-line-soft);
+  border-radius: var(--sch-r-pill);
+  background: var(--sch-bg);
+  color: var(--sch-text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.sch-aggregate__item:hover .sch-aggregate__del {
+  opacity: 1;
+}
+.sch-aggregate__del:hover {
+  color: var(--sch-error);
+  border-color: var(--sch-error);
+}
+.sch-aggregate__del:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--sch-primary);
+  outline-offset: 2px;
+}
+
 /* ===========================================================
  * Cell popover
  * =========================================================== */

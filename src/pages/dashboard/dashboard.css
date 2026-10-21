@@ -20,6 +20,19 @@
   --font-sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: "SFMono-Regular", "JetBrains Mono", Menlo, Monaco, Consolas, monospace;
 
+  /* ---- Semantic tints cho Focus slot (in-product; theo type) ----
+     Nền canvas-soft + tint 8-10% giữ nguyên tinh thần "hairline trên dark",
+     vẫn đọc là 1 surface liền mạch chứ không phải "material card". */
+  --t-meeting: #4ea8ff;
+  --t-meeting-soft: rgba(78, 168, 255, 0.1);
+  --t-focus: var(--primary);
+  --t-focus-soft: rgba(0, 217, 146, 0.09);
+  --t-reading: #c0a8ff;
+  --t-reading-soft: rgba(192, 168, 255, 0.1);
+  --t-task: var(--primary-soft);
+  --t-task-soft: rgba(47, 214, 161, 0.08);
+  --done: #6b7280;
+
   position: relative;
   isolation: isolate;
   width: 100%;
@@ -229,6 +242,13 @@
   border: 1px solid var(--hairline);
   padding: 24px;
   transition: border-color 200ms ease;
+  /* Cột flex: các card cao bằng nhau, thanh biểu diễn trượt xuống đáy
+     để 3 thanh (sparkline / bar / progress) nằm cùng một đường ngang.
+     gap đảm nhiệm khoảng cách giữa các khối, margin-top:auto đẩy
+     thanh xuống đáy card. */
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 .dash-metric:hover {
   border-color: var(--primary);
@@ -239,14 +259,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.dash-metric-head-left {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+  /* Không cho cặp label + chip tách hàng: label co lại và tự xuống dòng
+     bên trong nó, chip luôn neo sát mép phải. */
+  flex-wrap: nowrap;
 }
 
 /* Metric label — body-sm */
@@ -256,6 +271,8 @@
   font-weight: 600;
   line-height: 24px;
   color: var(--body);
+  /* cho phép co lại khi không đủ chỗ, thay vì overflow */
+  min-width: 0;
 }
 
 /* Chip — button-pill-tag variant */
@@ -291,25 +308,9 @@
   color: var(--body);
   border-color: var(--hairline);
 }
-.dash-chip--mono {
-  background: var(--canvas-soft);
-  color: var(--mute);
-  border: 1px solid var(--hairline);
-  cursor: help;
-  transition: color 150ms ease;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  padding: 2px 8px;
-  letter-spacing: 0;
-  text-transform: none;
-}
-.dash-chip--mono:hover {
-  color: var(--ink);
-}
 
 /* metric value row */
 .dash-metric-value {
-  margin-top: 1rem;
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
@@ -349,13 +350,6 @@
 .dash-metric-number--success {
   color: var(--primary);
 }
-.dash-metric-mono {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--mute);
-  letter-spacing: 0;
-}
-
 .dash-metric-trend {
   display: inline-flex;
   align-items: center;
@@ -380,13 +374,19 @@
 }
 
 .dash-metric-foot {
-  margin-top: 0.75rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
   font-family: var(--font-sans);
   font-size: 14px;
   color: var(--body);
+}
+/* Foot đi kèm thanh biểu diễn: ghim cặp foot + thanh xuống đáy card,
+   khoảng trống dư nằm trên foot (giữa số liệu và foot) thay vì
+   nằm giữa foot và thanh. */
+.dash-metric-foot--pinned {
+  margin-top: auto;
+  margin-bottom: 0.125rem;
 }
 .dash-metric-foot-emph {
   font-family: var(--font-mono);
@@ -397,10 +397,13 @@
 }
 
 /* sparkline */
+/* Sparkline: cao hơn 2 thanh kia để đường đồ thị đọc được,
+   nhưng vẫn neo cùng đáy card (margin-top:auto) nên cả 3 thanh
+   nằm trên cùng một đường ngang. */
 .dash-sparkline {
-  margin-top: 0.75rem;
+  margin-top: auto;
   width: 100%;
-  height: 2rem;
+  height: 2.75rem;
   overflow: hidden;
   border-radius: 4px;
   background: var(--canvas-soft);
@@ -408,38 +411,14 @@
 .dash-sparkline-svg {
   width: 100%;
   height: 100%;
+  display: block;
   color: var(--primary);
-  opacity: 0.75;
+  opacity: 1;
 }
 
 /* formula row */
-.dash-formula {
-  margin-top: 0.75rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--body);
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  letter-spacing: 0;
-}
-.dash-formula-code {
-  color: var(--mute);
-  font-size: 12px;
-  letter-spacing: 0;
-}
-.dash-formula-addon {
-  color: var(--primary-soft);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0;
-}
-
 /* segmented bar */
 .dash-bar {
-  margin-top: 0.75rem;
   width: 100%;
   height: 8px;
   border-radius: 9999px;
@@ -476,7 +455,6 @@
 
 /* progress bar */
 .dash-progress {
-  margin-top: 0.75rem;
   width: 100%;
   height: 8px;
   border-radius: 9999px;
@@ -542,16 +520,6 @@
   color: var(--ink-strong);
   margin: 0;
 }
-.dash-col-sub {
-  display: none;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--mute);
-  letter-spacing: 0;
-}
-@media (min-width: 640px) {
-  .dash-col-sub { display: inline; }
-}
 .dash-col-meta {
   font-family: var(--font-mono);
   font-size: 12px;
@@ -591,102 +559,251 @@
   gap: 1rem;
 }
 
+/* Loading / error / empty states */
+.dash-slots-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  color: var(--mute);
+  font-size: 0.875rem;
+  line-height: 20px;
+}
+.dash-slots-state--error {
+  color: #ff6b6b;
+  border-color: rgba(255, 107, 107, 0.35);
+}
+.dash-slots-state-icon {
+  font-size: 32px;
+  opacity: 0.75;
+}
+.dash-slots-state--error .dash-slots-state-icon {
+  font-size: 28px;
+  opacity: 1;
+}
+.dash-slots-state-retry {
+  margin-top: 0.25rem;
+  padding: 8px 16px;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+.dash-slots-state-retry:hover {
+  background: var(--canvas-soft);
+  border-color: var(--ink);
+}
+
+/* ----- Focus Slot (timeline card) -----
+   Tint theo --t-* (mỗi type 1 màu), set trong .dash-slot--t-*. */
 .dash-slot {
   position: relative;
   overflow: hidden;
+  isolation: isolate;
+  --accent: var(--t-focus);
+  --accent-soft: var(--t-focus-soft);
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 16px;
+  padding: 18px 20px;
   background: var(--canvas);
-  border-radius: 8px;
+  border-radius: 10px;
   border: 1px solid var(--hairline);
-  padding: 20px;
-  transition: border-color 200ms ease;
+  transition: border-color 200ms ease, background 200ms ease;
 }
-.dash-slot:hover {
-  border-color: var(--primary);
-}
-.dash-slot--focus {
-  background: var(--canvas-soft);
-  border-color: var(--primary);
+@media (max-width: 640px) {
+  .dash-slot {
+    grid-template-columns: 76px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+  }
 }
 
+/* Tint từ trái: 1 vệt màu nhạt chạy dọc = "khối thời gian" */
+.dash-slot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    var(--accent-soft) 0%,
+    transparent 42%
+  );
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 200ms ease;
+}
+.dash-slot:hover::before {
+  opacity: 1;
+}
+
+/* Viền trái 2px theo accent — kiểu "featured" mà DESIGN.md cho phép */
 .dash-slot-bar {
   position: absolute;
   top: 0;
   bottom: 0;
   left: 0;
-  width: 4px;
-  background: var(--primary);
+  width: 2px;
+  background: var(--accent);
+  transition: width 200ms ease;
+}
+.dash-slot:hover .dash-slot-bar {
+  width: 3px;
 }
 
-.dash-slot-inner {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  justify-content: space-between;
-  align-items: stretch;
+/* Màu theo từng loại khối */
+.dash-slot--t-meeting {
+  --accent: var(--t-meeting);
+  --accent-soft: var(--t-meeting-soft);
 }
-@media (min-width: 640px) {
-  .dash-slot-inner {
-    flex-direction: row;
-    align-items: center;
+.dash-slot--t-focus {
+  --accent: var(--t-focus);
+  --accent-soft: var(--t-focus-soft);
+}
+.dash-slot--t-reading {
+  --accent: var(--t-reading);
+  --accent-soft: var(--t-reading-soft);
+}
+.dash-slot--t-task {
+  --accent: var(--t-task);
+  --accent-soft: var(--t-task-soft);
+}
+
+/* Slot đã xong → bớt màu, ưu tiên gray */
+.dash-slot--done {
+  --accent: var(--done);
+  --accent-soft: rgba(107, 114, 128, 0.07);
+}
+
+/* Slot "đang chạy" → tầng nổi mạnh nhất: viền + nền tint + glow nhẹ.
+   Phân biệt với `next` (sắp tới, tầng nhẹ hơn) để gợi ý thị giác. */
+.dash-slot--running {
+  border-color: var(--accent);
+  background: var(--canvas-soft);
+  box-shadow: 0 0 0 3px
+    color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.dash-slot--running::before {
+  opacity: 1;
+  background: linear-gradient(
+    100deg,
+    color-mix(in srgb, var(--accent) 22%, transparent) 0%,
+    transparent 55%
+  );
+}
+
+/* Khung kế tiếp (sắp tới, chưa tới giờ) → tầng nhẹ: chỉ viền + tint mỏng. */
+.dash-slot--next {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--hairline));
+}
+.dash-slot--next::before {
+  opacity: 1;
+  background: linear-gradient(
+    100deg,
+    color-mix(in srgb, var(--accent) 8%, transparent) 0%,
+    transparent 55%
+  );
+}
+
+/* Sắp hết giờ (<5m): thêm overlay cảnh báo nhưng giữ tầng running. */
+.dash-slot--ending {
+  animation: dash-ending-pulse 1.6s ease-in-out infinite;
+}
+@keyframes dash-ending-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 3px
+      color-mix(in srgb, var(--t-warning, #f59e0b) 22%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 6px
+      color-mix(in srgb, var(--t-warning, #f59e0b) 32%, transparent);
   }
 }
-.dash-slot--focus .dash-slot-inner {
-  padding-left: 0.5rem;
-}
 
-.dash-slot-left {
-  display: flex;
-  align-items: flex-start;
-  gap: 1rem;
-}
-@media (min-width: 640px) {
-  .dash-slot-left { align-items: center; }
-}
-
+/* Badge loại khối ở góc trên phải */
+/* Cột thời gian */
 .dash-slot-time {
-  width: 5rem;
-  flex-shrink: 0;
-  font-family: var(--font-mono);
-  font-size: 13px;
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  justify-content: center;
+  gap: 6px;
+  padding-right: 14px;
+  border-right: 1px dashed var(--hairline);
+  font-family: var(--font-mono);
   color: var(--mute);
-  letter-spacing: 0;
+  font-size: 13px;
 }
-@media (min-width: 640px) {
+@media (max-width: 640px) {
   .dash-slot-time {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
+    padding-right: 0;
+    border-right: 0;
+    border-bottom: 1px dashed var(--hairline);
+    padding-bottom: 10px;
+    grid-row: 1;
   }
 }
-.dash-slot-time--focus { color: var(--primary); }
+/* Chấm nhỏ màu accent trước giờ bắt đầu */
 .dash-slot-time-start {
-  font-weight: 550;
+  position: relative;
   color: var(--ink-strong);
-  font-size: 13px;
+  font-weight: 600;
+  font-size: 22px;
+  line-height: 24px;
+  letter-spacing: -0.4px;
 }
 .dash-slot-time-start--focus {
-  color: var(--primary);
-  font-weight: 700;
+  color: var(--accent);
 }
 .dash-slot-time-end {
   font-size: 12px;
-  color: var(--body);
+  color: var(--mute);
+  letter-spacing: 0.4px;
+}
+.dash-slot-time-rule {
+  position: absolute;
+  right: -1px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  transform: translateY(-50%) rotate(45deg);
+  background: var(--accent);
+  opacity: 0.85;
+}
+@media (max-width: 640px) {
+  .dash-slot-time-rule { display: none; }
 }
 
+/* Cột thân */
 .dash-slot-body {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  flex: 1;
+  gap: 8px;
+  min-width: 0;
 }
+@media (max-width: 640px) {
+  .dash-slot-body {
+    grid-column: 1 / span 2;
+    grid-row: 2;
+  }
+}
+
 .dash-slot-tags {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: 6px;
 }
 
 /* Tag — eyebrow-pill variant */
@@ -737,7 +854,8 @@
   margin: 0;
   letter-spacing: -0.4px;
 }
-.dash-slot--focus .dash-slot-title {
+.dash-slot--running .dash-slot-title,
+.dash-slot--next .dash-slot-title {
   font-weight: 600;
 }
 .dash-slot-desc {
@@ -753,10 +871,14 @@
   align-items: center;
   gap: 0.5rem;
   flex-shrink: 0;
-  align-self: flex-end;
+  align-self: center;
 }
-@media (min-width: 640px) {
-  .dash-slot-right { align-self: center; }
+@media (max-width: 640px) {
+  .dash-slot-right {
+    grid-column: 1 / span 2;
+    justify-content: flex-end;
+    align-self: auto;
+  }
 }
 
 /* Slot status — button-pill-tag */
@@ -779,11 +901,49 @@
 .dash-slot-status--done {
   background: var(--canvas-soft);
   color: var(--mute);
+  border-color: var(--hairline);
 }
 .dash-slot-status--next {
-  color: var(--primary);
-  border-color: var(--primary);
-  background: rgba(0, 217, 146, 0.06);
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+/* Status "đang chạy": pill 2 dòng (eyebrow "In progress" + đếm ngược). */
+.dash-slot-status--running {
+  color: #ffffff;
+  border-color: var(--accent);
+  background: linear-gradient(
+    135deg,
+    var(--accent),
+    color-mix(in srgb, var(--accent) 70%, #fff 0%)
+  );
+  box-shadow: 0 4px 14px
+    color-mix(in srgb, var(--accent) 35%, transparent);
+  padding: 6px 14px 6px 12px;
+  gap: 8px;
+}
+.dash-slot-status-meta {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.05;
+}
+.dash-slot-status-eyebrow {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+.dash-slot-status-time {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+/* Đã có ping sẵn -- thêm biến thể "running" nhịp nhanh hơn cho chú ý. */
+.dash-slot-ping--running::before {
+  animation-duration: 1.1s;
 }
 
 .dash-slot-ping {
@@ -921,31 +1081,54 @@
 .dash-tasks {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 8px;
 }
 
+/* ----- Upcoming task card ----- */
 .dash-task {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 12px;
-  border-radius: 6px;
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px 12px 16px;
+  border-radius: 8px;
   background: var(--canvas-soft);
   border: 1px solid var(--hairline);
   cursor: pointer;
-  transition: border-color 150ms ease;
+  overflow: hidden;
+  transition: border-color 160ms ease, transform 160ms ease,
+    background 160ms ease;
+}
+/* "Before" accent line: dashed teal chạy ngang, mood của inbox */
+.dash-task::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: linear-gradient(180deg, var(--primary), transparent);
+  opacity: 0.35;
+  transition: opacity 160ms ease, width 160ms ease;
 }
 .dash-task:hover {
   border-color: var(--primary);
+  transform: translateX(2px);
 }
+.dash-task:hover::before {
+  opacity: 1;
+  width: 4px;
+}
+
 .dash-task-left {
   display: flex;
   align-items: flex-start;
-  gap: 0.5rem;
+  gap: 0.75rem;
+  min-width: 0;
 }
 .dash-task-check {
-  margin-top: 3px;
+  margin-top: 2px;
   width: 16px;
   height: 16px;
   border-radius: 4px;
@@ -953,6 +1136,11 @@
   border: 1px solid var(--hairline);
   accent-color: var(--primary);
   cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 160ms ease;
+}
+.dash-task:hover .dash-task-check {
+  border-color: var(--primary);
 }
 .dash-task-title {
   font-family: var(--font-sans);
@@ -961,7 +1149,8 @@
   font-weight: 500;
   color: var(--ink-strong);
   margin: 0;
-  transition: color 150ms ease;
+  transition: color 160ms ease;
+  word-break: break-word;
 }
 .dash-task:hover .dash-task-title {
   color: var(--primary);
@@ -970,7 +1159,7 @@
 .dash-task-meta {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 8px;
   margin-top: 4px;
 }
 .dash-task-due {
@@ -978,20 +1167,46 @@
   font-size: 12px;
   color: var(--body);
   letter-spacing: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.dash-task-due::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--mute);
+  display: inline-block;
 }
 .dash-urgency {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 2px 8px;
   border-radius: 9999px;
   font-family: var(--font-sans);
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
   border: 1px solid var(--hairline);
   background: var(--canvas);
   color: var(--body);
+  line-height: 16px;
 }
 .dash-urgency--urgent {
   color: var(--ink-strong);
-  border-color: var(--hairline);
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+.dash-urgency--urgent::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--primary);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--primary) 60%, transparent);
 }
 .dash-urgency--normal {
   background: var(--canvas-soft);
@@ -1005,6 +1220,7 @@
 }
 .dash-task:hover .dash-task-chev {
   color: var(--primary);
+  transform: translateX(2px);
 }
 
 /* AI tip card */

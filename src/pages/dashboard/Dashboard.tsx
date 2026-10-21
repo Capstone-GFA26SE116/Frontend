@@ -1,11 +1,33 @@
-import { useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import { useStaggeredMount } from "../../hooks/useStaggeredMount";
+import { listCalendar, type CalendarItemDto } from "../../lib/api-client";
 import "./dashboard.css";
 
+/* ---------- Hằng số cho nhịp độ của lịch ---------- */
+/** Còn dưới ngưỡng này (phút) thì khung đang chạy được tô thêm viền cảnh báo. */
+const SOON_THRESHOLD_MS = 5 * 60 * 1000;
+/** Chu kỳ tick: đủ mịn cho đồng hồ đếm ngược, rẻ hơn cập nhật mỗi giây. */
+const TICK_MS = 30 * 1000;
+
+/** "42m" / "1h 05" — định dạng ngắn cho phần thời gian còn lại. */
+function formatRemain(ms: number): string {
+  if (ms <= 0) return "0m";
+  const totalMin = Math.ceil(ms / 60_000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return h > 0 ? `${h}h ${String(m).padStart(2, "0")}` : `${m}m`;
+}
+
 /* ---------- Types ---------- */
-type FocusStatus = "done" | "next" | "upcoming";
+type FocusStatus = "done" | "running" | "next" | "upcoming";
 type FocusType = "meeting" | "focus" | "reading" | "task";
 
 interface FocusSlot {
@@ -18,6 +40,12 @@ interface FocusSlot {
   status: FocusStatus;
   tags: { label: string; tone?: "primary" | "success" | "muted" | "warning" }[];
   meta?: string;
+  /** Epoch ms của mốc bắt đầu — dùng để tính "sắp tới" theo phút. */
+  startMs: number;
+  /** Epoch ms của mốc kết thúc — dùng cho đếm ngược. */
+  endMs: number;
+  /** Epoch ms lúc render, để đếm ngược không phụ thuộc Date.now() mỗi lần vẽ. */
+  nowMs: number;
 }
 
 interface UpcomingTask {
@@ -26,49 +54,6 @@ interface UpcomingTask {
   due: string;
   urgency: "urgent" | "normal";
 }
-
-const FOCUS_SLOTS: FocusSlot[] = [
-  {
-    id: "s1",
-    start: "09:00",
-    end: "10:30",
-    title: "Weekly Capstone sync with Dr. Cam Huong",
-    desc: "Finalize Vector Search architecture & K_bias evaluation criteria.",
-    type: "meeting",
-    status: "done",
-    tags: [
-      { label: "Google Calendar", tone: "muted" },
-      { label: "Synced", tone: "success" },
-    ],
-  },
-  {
-    id: "s2",
-    start: "14:00",
-    end: "16:15",
-    title: "Write Backend Clean Architecture & Hangfire Hubs",
-    desc: "Implement recurring background jobs to sync the cognitive-energy matrix.",
-    type: "focus",
-    status: "next",
-    tags: [
-      { label: "Focus Peak", tone: "primary" },
-      { label: "Atomic Task", tone: "muted" },
-      { label: "+23m recovery buffer", tone: "warning" },
-    ],
-  },
-  {
-    id: "s3",
-    start: "16:30",
-    end: "17:30",
-    title: "Review research docs and pgvector embeddings",
-    desc: "Benchmark recall & query latency for semantic search.",
-    type: "reading",
-    status: "upcoming",
-    tags: [
-      { label: "Deep Reading", tone: "muted" },
-      { label: "60 min", tone: "muted" },
-    ],
-  },
-];
 
 const UPCOMING: UpcomingTask[] = [
   {
@@ -85,6 +70,148 @@ const UPCOMING: UpcomingTask[] = [
   },
 ];
 
+/* ---------- Calendar helpers ---------- */
+
+const TZ = "vi-VN";
+
+function fmtTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "--:--";
+  return d.toLocaleTimeString(TZ, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function isAllDayOn(item: CalendarItemDto): boolean {
+  if (item.isAllDay) return true;
+  // Một sự kiện bị coi là all-day nếu span >= 20h (backend có thể bỏ cờ isAllDay).
+  const s = new Date(item.start).getTime();
+  const e = new Date(item.end).getTime();
+  if (Number.isNaN(s) || Number.isNaN(e)) return false;
+  return e - s >= 20 * 60 * 60 * 1000;
+}
+
+/** Map 1 item của API calendar → FocusSlot cho timeline. */
+function itemToSlot(item: CalendarItemDto, now: Date): FocusSlot | null {
+  const start = new Date(item.start);
+  const end = new Date(item.end);
+  if (Number.isNaN(start.getTime())) return null;
+
+  const durationMin = Number.isNaN(end.getTime())
+    ? 0
+    : Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000));
+
+  // Title: ưu tiên subtask > task > raw title
+  const title =
+    item.subTaskTitle?.trim() || item.title?.trim() || "Untitled block";
+
+  // Desc: ghép các ngữ cảnh có sẵn từ API
+  const descParts = [
+    item.projectName?.trim(),
+    item.clientName?.trim(),
+    item.domainName?.trim(),
+  ].filter(Boolean);
+  const desc =
+    item.explanation?.trim() ||
+    descParts.join(" · ") ||
+    "Khối thời gian tập trung từ lịch của bạn.";
+
+  // Status dựa trên mốc thời gian + trạng thái task
+  const statusLower = (item.status ?? "").toLowerCase();
+  const cancelled =
+    statusLower === "cancelled" || statusLower === "canceled";
+  let status: FocusStatus;
+  if (cancelled) {
+    status = "upcoming";
+  } else if (end.getTime() <= now.getTime()) {
+    status = "done";
+  } else if (start.getTime() <= now.getTime()) {
+    status = "running";
+  } else {
+    // Khung tương lai: đánh `next` cho khung gần nhất, còn lại là `upcoming`.
+    // Logic chính xác hoá phân tầng nổi bật diễn ra ở useEffect tick (xem
+    // `promoteNextSlot`), vì `now` ở đây chỉ là giá trị tại thời điểm load.
+    status = "upcoming";
+  }
+
+  // Type: suy ra từ nguồn của sự kiện
+  const src = (item.source ?? "").toLowerCase();
+  let type: FocusType;
+  if (src === "google") type = "meeting";
+  else if (src === "slot") type = "focus";
+  else if (src === "milestone") type = "reading";
+  else type = "task";
+
+  // Tags dựng từ metadata API
+  const tags: FocusSlot["tags"] = [];
+  if (src === "google") tags.push({ label: "Google Calendar", tone: "muted" });
+  if (item.googleEventId) tags.push({ label: "Synced", tone: "success" });
+  if (status === "running") tags.push({ label: "Focus Peak", tone: "primary" });
+  if (item.subTaskId) tags.push({ label: "Atomic Task", tone: "muted" });
+  if (item.taskType?.trim()) {
+    tags.push({ label: item.taskType.trim(), tone: "muted" });
+  }
+  if (durationMin > 0) {
+    tags.push({
+      label:
+        durationMin >= 60
+          ? `${Math.floor(durationMin / 60)}h${durationMin % 60 ? ` ${durationMin % 60}m` : ""}`
+          : `${durationMin} min`,
+      tone: "muted",
+    });
+  }
+  if (item.isManualOverride) {
+    tags.push({ label: "Manual", tone: "warning" });
+  }
+  if (item.syncFailed) {
+    tags.push({ label: "⚠ Sync failed", tone: "warning" });
+  }
+
+  return {
+    id: item.id,
+    start: fmtTime(item.start),
+    end: isAllDayOn(item) ? "All day" : fmtTime(item.end),
+    title,
+    desc,
+    type,
+    status,
+    tags,
+    startMs: start.getTime(),
+    endMs: end.getTime(),
+    nowMs: now.getTime(),
+  };
+}
+
+/* ============================================================
+ * withUpNext — đánh lại tầng nổi bật cho danh sách slot.
+ *
+ * Quy tắc (chỉ đúng 1 khung mỗi tầng):
+ *   done      : đã qua `end`
+ *   running   : đã qua `start`, chưa qua `end`  (đang diễn ra)
+ *   next      : khung tương lai GẦN NHẤT       (chỉ đúng 1 cái)
+ *   upcoming  : các khung tương lai còn lại
+ *
+ * Dùng chung cho lúc load và mỗi lần tick, nên hai đường không thể lệch nhau.
+ * ============================================================ */
+function withUpNext(slots: FocusSlot[], nowMs: number): FocusSlot[] {
+  let nextIdx = -1;
+  for (let i = 0; i < slots.length; i++) {
+    const s = slots[i];
+    if (s.status === "done") continue;
+    if (s.startMs <= nowMs) continue;
+    if (nextIdx === -1 || s.startMs < slots[nextIdx].startMs) nextIdx = i;
+  }
+  return slots.map((s, i) => {
+    let status: FocusStatus;
+    if (s.endMs <= nowMs) status = "done";
+    else if (s.startMs <= nowMs) status = "running";
+    else status = i === nextIdx ? "next" : "upcoming";
+    return { ...s, status, nowMs };
+  });
+}
+
 /* ============================================================
  * DashboardPage — homepage sau khi đăng nhập.
  *
@@ -92,7 +219,7 @@ const UPCOMING: UpcomingTask[] = [
  *  1) Header Welcome Bar: greeting + status overview + actions.
  *  2) Top 3 Minimalist Key Metrics (energy peak, K_bias, today).
  *  3) Main grid 8/4 (65% / 35%):
- *      - Left  (8/12): AI Recommended Focus Slots (timeline).
+ *      - Left  (8/12): Today's recommended schedule (timeline).
  *      - Right (4/12): Quick Task Drawer (input + upcoming + AI tip).
  *
  * Class prefix `.dash-*`. Render bên trong <SiteLayout /> để có header/footer
@@ -104,8 +231,10 @@ export function DashboardPage() {
   // Danh sách task sắp đến hạn — khởi tạo từ UPCOMING, có thể thêm khi user
   // nhấn Enter ở quick input. Lưu state để có thể trigger re-animation.
   const [upcomingTasks, setUpcomingTasks] = useState<UpcomingTask[]>(UPCOMING);
-  // Focus slots cũng dynamic (vd: sau sync Google Calendar có thể thêm slot)
-  const [focusSlots] = useState<FocusSlot[]>(FOCUS_SLOTS);
+  // Focus slots lấy thật từ API calendar theo ngày hôm nay.
+  const [focusSlots, setFocusSlots] = useState<FocusSlot[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(true);
+  const [slotsError, setSlotsError] = useState<string | null>(null);
   const [toast, setToast] = useState<{
     visible: boolean;
     text: string;
@@ -129,6 +258,85 @@ export function DashboardPage() {
       setToast((t) => ({ ...t, visible: false }));
     }, 3200);
   }
+
+  /* ---------- Load hôm nay từ API calendar ---------- */
+  const loadTodaySchedule = useCallback(async () => {
+    setSlotsLoading(true);
+    setSlotsError(null);
+    // Khoảng [00:00 hôm nay, 00:00 ngày mai) theo local time.
+    const dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+
+    const res = await listCalendar({
+      from: dayStart.toISOString(),
+      to: dayEnd.toISOString(),
+      includeCancelled: false,
+    });
+
+    if (!res.ok) {
+      setFocusSlots([]);
+      setSlotsError(res.error);
+      setSlotsLoading(false);
+      return;
+    }
+
+    const now = new Date();
+    const slots = withUpNext(
+      (res.data.items ?? [])
+        .map((item) => itemToSlot(item, now))
+        .filter((s): s is FocusSlot => s !== null)
+        .sort((a, b) => {
+          // Sắp xếp theo giờ bắt đầu thật (không so sánh string HH:mm)
+          const toMin = (t: string) => {
+            if (t === "All day") return -1;
+            const [h, m] = t.split(":").map(Number);
+            return h * 60 + m;
+          };
+          return toMin(a.start) - toMin(b.start);
+        }),
+      now.getTime(),
+    );
+
+    setFocusSlots(slots);
+    setSlotsLoading(false);
+  }, []);
+
+  useEffect(() => {
+    void loadTodaySchedule();
+  }, [loadTodaySchedule]);
+
+  /* ---------- Tính lại status + nowMs mỗi TICK_MS ----------
+   * Lý do: status (`done`/`running`/`next`) chỉ đúng tại thời điểm load.
+   * Khi khung hiện tại hết giờ, ta cần tự động đánh `done` cho nó và thăng
+   * cấp khung kế tiếp lên `next`/`running`. Tick mỗi 30 giây đủ mịn cho
+   * đồng hồ đếm ngược, không tốn render.
+   */
+  useEffect(() => {
+    const tick = () => {
+      const nowMs = Date.now();
+      setFocusSlots((prev) => {
+        if (prev.length === 0) return prev;
+        // Dùng chung `withUpNext` với lúc load: luôn đảm bảo đúng 1 `running`
+        // và đúng 1 `next`, nên không bao giờ tồn tại 2 badge "Up next".
+        const nextList = withUpNext(prev, nowMs);
+        // Bỏ qua setState nếu không có gì đổi (tránh render thừa mỗi 30s).
+        const unchanged =
+          nextList.length === prev.length &&
+          nextList.every(
+            (s, i) =>
+              s.status === prev[i].status && s.nowMs === prev[i].nowMs,
+          );
+        return unchanged ? prev : nextList;
+      });
+    };
+    // Tick ngay lập tức (phòng trường hợp load xong đã muộn hơn giờ kết thúc
+    // của slot đầu), sau đó đặt interval.
+    tick();
+    const id = window.setInterval(tick, TICK_MS);
+    return () => window.clearInterval(id);
+  }, []);
 
   function handleQuickAdd(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -260,15 +468,15 @@ export function DashboardPage() {
                 className="dash-sparkline-svg"
                 fill="none"
                 preserveAspectRatio="none"
-                viewBox="0 0 100 25"
+                viewBox="0 0 100 32"
               >
                 <path
-                  d="M0,20 Q20,18 35,10 T65,4 T85,15 T100,12 L100,25 L0,25 Z"
+                  d="M0,26 Q20,23 35,13 T65,5 T85,20 T100,16 L100,32 L0,32 Z"
                   fill="currentColor"
                   fillOpacity="0.15"
                 />
                 <path
-                  d="M0,20 Q20,18 35,10 T65,4 T85,15 T100,12"
+                  d="M0,26 Q20,23 35,13 T65,5 T85,20 T100,16"
                   stroke="currentColor"
                   strokeLinecap="round"
                   strokeWidth="2"
@@ -286,40 +494,19 @@ export function DashboardPage() {
             style={metricsAnim.getDelay(1)}
           >
             <div className="dash-metric-head">
-              <div className="dash-metric-head-left">
-                <span className="dash-metric-label">
-                  Time adjustment coefficient
-                </span>
-                <span
-                  className="dash-chip dash-chip--mono"
-                  title="T_proposed = 60m × 1.34 + 20m bio-recovery buffer = 100m total block (Self-adaptive K_bias algorithm)"
-                >
-                  K_bias
-                </span>
-              </div>
-              <span className="dash-chip dash-chip--primary">
-                AI Compensated
+              <span className="dash-metric-label">
+                Time multiplier
               </span>
+              <span className="dash-chip dash-chip--primary">AI</span>
             </div>
 
-            <div className="dash-metric-value dash-metric-value--split">
-              <div className="dash-metric-value-left">
-                <span className="dash-metric-number">1.34x</span>
-                <span className="dash-metric-mono">(Bias)</span>
-              </div>
-              <div className="dash-metric-value-right">
-                <span className="dash-metric-number dash-metric-number--sm dash-metric-number--success">
-                  100m
-                </span>
-                <span className="dash-metric-sub">Total allocated</span>
-              </div>
+            <div className="dash-metric-value">
+              <span className="dash-metric-number">1.34x</span>
             </div>
 
-            <div className="dash-formula">
-              <code className="dash-formula-code">
-                T_proposed = (T_est × K_bias) + Δt
-              </code>
-              <span className="dash-formula-addon">+20m recovery buffer</span>
+            <div className="dash-metric-foot dash-metric-foot--pinned">
+              <span>Bias compensation</span>
+              <span className="dash-metric-foot-emph">+34%</span>
             </div>
 
             <div
@@ -340,11 +527,6 @@ export function DashboardPage() {
                 style={{ width: "20%" }}
               />
             </div>
-
-            <div className="dash-bar-legend">
-              <span>Base: 60m → Compensated: 80m</span>
-              <span className="dash-strong">+20m buffer = 100m</span>
-            </div>
           </article>
 
           {/* Metric 3: Today tasks */}
@@ -357,15 +539,12 @@ export function DashboardPage() {
           >
             <div className="dash-metric-head">
               <span className="dash-metric-label">Today's tasks</span>
-              <span className="dash-chip dash-chip--muted">Tuesday</span>
+              <span className="dash-chip dash-chip--success">Tuesday</span>
             </div>
             <div className="dash-metric-value">
               <span className="dash-metric-number">3/5</span>
-              <span className="dash-metric-trend dash-metric-trend--mono">
-                60% complete
-              </span>
             </div>
-            <div className="dash-metric-foot">
+            <div className="dash-metric-foot dash-metric-foot--pinned">
               <span>Remaining today</span>
               <span className="dash-metric-foot-emph">2 tasks to resolve</span>
             </div>
@@ -378,10 +557,7 @@ export function DashboardPage() {
             >
               <div className="dash-progress-fill" style={{ width: "60%" }} />
             </div>
-            <div className="dash-bar-legend">
-              <span>Done: 3</span>
-              <span>Total: 5</span>
-            </div>
+            
           </article>
         </section>
 
@@ -397,14 +573,45 @@ export function DashboardPage() {
               <div className="dash-col-head-left">
                 <span className="dash-col-dot" />
                 <h2 className="dash-col-title">Today's recommended schedule</h2>
-                <span className="dash-col-sub">
-                  (AI Recommended Focus Slots)
-                </span>
               </div>
               <span className="dash-col-meta">Timezone: UTC+7</span>
             </div>
 
             <div className="dash-slots">
+              {slotsLoading && (
+                <div className="dash-slots-state">
+                  <span className="material-symbols-outlined dash-slots-state-icon">
+                    progress_activity
+                  </span>
+                  <span>Đang tải lịch hôm nay…</span>
+                </div>
+              )}
+
+              {!slotsLoading && slotsError && (
+                <div className="dash-slots-state dash-slots-state--error">
+                  <span className="material-symbols-outlined dash-slots-state-icon">
+                    error
+                  </span>
+                  <span>{slotsError}</span>
+                  <button
+                    type="button"
+                    className="dash-slots-state-retry"
+                    onClick={() => void loadTodaySchedule()}
+                  >
+                    Thử lại
+                  </button>
+                </div>
+              )}
+
+              {!slotsLoading && !slotsError && focusSlots.length === 0 && (
+                <div className="dash-slots-state">
+                  <span className="material-symbols-outlined dash-slots-state-icon">
+                    event_available
+                  </span>
+                  <span>Chưa có khối thời gian nào được xếp lịch cho hôm nay.</span>
+                </div>
+              )}
+
               {focusSlots.map((slot, i) => (
                 <FocusSlotCard
                   key={`${slotsAnim.bumpKey}-${slot.id}`}
@@ -544,100 +751,121 @@ function FocusSlotCard({
   mounted: boolean;
   delayStyle: { animationDelay: string };
 }) {
-  const isFocus = slot.status === "next";
+  const isRunning = slot.status === "running";
+  const isNext = slot.status === "next";
   const isDone = slot.status === "done";
+
+  // Đếm ngược cho khung đang chạy: phần giờ còn lại tới `end`.
+  const remainMs = (slot.endMs ?? 0) - slot.nowMs;
+  const isEndingSoon = isRunning && remainMs > 0 && remainMs <= SOON_THRESHOLD_MS;
+  const remainLabel = isRunning
+    ? formatRemain(remainMs)
+    : null;
 
   return (
     <article
       className={
         "dash-slot" +
-        (isFocus ? " dash-slot--focus" : "") +
+        ` dash-slot--t-${slot.type}` +
+        (isRunning ? " dash-slot--running" : "") +
+        (isNext ? " dash-slot--next" : "") +
+        (isEndingSoon ? " dash-slot--ending" : "") +
         (isDone ? " dash-slot--done" : "") +
         (mounted ? " dash-slot--in" : "")
       }
       style={delayStyle}
     >
-      {isFocus && <span className="dash-slot-bar" aria-hidden="true" />}
+      <span className="dash-slot-bar" aria-hidden="true" />
 
-      <div className="dash-slot-inner">
-        <div className="dash-slot-left">
-          <div
-            className={
-              "dash-slot-time" + (isFocus ? " dash-slot-time--focus" : "")
-            }
-          >
+      <div className="dash-slot-time">
+        <span
+          className={
+            "dash-slot-time-start" +
+            (isRunning || isNext ? " dash-slot-time-start--focus" : "")
+          }
+        >
+          {slot.start}
+        </span>
+        <span className="dash-slot-time-end">{slot.end}</span>
+        <span className="dash-slot-time-rule" aria-hidden="true" />
+      </div>
+
+      <div className="dash-slot-body">
+        <div className="dash-slot-tags">
+          {slot.tags.map((t, i) => (
             <span
+              key={i}
               className={
-                "dash-slot-time-start" +
-                (isFocus ? " dash-slot-time-start--focus" : "")
+                "dash-tag" +
+                (t.tone === "primary"
+                  ? " dash-tag--primary"
+                  : t.tone === "success"
+                    ? " dash-tag--success"
+                    : t.tone === "warning"
+                      ? " dash-tag--warning"
+                      : " dash-tag--muted")
               }
             >
-              {slot.start}
-            </span>
-            <span className="dash-slot-time-end">{slot.end}</span>
-          </div>
-
-          <div className="dash-slot-body">
-            <div className="dash-slot-tags">
-              {slot.tags.map((t, i) => (
-                <span
-                  key={i}
-                  className={
-                    "dash-tag" +
-                    (t.tone === "primary"
-                      ? " dash-tag--primary"
-                      : t.tone === "success"
-                        ? " dash-tag--success"
-                        : t.tone === "warning"
-                          ? " dash-tag--warning"
-                          : " dash-tag--muted")
-                  }
-                >
-                  {t.tone === "primary" && (
-                    <span className="material-symbols-outlined dash-tag-icon">
-                      bolt
-                    </span>
-                  )}
-                  {t.tone === "success" && (
-                    <span
-                      className="material-symbols-outlined dash-tag-icon"
-                      style={{ fontVariationSettings: "'FILL' 1" }}
-                    >
-                      check_circle
-                    </span>
-                  )}
-                  {t.label}
+              {t.tone === "primary" && (
+                <span className="material-symbols-outlined dash-tag-icon">
+                  bolt
                 </span>
-              ))}
-            </div>
-            <h3 className="dash-slot-title">{slot.title}</h3>
-            <p className="dash-slot-desc">{slot.desc}</p>
-          </div>
+              )}
+              {t.tone === "success" && (
+                <span
+                  className="material-symbols-outlined dash-tag-icon"
+                  style={{ fontVariationSettings: "'FILL' 1" }}
+                >
+                  check_circle
+                </span>
+              )}
+              {t.label}
+            </span>
+          ))}
         </div>
+        <h3 className="dash-slot-title">{slot.title}</h3>
+        <p className="dash-slot-desc">{slot.desc}</p>
+      </div>
 
-        <div className="dash-slot-right">
-          {slot.status === "done" && (
-            <span className="dash-slot-status dash-slot-status--done">
-              Done
-            </span>
-          )}
-          {slot.status === "next" && (
-            <span className="dash-slot-status dash-slot-status--next">
-              <span className="dash-slot-ping" aria-hidden="true" />
-              Up next
-            </span>
-          )}
-          {slot.status === "upcoming" && (
-            <button
-              type="button"
-              title="Snooze"
-              aria-label="Options"
-              className="dash-slot-more"
+      <div className="dash-slot-right">
+        {slot.status === "done" && (
+          <span className="dash-slot-status dash-slot-status--done">
+            <span
+              className="material-symbols-outlined"
+              style={{ fontVariationSettings: "'FILL' 1", fontSize: 14 }}
             >
-              <span className="material-symbols-outlined">more_horiz</span>
-            </button>
-          )}
-        </div>
+              check_circle
+            </span>
+            Done
+          </span>
+        )}
+        {slot.status === "running" && (
+          <span className="dash-slot-status dash-slot-status--running">
+            <span className="dash-slot-ping dash-slot-ping--running" aria-hidden="true" />
+            <span className="dash-slot-status-meta">
+              <span className="dash-slot-status-eyebrow">In progress</span>
+              <span className="dash-slot-status-time" aria-live="polite">
+                {remainLabel ? `${remainLabel} left` : "Ending"}
+              </span>
+            </span>
+          </span>
+        )}
+        {slot.status === "next" && (
+          <span className="dash-slot-status dash-slot-status--next">
+            <span className="dash-slot-ping" aria-hidden="true" />
+            Up next
+          </span>
+        )}
+        {slot.status === "upcoming" && (
+          <button
+            type="button"
+            title="Snooze"
+            aria-label="Options"
+            className="dash-slot-more"
+          >
+            <span className="material-symbols-outlined">more_horiz</span>
+          </button>
+        )}
       </div>
     </article>
   );

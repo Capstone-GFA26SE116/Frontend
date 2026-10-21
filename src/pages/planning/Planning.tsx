@@ -222,13 +222,11 @@ export function PlanningPage() {
   }
 
   async function handleScheduleSubmit() {
-    console.log("handleScheduleSubmit called", { scheduleModal, scheduleStart, scheduleEnd, scheduleSubtaskId });
     if (!scheduleModal || !scheduleStart || !scheduleEnd) {
       console.log("Early return: missing data");
       return;
     }
     setScheduleSubmitting(true);
-    console.log("Calling API...");
     try {
       // Nếu chọn 1 subtask cụ thể → chỉ tạo 1 slot
       if (scheduleSubtaskId) {
@@ -240,9 +238,8 @@ export function PlanningPage() {
           isManualOverride: true,
           kbiasUsed: 0,
           explanation: scheduleExplanation || "Manual schedule from Planning page",
-          status: "scheduled",
+          status: "Approved",
         });
-        console.log("API result:", JSON.stringify(res));
         setScheduleSubmitting(false);
         if (res.ok) {
           setScheduleModal(null);
@@ -271,7 +268,7 @@ export function PlanningPage() {
           isManualOverride: true,
           kbiasUsed: 0,
           explanation: scheduleExplanation || "Manual schedule from Planning page",
-          status: "scheduled",
+          status: "Approved",
         });
         setScheduleSubmitting(false);
         if (res.ok) {
@@ -302,7 +299,7 @@ export function PlanningPage() {
           isManualOverride: true,
           kbiasUsed: 0,
           explanation: scheduleExplanation || "Manual schedule from Planning page",
-          status: "scheduled",
+          status: "Approved",
         });
         setScheduleSubmitting(false);
         if (res.ok) {
@@ -336,7 +333,7 @@ export function PlanningPage() {
           isManualOverride: true,
           kbiasUsed: 0,
           explanation: scheduleExplanation || `Auto-scheduled for subtask "${sub.title}"`,
-          status: "scheduled",
+          status: "Approved",
         });
         if (res.ok) successCount++;
         else failedCount++;
@@ -500,7 +497,7 @@ export function PlanningPage() {
           isManualOverride: false,
           kbiasUsed: 0,
           explanation: `Auto-scheduled from task creation`,
-          status: "scheduled",
+          status: "Approved",
         };
         void createScheduleSlot(task.id, slotData);
       }
@@ -551,7 +548,7 @@ export function PlanningPage() {
           isManualOverride: false,
           kbiasUsed: 0,
           explanation: `Auto-scheduled from subtask creation`,
-          status: "scheduled",
+          status: "Approved",
         };
         void createScheduleSlot(taskId, slotData);
       }

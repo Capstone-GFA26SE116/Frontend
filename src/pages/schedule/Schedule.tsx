@@ -73,6 +73,8 @@ interface CalEvent {
   scheduleSlot?: ScheduleSlotDto;
   /** Danh sách ScheduleSlotDto gốc khi event là task aggregate (gộp nhiều slot subtask). */
   aggregatedSlots?: ScheduleSlotDto[];
+  /** Danh sách event gốc bị gộp — nguồn chuẩn để modal dựng danh sách subtask. */
+  aggregatedEvents?: CalEvent[];
 }
 
 interface DayLoad {
@@ -286,7 +288,7 @@ export function SchedulePage() {
         isManualOverride: true,
         kbiasUsed: 0,
         explanation: `Scheduled from Planning: "${taskData.taskTitle}"`,
-        status: "scheduled",
+        status: "Approved",
       });
 
       if (res.ok) {
@@ -412,7 +414,7 @@ export function SchedulePage() {
           googleCalendarStatus: calRes.data.googleCalendarStatus,
         });
 
-        // Vẫn load tasks/subtasks để enrich slots nếu cần
+        // Vẫn load tasks + subtasks để modal hiển thị được danh sách subtask
         if (!projectId) {
           const projRes = await listProjects();
           if (projRes.ok) setAllProjects(projRes.data);
@@ -422,9 +424,22 @@ export function SchedulePage() {
           const allTasks: TaskDto[] = [];
           for (const r of taskResults) if (r.ok) allTasks.push(...r.data);
           setTasks(allTasks);
+          // Subtask: cần cho modal (cột phải) — load theo từng task
+          const subResults = await Promise.all(
+            allTasks.map((t) => listSubtasks(t.id)),
+          );
+          const allSub: SubtaskDto[] = [];
+          for (const r of subResults) if (r.ok) allSub.push(...r.data);
+          setSubtasks(allSub);
         } else {
           const tasksRes = await listTasks(projectId);
           if (tasksRes.ok) setTasks(tasksRes.data);
+          const subResults = await Promise.all(
+            (tasksRes.ok ? tasksRes.data : []).map((t) => listSubtasks(t.id)),
+          );
+          const allSub: SubtaskDto[] = [];
+          for (const r of subResults) if (r.ok) allSub.push(...r.data);
+          setSubtasks(allSub);
         }
         setLoading(false);
         return;
@@ -505,8 +520,15 @@ export function SchedulePage() {
     void loadData();
   }, [loadData]);
 
-  /* Build CalEvent từ tasks + subtasks (fallback) HOẶC từ calendarItems (BE merged) */
-  const events = useMemo<CalEvent[]>(() => {
+  /** Map taskId -> TaskDto để enrich chip. */
+  const tasksById = useMemo<Record<string, TaskDto>>(() => {
+    const m: Record<string, TaskDto> = {};
+    for (const t of tasks) m[t.id] = t;
+    return m;
+  }, [tasks]);
+
+  /* ---------- Bước 1: event thô từ BE (nếu có) hoặc fallback từ local ---------- */
+  const rawEvents = useMemo<CalEvent[]>(() => {
     // Ưu tiên dùng calendarItems từ BE (đã merged + enriched)
     if (calendarItems.length > 0) {
       return calendarItems.map((item) => ({
@@ -521,6 +543,9 @@ export function SchedulePage() {
         subTaskId: item.subTaskId ?? null,
         projectId: item.projectId ?? null,
         task: item.taskId ? tasksById[item.taskId] : undefined,
+        subtask: item.subTaskId
+          ? subtasks.find((x) => x.id === item.subTaskId)
+          : undefined,
       }));
     }
 
@@ -623,21 +648,29 @@ export function SchedulePage() {
       }
     }
 
-    // 5) Gộp các slot cùng taskId thành 1 "task aggregate event" để hiển thị
-    // Giữ lại slot gốc để click vào modal xem chi tiết.
+    return list;
+  }, [tasks, subtasks, scheduleSlots, calendarItems, tasksById]);
+
+  /* ---------- Bước 2: gộp event theo task → lịch chỉ hiện task, click mở modal subtask ---------- */
+  const events = useMemo<CalEvent[]>(() => {
+    // Gộp các event cùng taskId thành 1 "task aggregate event" để hiển thị
+    // Giữ lại event gốc để click vào modal xem chi tiết các subtask.
+    const list = rawEvents.slice();
     const taskAggSource: CalSource = "slot";
     const aggregateEvents: CalEvent[] = [];
     const slotsByTask = new Map<string, CalEvent[]>();
     for (const ev of list) {
-      if (ev.source === "slot" && ev.taskId) {
+      // Bỏ qua event all-day (task deadline) — đã là view task, không cần gộp
+      if (ev.taskId && !ev.isAllDay) {
         const arr = slotsByTask.get(ev.taskId) ?? [];
         arr.push(ev);
         slotsByTask.set(ev.taskId, arr);
       }
     }
     for (const [taskId, evs] of slotsByTask) {
-      if (evs.length <= 1) continue; // Chỉ 1 slot thì hiển thị bình thường
-      const parentTask = evs[0].task;
+      // Chỉ 1 event thì hiển thị bình thường, không cần aggregate
+      if (evs.length <= 1) continue;
+      const parentTask = evs[0].task ?? tasksById[taskId];
       const minStart = evs.reduce(
         (min, e) => (e.start.getTime() < min.getTime() ? e.start : min),
         evs[0].start,
@@ -658,34 +691,29 @@ export function SchedulePage() {
         subTaskId: null,
         projectId: parentTask?.projectId ?? evs[0].projectId,
         task: parentTask,
-        // Gắn các slot gốc vào 1 field phụ qua subtask/scheduleSlot
+        // Gắn event gốc đầu tiên (slot hoặc subtask) + toàn bộ danh sách con
         scheduleSlot: evs[0].scheduleSlot,
         subtask: evs[0].subtask,
+        // Danh sách block con để modal hiển thị: ưu tiên slot thật, nếu không có
+        // thì dùng chính các event gốc (subtask event từ BE).
         aggregatedSlots: evs.map((e) => e.scheduleSlot).filter((x): x is ScheduleSlotDto => !!x),
+        aggregatedEvents: evs,
       });
-      // Xóa các slot event đã gộp (chỉ giữ các event không phải slot, hoặc slot đơn lẻ)
     }
-    // Lọc: bỏ các slot event thuộc task đã được gộp
+    // Lọc: bỏ các event thuộc task đã được gộp
     const aggregatedTaskIds = new Set(
       Array.from(slotsByTask.entries())
         .filter(([, evs]) => evs.length > 1)
         .map(([taskId]) => taskId),
     );
     const filtered = list.filter(
-      (ev) => !(ev.source === "slot" && ev.taskId && aggregatedTaskIds.has(ev.taskId)),
+      (ev) => !(ev.taskId && !ev.isAllDay && aggregatedTaskIds.has(ev.taskId)),
     );
     list.length = 0;
     list.push(...filtered, ...aggregateEvents);
 
     return list;
-  }, [tasks, subtasks, scheduleSlots, calendarItems, tasks]);
-
-  /** Map taskId -> TaskDto để enrich chip. */
-  const tasksById = useMemo<Record<string, TaskDto>>(() => {
-    const m: Record<string, TaskDto> = {};
-    for (const t of tasks) m[t.id] = t;
-    return m;
-  }, [tasks]);
+  }, [rawEvents, tasksById]);
 
   /**
    * Project spans: mỗi project 1 span, lấy từ ProjectDto (startDate, deadline)
@@ -1977,14 +2005,71 @@ function EventDetailModal({
   const subtask = event.subtask;
   const slot = event.scheduleSlot;
   const isSlotEvent = event.source === "slot";
-  const isAggregate = !!event.aggregatedSlots && event.aggregatedSlots.length > 0;
+  /** Task đã gộp nhiều event con (slot/subtask) → hiển thị dạng task view. */
+  const isAggregate = !!event.aggregatedEvents && event.aggregatedEvents.length > 1;
+  /**
+   * Task view: click vào 1 task → modal liệt kê các subtask.
+   * Nguồn 1: các event con đã gộp (đúng thứ trên lịch đang hiện).
+   * Nguồn 2 (fallback): subtask của task theo orderIndex, dùng scheduledStart/End.
+   */
+  const taskSubtasks = useMemo<SubtaskDto[]>(
+    () =>
+      event.taskId
+        ? subtasks
+            .filter((x) => x.taskId === event.taskId)
+            .sort((a, b) => a.orderIndex - b.orderIndex)
+        : [],
+    [event.taskId, subtasks],
+  );
+  const showSubtaskColumn = event.taskId != null && (isAggregate || taskSubtasks.length > 0);
+
+  /** Danh sách "khối" hiển thị: chuẩn hoá cả slot lẫn subtask về shape giống nhau. */
+  const detailBlocks = useMemo<
+    Array<{
+      key: string;
+      title: string;
+      status: string;
+      start: Date;
+      end: Date;
+      slot?: ScheduleSlotDto;
+      subtaskId?: string;
+    }>
+  >(() => {
+    // Ưu tiên event gốc đã gộp — khớp chính xác với những gì lịch đang hiển thị
+    if (isAggregate && event.aggregatedEvents) {
+      return event.aggregatedEvents
+        .slice()
+        .sort((a, b) => a.start.getTime() - b.start.getTime())
+        .map((e) => {
+          const st = e.subTaskId ? subtasks.find((x) => x.id === e.subTaskId) : undefined;
+          return {
+            key: e.id,
+            title: st?.title ?? (e.subTaskId ? "Subtask" : e.title || "Whole task"),
+            status: st?.status ?? e.status ?? "",
+            start: e.start,
+            end: e.end,
+            slot: e.scheduleSlot,
+            subtaskId: e.subTaskId ?? undefined,
+          };
+        });
+    }
+    // Data từ BE: suy ra block từ scheduledStart/scheduledEnd của từng subtask
+    return taskSubtasks.map((st) => ({
+      key: st.id,
+      title: st.title,
+      status: st.status ?? "",
+      start: new Date(st.scheduledStart ?? event.start),
+      end: new Date(st.scheduledEnd ?? event.end),
+      subtaskId: st.id,
+    }));
+  }, [isAggregate, event.aggregatedEvents, event.start, event.end, subtasks, taskSubtasks]);
 
   return (
     <div className="sch-modal" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`sch-modal__panel ${isAggregate ? "sch-modal__panel--two-col" : ""}`} role="dialog" aria-modal="true">
+      <div className={`sch-modal__panel ${showSubtaskColumn ? "sch-modal__panel--two-col" : ""}`} role="dialog" aria-modal="true">
         <div className="sch-modal__head">
           <div>
-            <span className="sch-card__eyebrow">{isAggregate ? "Task (scheduled)" : sourceLabel(event.source)}</span>
+            <span className="sch-card__eyebrow">{showSubtaskColumn ? "Task" : sourceLabel(event.source)}</span>
             <h2 className="sch-card__title">{event.title}</h2>
           </div>
           <button type="button" className="sch-icon-btn" aria-label="Close" onClick={onClose}>
@@ -2086,41 +2171,35 @@ function EventDetailModal({
             </div>
           </div>
 
-          {/* Cột phải: Subtasks list (chỉ với aggregate event) */}
-          {isAggregate && task && (
+          {/* Cột phải: Subtasks list (task aggregate HOẶC task có subtask) */}
+          {showSubtaskColumn && (
             <div className="sch-modal__col sch-modal__col--sub">
               <div className="sch-aggregate">
                 <div className="sch-aggregate__head">
                   <span className="material-symbols-outlined sch-icon-18">account_tree</span>
-                  <strong>Subtasks ({event.aggregatedSlots!.length})</strong>
+                  <strong>Subtasks ({detailBlocks.length})</strong>
                   <span className="sch-aggregate__head-total">
                     {durationHours(event).toFixed(1)}h total
                   </span>
                 </div>
                 <ul className="sch-aggregate__list">
-                  {event.aggregatedSlots!
-                    .slice()
-                    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
-                    .map((s, i) => {
-                    const st = s.subTaskId ? subtasks.find((x) => x.id === s.subTaskId) : undefined;
-                    const stTitle = st?.title ?? (s.subTaskId ? "Subtask" : "Whole task");
-                    const stStatus = st?.status;
-                    const sStart = new Date(s.startTime);
-                    const sEnd = new Date(s.endTime);
+                  {detailBlocks.map((b, i) => {
+                    const sStart = b.start;
+                    const sEnd = b.end;
                     const durMs = Math.max(0, sEnd.getTime() - sStart.getTime());
                     const totalMs = Math.max(1, event.end.getTime() - event.start.getTime());
                     const pct = Math.min(100, Math.round((durMs / totalMs) * 100));
                     const offsetPct = Math.min(100, Math.max(0, Math.round(((sStart.getTime() - event.start.getTime()) / totalMs) * 100)));
                     return (
-                      <li key={s.id} className="sch-aggregate__item">
+                      <li key={b.key} className="sch-aggregate__item">
                         <div className="sch-aggregate__rail">
                           <span className="sch-aggregate__dot">{i + 1}</span>
                         </div>
                         <div className="sch-aggregate__body">
                           <div className="sch-aggregate__item-row">
-                            <strong>{stTitle}</strong>
-                            {stStatus && (
-                              <span className="sch-aggregate__badge">{stStatus}</span>
+                            <strong>{b.title}</strong>
+                            {b.status && (
+                              <span className="sch-aggregate__badge">{b.status}</span>
                             )}
                             <span className="sch-aggregate__dur">
                               {(durMs / 3600000).toFixed(1)}h
@@ -2179,6 +2258,18 @@ function EventDetailModal({
                               style={{ marginLeft: `${offsetPct}%`, width: `${pct}%` }}
                             />
                           </div>
+                          {b.slot && onDelete && (
+                            <button
+                              type="button"
+                              className="sch-aggregate__del"
+                              onClick={() => {
+                                onDelete(b.slot!.id);
+                                onClose();
+                              }}
+                            >
+                              <span className="material-symbols-outlined sch-icon-16">close</span>
+                            </button>
+                          )}
                         </div>
                       </li>
                     );

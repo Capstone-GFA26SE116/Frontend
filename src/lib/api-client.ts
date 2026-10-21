@@ -747,6 +747,18 @@ export async function deleteMilestone(
  * ================================================================ */
 
 /** Schedule Slot DTO — trả về từ GET/POST/PUT */
+/**
+ * Trạng thái schedule slot — phải khớp enum phía backend:
+ * "Trạng thái không hợp lệ. Chọn một trong: Proposed, Approved, Done, Skipped, Missed, Cancelled."
+ */
+export type ScheduleSlotStatus =
+  | "Proposed"
+  | "Approved"
+  | "Done"
+  | "Skipped"
+  | "Missed"
+  | "Cancelled";
+
 export interface ScheduleSlotDto {
   id: string;
   taskId: string;
@@ -759,7 +771,7 @@ export interface ScheduleSlotDto {
   proposedMinutes: number;
   kbiasUsed: number;
   explanation: string | null;
-  status: "scheduled" | "in_progress" | "completed" | "cancelled";
+  status: ScheduleSlotStatus;
   googleEventId: string | null;
   syncFailed: boolean;
 }
@@ -774,7 +786,7 @@ export interface CreateScheduleSlotRequest {
   isManualOverride?: boolean;
   kbiasUsed?: number;
   explanation?: string | null;
-  status?: "scheduled" | "in_progress" | "completed" | "cancelled";
+  status?: ScheduleSlotStatus;
 }
 
 /** Request body cho PUT /api/schedule-slots/{slotId} */
@@ -787,7 +799,7 @@ export interface UpdateScheduleSlotRequest {
   isManualOverride?: boolean;
   kbiasUsed?: number;
   explanation?: string | null;
-  status?: "scheduled" | "in_progress" | "completed" | "cancelled";
+  status?: ScheduleSlotStatus;
 }
 
 /** Schedule Slot Change DTO — log thay đổi của 1 slot */
@@ -813,21 +825,6 @@ export interface CreateScheduleSlotChangeRequest {
   newEnd?: string | null;
 }
 
-/* ----- Mock stores (in-memory) ----- */
-const MOCK_SCHEDULE_SLOTS: Map<string, ScheduleSlotDto> = new Map();
-const MOCK_SCHEDULE_SLOT_CHANGES: Map<string, ScheduleSlotChangeDto> = new Map();
-
-/**
- * Tạo UUID v4 mock (giống pattern đã dùng ở payments).
- */
-function genSlotId(): string {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
-
 /**
  * GET /api/tasks/{taskId}/schedule-slots
  * Lấy danh sách tất cả slot thuộc 1 task.
@@ -838,15 +835,14 @@ export async function listScheduleSlotsByTask(
   if (!taskId) {
     return { ok: false, status: 0, error: "Task id is required" };
   }
-  const slots = Array.from(MOCK_SCHEDULE_SLOTS.values()).filter(
-    (s) => s.taskId === taskId,
+  return get<ScheduleSlotDto[]>(
+    `/api/tasks/${encodeURIComponent(taskId)}/schedule-slots`,
   );
-  return delay({ ok: true, data: slots });
 }
 
 /**
  * POST /api/tasks/{taskId}/schedule-slots
- * Tạo slot mới cho task.
+ * Tạo slot mới cho task (ghi xuống DB thật).
  */
 export async function createScheduleSlot(
   taskId: string,
@@ -855,46 +851,10 @@ export async function createScheduleSlot(
   if (!taskId) {
     return { ok: false, status: 0, error: "Task id is required" };
   }
-
-  const id = genSlotId();
-  const now = new Date().toISOString();
-
-  const slot: ScheduleSlotDto = {
-    id,
-    taskId,
-    subTaskId: body.subTaskId ?? null,
-    scheduleProposalId: body.scheduleProposalId ?? null,
-    startTime: body.startTime,
-    endTime: body.endTime,
-    originalStartTime: body.originalStartTime ?? null,
-    isManualOverride: body.isManualOverride ?? false,
-    proposedMinutes: body.startTime && body.endTime
-      ? Math.round((new Date(body.endTime).getTime() - new Date(body.startTime).getTime()) / 60000)
-      : 0,
-    kbiasUsed: body.kbiasUsed ?? 0,
-    explanation: body.explanation ?? null,
-    status: body.status ?? "scheduled",
-    googleEventId: null,
-    syncFailed: false,
-  };
-
-  MOCK_SCHEDULE_SLOTS.set(id, slot);
-
-  // Auto-log tạo slot
-  const change: ScheduleSlotChangeDto = {
-    id: genSlotId(),
-    scheduleSlotId: id,
-    changeType: "manual_override",
-    source: "user",
-    oldStart: null,
-    oldEnd: null,
-    newStart: body.startTime,
-    newEnd: body.endTime,
-    changedAt: now,
-  };
-  MOCK_SCHEDULE_SLOT_CHANGES.set(change.id, change);
-
-  return delay({ ok: true, data: slot });
+  return post<ScheduleSlotDto>(
+    `/api/tasks/${encodeURIComponent(taskId)}/schedule-slots`,
+    body,
+  );
 }
 
 /**
@@ -904,11 +864,12 @@ export async function createScheduleSlot(
 export async function getScheduleSlot(
   slotId: string,
 ): Promise<ApiResult<ScheduleSlotDto>> {
-  const slot = MOCK_SCHEDULE_SLOTS.get(slotId);
-  if (!slot) {
-    return { ok: false, status: 404, error: "Schedule slot not found" };
+  if (!slotId) {
+    return { ok: false, status: 0, error: "Slot id is required" };
   }
-  return delay({ ok: true, data: slot });
+  return get<ScheduleSlotDto>(
+    `/api/schedule-slots/${encodeURIComponent(slotId)}`,
+  );
 }
 
 /**
@@ -919,50 +880,13 @@ export async function updateScheduleSlot(
   slotId: string,
   body: UpdateScheduleSlotRequest,
 ): Promise<ApiResult<ScheduleSlotDto>> {
-  const existing = MOCK_SCHEDULE_SLOTS.get(slotId);
-  if (!existing) {
-    return { ok: false, status: 404, error: "Schedule slot not found" };
+  if (!slotId) {
+    return { ok: false, status: 0, error: "Slot id is required" };
   }
-
-  const now = new Date().toISOString();
-
-  // Log thay đổi nếu có thay đổi thời gian
-  if (
-    body.startTime !== undefined || body.endTime !== undefined ||
-    body.status !== undefined
-  ) {
-    const change: ScheduleSlotChangeDto = {
-      id: genSlotId(),
-      scheduleSlotId: slotId,
-      changeType: body.isManualOverride ? "manual_override" : "rescheduled",
-      source: body.isManualOverride ? "user" : "ai",
-      oldStart: existing.startTime,
-      oldEnd: existing.endTime,
-      newStart: body.startTime ?? existing.startTime,
-      newEnd: body.endTime ?? existing.endTime,
-      changedAt: now,
-    };
-    MOCK_SCHEDULE_SLOT_CHANGES.set(change.id, change);
-  }
-
-  const updated: ScheduleSlotDto = {
-    ...existing,
-    subTaskId: body.subTaskId !== undefined ? body.subTaskId : existing.subTaskId,
-    scheduleProposalId: body.scheduleProposalId !== undefined ? body.scheduleProposalId : existing.scheduleProposalId,
-    startTime: body.startTime ?? existing.startTime,
-    endTime: body.endTime ?? existing.endTime,
-    originalStartTime: body.originalStartTime !== undefined ? body.originalStartTime : existing.originalStartTime,
-    isManualOverride: body.isManualOverride ?? existing.isManualOverride,
-    proposedMinutes: body.startTime && body.endTime
-      ? Math.round((new Date(body.endTime).getTime() - new Date(body.startTime).getTime()) / 60000)
-      : existing.proposedMinutes,
-    kbiasUsed: body.kbiasUsed ?? existing.kbiasUsed,
-    explanation: body.explanation !== undefined ? body.explanation : existing.explanation,
-    status: body.status ?? existing.status,
-  };
-
-  MOCK_SCHEDULE_SLOTS.set(slotId, updated);
-  return delay({ ok: true, data: updated });
+  return put<ScheduleSlotDto>(
+    `/api/schedule-slots/${encodeURIComponent(slotId)}`,
+    body,
+  );
 }
 
 /**
@@ -972,20 +896,12 @@ export async function updateScheduleSlot(
 export async function deleteScheduleSlot(
   slotId: string,
 ): Promise<ApiResult<{ deleted: boolean; slotId: string }>> {
-  const exists = MOCK_SCHEDULE_SLOTS.has(slotId);
-  if (!exists) {
-    return { ok: false, status: 404, error: "Schedule slot not found" };
+  if (!slotId) {
+    return { ok: false, status: 0, error: "Slot id is required" };
   }
-
-  // Xóa tất cả changes liên quan
-  for (const [changeId, change] of MOCK_SCHEDULE_SLOT_CHANGES) {
-    if (change.scheduleSlotId === slotId) {
-      MOCK_SCHEDULE_SLOT_CHANGES.delete(changeId);
-    }
-  }
-
-  MOCK_SCHEDULE_SLOTS.delete(slotId);
-  return delay({ ok: true, data: { deleted: true, slotId } });
+  return del<{ deleted: boolean; slotId: string }>(
+    `/api/schedule-slots/${encodeURIComponent(slotId)}`,
+  );
 }
 
 /**
@@ -995,15 +911,12 @@ export async function deleteScheduleSlot(
 export async function listScheduleSlotChanges(
   slotId: string,
 ): Promise<ApiResult<ScheduleSlotChangeDto[]>> {
-  if (!MOCK_SCHEDULE_SLOTS.has(slotId)) {
-    return { ok: false, status: 404, error: "Schedule slot not found" };
+  if (!slotId) {
+    return { ok: false, status: 0, error: "Slot id is required" };
   }
-
-  const changes = Array.from(MOCK_SCHEDULE_SLOT_CHANGES.values())
-    .filter((c) => c.scheduleSlotId === slotId)
-    .sort((a, b) => new Date(b.changedAt).getTime() - new Date(a.changedAt).getTime());
-
-  return delay({ ok: true, data: changes });
+  return get<ScheduleSlotChangeDto[]>(
+    `/api/schedule-slots/${encodeURIComponent(slotId)}/changes`,
+  );
 }
 
 /**
@@ -1014,24 +927,13 @@ export async function createScheduleSlotChange(
   slotId: string,
   body: CreateScheduleSlotChangeRequest,
 ): Promise<ApiResult<ScheduleSlotChangeDto>> {
-  if (!MOCK_SCHEDULE_SLOTS.has(slotId)) {
-    return { ok: false, status: 404, error: "Schedule slot not found" };
+  if (!slotId) {
+    return { ok: false, status: 0, error: "Slot id is required" };
   }
-
-  const change: ScheduleSlotChangeDto = {
-    id: genSlotId(),
-    scheduleSlotId: slotId,
-    changeType: body.changeType,
-    source: body.source,
-    oldStart: body.oldStart ?? null,
-    oldEnd: body.oldEnd ?? null,
-    newStart: body.newStart ?? null,
-    newEnd: body.newEnd ?? null,
-    changedAt: new Date().toISOString(),
-  };
-
-  MOCK_SCHEDULE_SLOT_CHANGES.set(change.id, change);
-  return delay({ ok: true, data: change });
+  return post<ScheduleSlotChangeDto>(
+    `/api/schedule-slots/${encodeURIComponent(slotId)}/changes`,
+    body,
+  );
 }
 
 /**
@@ -1041,17 +943,12 @@ export async function createScheduleSlotChange(
 export async function getScheduleSlotChange(
   logId: string,
 ): Promise<ApiResult<ScheduleSlotChangeDto>> {
-  const change = MOCK_SCHEDULE_SLOT_CHANGES.get(logId);
-  if (!change) {
-    return { ok: false, status: 404, error: "Schedule slot change not found" };
+  if (!logId) {
+    return { ok: false, status: 0, error: "Change log id is required" };
   }
-  return delay({ ok: true, data: change });
-}
-
-/** Reset tất cả mock schedule slots (test teardown). */
-export function __resetMockScheduleSlots(): void {
-  MOCK_SCHEDULE_SLOTS.clear();
-  MOCK_SCHEDULE_SLOT_CHANGES.clear();
+  return get<ScheduleSlotChangeDto>(
+    `/api/schedule-change-logs/${encodeURIComponent(logId)}`,
+  );
 }
 
 /* ================================================================
@@ -1126,7 +1023,7 @@ export async function listCalendar(params: {
   if (params.includeCancelled !== undefined) {
     qs.set("includeCancelled", String(params.includeCancelled));
   }
-  return apiFetch<CalendarResponseDto>(`/calendar?${qs.toString()}`, {
+  return apiFetch<CalendarResponseDto>(`/api/calendar?${qs.toString()}`, {
     method: "GET",
   });
 }

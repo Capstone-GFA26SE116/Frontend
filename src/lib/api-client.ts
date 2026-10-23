@@ -77,6 +77,78 @@ export type ApiOk<T> = { ok: true; data: T };
 export type ApiErr = { ok: false; error: string; status?: number };
 export type ApiResult<T> = ApiOk<T> | ApiErr;
 
+/* ---------- error message extraction ---------- */
+
+/**
+ * Rút ra chuỗi lỗi từ 1 value bất kỳ của body lỗi.
+ *
+ * Vì sao cần: FastAPI / ASP.NET trả nhiều shape khác nhau, và **phần lớn
+ * không phải string**:
+ *
+ * - `{ "message": "..." }`                          → chuỗi
+ * - `{ "detail": { "code": "chat_in_progress" } } }`  → OBJECT  ← gây crash React
+ * - `{ "error": { "code": "...", "message": "..." } }` → OBJECT lồng
+ * - `{ "errors": [{ "message": "..." }] }`            → mảng object
+ *
+ * Nếu gán thẳng object vào biến kiểu `string` rồi render, React ném
+ * "Objects are not valid as a React child" và **sập cả trang** vì không có
+ * ErrorBoundary. Hàm này ép mọi shape về string an toàn.
+ */
+function extractMessage(v: unknown, depth = 0): string | null {
+  if (v == null) return null;
+  if (typeof v === "string") {
+    const s = v.trim();
+    return s ? s : null;
+  }
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  // Chống vòng lặp / cấu trúc lồng sâu (detail.detail.detail...)
+  if (depth > 4 || typeof v !== "object") return null;
+
+  if (Array.isArray(v)) {
+    for (const item of v) {
+      const got = extractMessage(item, depth + 1);
+      if (got) return got;
+    }
+    return null;
+  }
+
+  const rec = v as Record<string, unknown>;
+  // Thứ tự ưu tiên: message > detail > error > title > code.
+  // Bỏ qua `code` trước vì nó thường là mã kỹ thuật ("chat_in_progress"),
+  // đọc cho người dùng không hiểu gì.
+  for (const key of ["message", "detail", "error", "title", "reason"]) {
+    const got = extractMessage(rec[key], depth + 1);
+    if (got) return got;
+  }
+  // Không có field nào là chuỗi → stringify làm lồng ngắn gọn.
+  try {
+    const json = JSON.stringify(v);
+    return json && json !== "{}" ? json.slice(0, 200) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Chuỗi thông báo lỗi thân thiện cho từng mã HTTP của AI service. */
+function friendlyStatusMessage(status: number): string {
+  switch (status) {
+    case 401:
+      return "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
+    case 403:
+      return "Tài khoản của bạn không có quyền dùng tính năng này.";
+    case 404:
+      return "Không tìm thấy dữ liệu. Có thể task đã bị xoá hoặc bạn chưa tải lại trang.";
+    case 409:
+      return "AI đang xử lý yêu cầu trước cho task này. Vui lòng đợi vài giây rồi thử lại.";
+    case 422:
+      return "Dữ liệu gửi lên không hợp lệ. Vui lòng thử lại.";
+    case 429:
+      return "Bạn đã dùng hết lượt AI cho lúc này. Vui lòng thử lại sau.";
+    default:
+      return `Lỗi máy chủ (HTTP ${status}). Vui lòng thử lại sau.`;
+  }
+}
+
 /* ---------- core fetch ---------- */
 
 async function apiFetch<T>(
@@ -108,10 +180,18 @@ async function apiFetch<T>(
           headers["Authorization"] = `Bearer ${newToken}`;
           const retry = await fetch(url, { ...options, headers });
           if (!retry.ok) {
-            const body = await retry.text().catch(() => "Unknown error");
+            const body = await retry.text().catch(() => "");
+            let msg = friendlyStatusMessage(retry.status);
+            if (body) {
+              try {
+                msg = extractMessage(JSON.parse(body)) ?? msg;
+              } catch {
+                msg = body.slice(0, 200) || msg;
+              }
+            }
             return {
               ok: false,
-              error: body || `HTTP ${retry.status}`,
+              error: msg,
               status: retry.status,
             };
           }
@@ -126,12 +206,12 @@ async function apiFetch<T>(
     }
 
     if (!res.ok) {
-      let msg = `HTTP ${res.status}`;
+      let msg = friendlyStatusMessage(res.status);
       try {
         const body = await res.json();
-        msg = body.message ?? body.error ?? body.title ?? msg;
+        msg = extractMessage(body) ?? msg;
       } catch {
-        // ignore
+        // Body không phải JSON (vd: HTML error page từ proxy) → giữ msg mặc định.
       }
       return { ok: false, error: msg, status: res.status };
     }
@@ -139,8 +219,14 @@ async function apiFetch<T>(
     const data = await res.json();
     return { ok: true, data: data as T };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Network error";
-    return { ok: false, error: msg };
+    // Network error hoặc JSON parse lỗi. `err.message` luôn là string nên an toàn,
+    // nhưng thêm prefix để người dùng biết đây là lỗi kết nối chứ không phải
+    // lỗi dữ liệu.
+    const raw = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      error: `Không kết nối được máy chủ. Vui lòng kiểm tra mạng và thử lại. (${raw})`,
+    };
   }
 }
 
@@ -1171,14 +1257,18 @@ async function aiFetch<T>(
     });
 
     if (!res.ok) {
-      // Cố parse JSON, fallback text thuần
-      let msg = `HTTP ${res.status}`;
+      // `detail` của FastAPI có thể là OBJECT ({code, message}) — không được gán
+      // thẳng vào biến string, nếu không React sẽ crash khi render.
+      let msg = friendlyStatusMessage(res.status);
       try {
         const body = rawText ? JSON.parse(rawText) : null;
-        msg = body?.message ?? body?.error ?? body?.title ?? body?.detail ?? msg;
+        msg = extractMessage(body) ?? msg;
       } catch {
         // body không phải JSON (vd: HTML error page từ App Service proxy 502)
-        if (rawText) msg = `HTTP ${res.status} – ${rawText.slice(0, 120).replace(/\s+/g, " ")}`;
+        if (rawText) {
+          const snippet = rawText.slice(0, 120).replace(/\s+/g, " ").trim();
+          if (snippet) msg = `Lỗi máy chủ (HTTP ${res.status}): ${snippet}`;
+        }
       }
       return { ok: false, error: msg, status: res.status };
     }
@@ -1190,8 +1280,11 @@ async function aiFetch<T>(
     // [DEBUG] log network / CORS / parse error
     // eslint-disable-next-line no-console
     console.error("[aiFetch] ✖ error for", url, err);
-    const msg = err instanceof Error ? err.message : "Network error";
-    return { ok: false, error: msg };
+    const raw = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      error: `Không kết nối được dịch vụ AI. Vui lòng kiểm tra mạng và thử lại. (${raw})`,
+    };
   }
 }
 
@@ -1328,9 +1421,21 @@ export async function getTaskChat(
   );
 }
 
+/** Chờ 1 khoảng (ms) rồi resolve — dùng cho retry backoff. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * POST /chat/tasks/{task_id}/messages
  * Gửi 1 message từ user — tốn 1 AI call khi AI trả lời.
+ *
+ * Tự retry khi gặp **409 Conflict**: trường hợp này xảy ra khi AI đang xử lý
+ * yêu cầu trước cho cùng task (double-submit, hoặc request trước chưa xong).
+ * Đây là lỗi **tạm thời** — chờ một chút rồi gửi lại thường thành công.
+ *
+ * Retry tối đa 2 lần, backoff 1.5s rồi 3s. Các lỗi khác (401/403/422/429/5xx)
+ * không retry vì retry sẽ chỉ tốn thêm quota AI.
  */
 export async function sendTaskMessage(
   taskId: string,
@@ -1339,10 +1444,31 @@ export async function sendTaskMessage(
   if (!taskId) return { ok: false, error: "task_id is required" };
   const trimmed = message.trim();
   if (!trimmed) return { ok: false, error: "message is empty" };
-  return aiFetch<ChatTurnResponse>(
-    `/chat/tasks/${encodeURIComponent(taskId)}/messages`,
-    { method: "POST", body: JSON.stringify({ message: trimmed }) },
-  );
+
+  const MAX_RETRIES = 2;
+  const BACKOFF_MS = [1500, 3000];
+
+  let last: ApiResult<ChatTurnResponse> = {
+    ok: false,
+    error: "Không gửi được tin nhắn.",
+  };
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    last = await aiFetch<ChatTurnResponse>(
+      `/chat/tasks/${encodeURIComponent(taskId)}/messages`,
+      { method: "POST", body: JSON.stringify({ message: trimmed }) },
+    );
+    if (last.ok) return last;
+    if (last.status !== 409) return last;
+    if (attempt === MAX_RETRIES) break;
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[sendTaskMessage] 409 Conflict — thử lại sau ${BACKOFF_MS[attempt]}ms (lần ${attempt + 1}/${MAX_RETRIES})`,
+    );
+    await sleep(BACKOFF_MS[attempt]);
+  }
+
+  return last;
 }
 
 /**

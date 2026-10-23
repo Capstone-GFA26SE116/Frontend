@@ -1371,7 +1371,7 @@ export function SchedulePage() {
                 type="button"
                 className="sch-btn sch-btn--soft"
                 onClick={openProposal}
-                disabled={schedulableCount === 0}
+                disabled={schedulableCount === 0 || proposal.loading}
               >
                 Auto-schedule
               </button>
@@ -1379,7 +1379,7 @@ export function SchedulePage() {
                 type="button"
                 className="sch-btn sch-btn--primary"
                 onClick={openProposal}
-                disabled={schedulableCount === 0}
+                disabled={schedulableCount === 0 || proposal.loading}
               >
                 Let AI re-plan
               </button>

@@ -67,6 +67,21 @@ interface ChatMessage {
   };
 }
 
+/**
+ * Host AI service để hiển thị trong panel "Schedule Context".
+ * Lấy từ env để luôn khớp với request thật (host đã đổi nhiều lần trong
+ * quá trình dev — hardcode sẽ khiến UI hiển thị sai).
+ */
+const aiHostLabel = (() => {
+  const raw = (import.meta.env.VITE_AI_API_URL as string | undefined) ?? "";
+  if (!raw) return "(chưa cấu hình VITE_AI_API_URL)";
+  try {
+    return new URL(raw).host;
+  } catch {
+    return raw;
+  }
+})();
+
 const USER_AVATAR =
   "https://lh3.googleusercontent.com/aida/AEtjO1VkhB70CYIE8k03FbZ0QM6Oaxu-usX545ZcwWr12L2YZ0OfwjuOXTnHMVPiXoeOA8n2LxbMqBOSE7M-hmrWzsVvnzx3fgKywMqOuOrMmtD5FqcsWdyB-aE7FtbaPzvUHE1bqRDK1W9mmC9xrQ4P8JA2ahLWx05v83aS0eju4Yfjd0f_OeNJTVlVlOdi5U5ZtE5dIwZbudHWLf4FDh_UEXFkqv0K06M-1ZCRez46A0-BL6z_5IEcP9OYk9U";
 
@@ -213,6 +228,10 @@ export function CopilotPage() {
   const [ragError, setRagError] = useState<string | null>(null);
 
   const streamRef = useRef<HTMLDivElement | null>(null);
+  /** Chốt 1 request đang bay để chặn gửi trùng (xem handleSend). */
+  const sendingRef = useRef(false);
+  /** Chốt 1 lần apply đang chạy để chặn tạo trùng subtask (xem handleApply). */
+  const applyingRef = useRef(false);
 
   /* auto-scroll */
   useEffect(() => {
@@ -265,6 +284,10 @@ export function CopilotPage() {
   const loadTask = useCallback(async (id: string) => {
     const clean = id.trim();
     if (!clean) return;
+    // Nhả chốt gửi: nếu không, đổi task lúc đang chờ AI sẽ kẹt vĩnh viễn
+    // (ref không tự reset theo taskId).
+    sendingRef.current = false;
+    setIsTyping(false);
     setTaskIdError(null);
     setSendError(null);
     setApplyError(null);
@@ -311,6 +334,13 @@ export function CopilotPage() {
   function handleSend(text?: string) {
     const content = (text ?? draft).trim();
     if (!content || !taskId) return;
+    // Chặn gửi trùng: nếu không có guard này, bấm Enter liên tục hoặc bấm nút
+    // 2 lần trước khi request đầu về sẽ bắn ra 2 request song song → BE trả
+    // 409 Conflict và 1 trong 2 message bị mất.
+    // Dùng ref chứ không phải `isTyping` vì state đóng lại theo render, 2 lần
+    // bấm trong cùng 1 tick vẫn thấy `isTyping === false`.
+    if (sendingRef.current) return;
+    sendingRef.current = true;
     setSendError(null);
     // optimistic user bubble
     setMessages((prev) => [
@@ -321,9 +351,12 @@ export function CopilotPage() {
     setIsTyping(true);
     void (async () => {
       const res = await sendTaskMessage(taskId, content);
+      sendingRef.current = false;
       setIsTyping(false);
       if (!res.ok) {
         setSendError(res.error);
+        // Trả lại nội dung vào ô nhập để user không mất đã gõ.
+        setDraft(content);
         return;
       }
       const turn: ChatTurnResponse = res.data;
@@ -337,40 +370,49 @@ export function CopilotPage() {
 
   async function handleApply(messageId: string) {
     if (!taskId) return;
+    // Chặn double-apply: bấm 2 lần nhanh sẽ tạo trùng subtask ở BE
+    // (endpoint apply không tốn AI quota nên BE không chặn trùng).
+    if (applyingRef.current) return;
+    if (appliedIds.has(messageId)) return;
+    applyingRef.current = true;
     setApplyError(null);
-    const res = await apiApplyTaskChat(taskId, messageId, null);
-    if (!res.ok) {
-      setApplyError(res.error);
-      return;
-    }
-    setAppliedIds((prev) => new Set(prev).add(messageId));
-    const applied: AppliedResponse = res.data;
-    // inject a confirmation message in the stream
-    const list = applied.subtasks
-      .slice()
-      .sort((a, b) => a.order_index - b.order_index)
-      .map((s, i) => `${i + 1}. ${s.title} (${s.estimated_minutes}m)`)
-      .join("\n");
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: uid(),
-        role: "ai",
-        text: `Synced ${applied.subtasks.length} subtask(s) to your task:\n${list}`,
-        time: nowHHmm(),
-        kind: "text",
-      },
-    ]);
-
-    // Task vừa phân rã xong là ứng viên tốt nhất để xếp lịch → đánh dấu lại.
-    setScheduleHintTaskId(taskId);
-    // Nạp slot hiện có của task để loại trừ đúng khi tính đề xuất.
-    const slotRes = await listScheduleSlotsByTask(taskId);
-    if (slotRes.ok) {
-      setScheduleSlots((prev) => [
-        ...prev.filter((s) => s.taskId !== taskId),
-        ...slotRes.data,
+    try {
+      const res = await apiApplyTaskChat(taskId, messageId, null);
+      if (!res.ok) {
+        setApplyError(res.error);
+        return;
+      }
+      setAppliedIds((prev) => new Set(prev).add(messageId));
+      const applied: AppliedResponse = res.data;
+      // inject a confirmation message in the stream
+      const list = applied.subtasks
+        .slice()
+        .sort((a, b) => a.order_index - b.order_index)
+        .map((s, i) => `${i + 1}. ${s.title} (${s.estimated_minutes}m)`)
+        .join("\n");
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: uid(),
+          role: "ai",
+          text: `Synced ${applied.subtasks.length} subtask(s) to your task:\n${list}`,
+          time: nowHHmm(),
+          kind: "text",
+        },
       ]);
+
+      // Task vừa phân rã xong là ứng viên tốt nhất để xếp lịch → đánh dấu lại.
+      setScheduleHintTaskId(taskId);
+      // Nạp slot hiện có của task để loại trừ đúng khi tính đề xuất.
+      const slotRes = await listScheduleSlotsByTask(taskId);
+      if (slotRes.ok) {
+        setScheduleSlots((prev) => [
+          ...prev.filter((s) => s.taskId !== taskId),
+          ...slotRes.data,
+        ]);
+      }
+    } finally {
+      applyingRef.current = false;
     }
   }
 
@@ -681,7 +723,7 @@ export function CopilotPage() {
                     type="button"
                     className="cp-pill"
                     onClick={() => handleSend(p.text)}
-                    disabled={!taskId}
+                    disabled={!taskId || isTyping}
                   >
                     <span className="cp-pill-emoji">{p.icon}</span>
                     <span>{p.text}</span>
@@ -709,20 +751,22 @@ export function CopilotPage() {
                       handleSend();
                     }
                   }}
-                  disabled={!taskId}
+                  disabled={!taskId || isTyping}
                 />
                 <div className="cp-input-actions">
-                  <button type="button" className="cp-input-icon" title="Voice command" disabled={!taskId}>
+                  <button type="button" className="cp-input-icon" title="Voice command" disabled={!taskId || isTyping}>
                     <span className="material-symbols-outlined">mic</span>
                   </button>
                   <button
                     type="button"
                     className="cp-send"
                     onClick={() => handleSend()}
-                    disabled={!draft.trim() || !taskId}
+                    disabled={!draft.trim() || !taskId || isTyping}
                     aria-label="Send message"
                   >
-                    <span className="material-symbols-outlined">arrow_upward</span>
+                    <span className="material-symbols-outlined">
+                      {isTyping ? "hourglass_top" : "arrow_upward"}
+                    </span>
                   </button>
                 </div>
               </div>
@@ -840,7 +884,9 @@ export function CopilotPage() {
               <div className="cp-timeline">
                 <TimelineRow time="status" tone="primary" highlight>
                   <strong>AI service</strong>
-                  <em>metanoia-ai-cfeqbbc7emadgfh2.eastasia-01.azurewebsites.net</em>
+                  {/* Đọc từ env thay vì hardcode — host đã đổi nhiều lần và
+                      hardcode khiến UI hiển thị sai host so với request thật. */}
+                  <em>{aiHostLabel}</em>
                 </TimelineRow>
                 <TimelineRow time="auth" tone="secondary">
                   <strong>Bearer</strong>

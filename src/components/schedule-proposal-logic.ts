@@ -156,6 +156,8 @@ export function useScheduleProposal(opts: {
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   /** Chống gọi trùng khi bấm nút liên tục. */
   const inFlight = useRef(false);
+  /** Chống double-approve (state `approving` không đủ vì 2 click cùng tick). */
+  const approvingRef = useRef(false);
 
   const selectedSlots = useMemo(
     () => (proposal?.slots ?? []).filter((s) => !excluded.has(slotKey(s))),
@@ -179,6 +181,7 @@ export function useScheduleProposal(opts: {
     setCandidates([]);
     setExcluded(new Set());
     setError(null);
+    approvingRef.current = false;
   }, []);
 
   const close = useCallback(() => {
@@ -290,12 +293,16 @@ export function useScheduleProposal(opts: {
    */
   const approve = useCallback(async (): Promise<number> => {
     if (!proposal || approving) return 0;
+    // Chốt bằng ref: `approving` là state nên 2 click trong cùng 1 tick vẫn
+    // cùng thấy `approving === false` → tạo trùng slot trong calendar.
+    if (approvingRef.current) return 0;
     const slots = selectedSlots;
     if (slots.length === 0) {
       toast.info("Chưa chọn khung giờ nào", "Hãy tick ít nhất 1 slot để thêm vào lịch.");
       return 0;
     }
 
+    approvingRef.current = true;
     setApproving(true);
     const failed: Array<{ key: string; title: string }> = [];
     let created = 0;
@@ -329,6 +336,7 @@ export function useScheduleProposal(opts: {
     }
 
     setApproving(false);
+    approvingRef.current = false;
 
     if (failed.length === 0) {
       toast.success(`Đã thêm ${created} khung giờ`, "Lịch đã cập nhật cho các slot được duyệt.");

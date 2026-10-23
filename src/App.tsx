@@ -17,6 +17,16 @@ import {
   ProtectedRoute,
   RedirectIfAuthenticated,
 } from "./router/ProtectedRoute";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import type { ReactNode } from "react";
+
+/**
+ * Bọc mỗi route trong ErrorBoundary để 1 trang lỗi không làm trắng toàn bộ ứng
+ * dụng — người dùng vẫn điều hướng được sang trang khác.
+ */
+function guarded(label: string, node: ReactNode) {
+  return <ErrorBoundary label={label}>{node}</ErrorBoundary>;
+}
 
 /**
  * Bảng định tuyến chính của METANOIA.
@@ -37,7 +47,7 @@ import {
 function App() {
   return (
     <Routes>
-      <Route path="/" element={<LandingPage />} />
+      <Route path="/" element={guarded("Trang chủ", <LandingPage />)} />
 
       <Route
         element={
@@ -46,14 +56,14 @@ function App() {
           </RedirectIfAuthenticated>
         }
       >
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/login" element={guarded("Đăng nhập", <LoginPage />)} />
+        <Route path="/register" element={guarded("Đăng ký", <RegisterPage />)} />
       </Route>
 
       {/* SiteLayout: header + footer chuẩn, cho trang marketing public. */}
       <Route element={<SiteLayout />}>
-        <Route path="/pricing" element={<PricingPage />} />
-        <Route path="/checkout" element={<PaymentsPage />} />
+        <Route path="/pricing" element={guarded("Bảng giá", <PricingPage />)} />
+        <Route path="/checkout" element={guarded("Thanh toán", <PaymentsPage />)} />
       </Route>
 
       {/* Dashboard + Onboarding: cần auth, vẫn dùng SiteLayout để có
@@ -65,17 +75,26 @@ function App() {
           </ProtectedRoute>
         }
       >
-        <Route path="/onboarding" element={<OnboardingPage />} />
-        <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/projects" element={<ProjectsPage />} />
-        <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
-        <Route path="/projects/:projectId/planning" element={<PlanningPage />} />
-        <Route path="/projects/:projectId/schedule" element={<SchedulePage />} />
-        <Route path="/schedule" element={<SchedulePage />} />
-        <Route path="/copilot" element={<CopilotPage />} />
+        <Route path="/onboarding" element={guarded("Thiết lập", <OnboardingPage />)} />
+        <Route path="/dashboard" element={guarded("Lịch ngày", <DashboardPage />)} />
+        <Route path="/projects" element={guarded("Dự án", <ProjectsPage />)} />
+        <Route
+          path="/projects/:projectId"
+          element={guarded("Chi tiết dự án", <ProjectDetailPage />)}
+        />
+        <Route
+          path="/projects/:projectId/planning"
+          element={guarded("Lập kế hoạch", <PlanningPage />)}
+        />
+        <Route
+          path="/projects/:projectId/schedule"
+          element={guarded("Lịch dự án", <SchedulePage />)}
+        />
+        <Route path="/schedule" element={guarded("Lịch tuần & tháng", <SchedulePage />)} />
+        <Route path="/copilot" element={guarded("AI Copilot", <CopilotPage />)} />
       </Route>
 
-      <Route path="*" element={<LandingPage />} />
+      <Route path="*" element={guarded("Trang chủ", <LandingPage />)} />
     </Routes>
   );
 }

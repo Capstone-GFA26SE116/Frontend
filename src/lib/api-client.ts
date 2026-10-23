@@ -182,13 +182,14 @@ export async function get<T>(path: string): Promise<ApiResult<T>> {
   return apiFetch<T>(path, { method: "GET" });
 }
 
+/** `body` optional vì một số POST (archive/restore/logout) không gửi payload. */
 export async function post<T>(
   path: string,
-  body: unknown,
+  body?: unknown,
 ): Promise<ApiResult<T>> {
   return apiFetch<T>(path, {
     method: "POST",
-    body: JSON.stringify(body),
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
 }
 
@@ -952,6 +953,79 @@ export async function getScheduleSlotChange(
 }
 
 /* ================================================================
+ * SCHEDULE PROPOSE — AI đề xuất khung giờ (chưa ghi vào calendar)
+ * ================================================================ */
+
+/**
+ * Request body cho POST /schedule/propose.
+ * - `task_ids`: chỉ nhận task thuộc loại **Flexible** (BE từ chối task Fixed).
+ * - `language`: mã ngôn ngữ để AI viết `explanation` (vd "vi" → tiếng Việt).
+ */
+export interface ProposeScheduleRequest {
+  task_ids: string[];
+  language?: string;
+}
+
+/** 1 khung giờ AI đề xuất. `start`/`end` là ISO 8601 **UTC** (kèm hậu tố Z). */
+export interface ProposedSlotDto {
+  slot_id: string;
+  task_id: string;
+  subtask_id: string | null;
+  start: string; // ISO 8601 UTC
+  end: string; // ISO 8601 UTC
+  proposed_minutes: number;
+  explanation: string | null;
+}
+
+/** Cảnh báo không chặn — đề xuất vẫn được trả về kèm. */
+export interface ScheduleWarningDto {
+  task_id: string;
+  type: string;
+  needed_minutes: number;
+  free_minutes: number;
+  message: string | null;
+}
+
+export interface ProposeScheduleResponse {
+  proposal_id: string;
+  is_feasible: boolean;
+  missing_minutes: number;
+  explanation: string | null;
+  slots: ProposedSlotDto[];
+  warnings: ScheduleWarningDto[];
+}
+
+/**
+ * POST {AI_BASE_URL}/schedule/propose
+ * Nhờ AI tính khung giờ cho các task Flexible.
+ *
+ * ⚠️ Endpoint này thuộc **AI service** (VITE_AI_API_URL), không phải backend
+ * METANOIA — nên phải gọi qua `aiFetch`, không phải `post`.
+ *
+ * Lưu ý: API **không** ghi gì vào calendar. Người dùng phải duyệt từng slot rồi
+ * mới gọi `createScheduleSlot` (kèm `scheduleProposalId`) để ghi thật — hàm đó
+ * thuộc backend nên dùng `post`.
+ */
+export async function proposeSchedule(
+  body: ProposeScheduleRequest,
+): Promise<ApiResult<ProposeScheduleResponse>> {
+  const ids = (body.task_ids ?? []).filter(
+    (id) => typeof id === "string" && id.length > 0,
+  );
+  if (ids.length === 0) {
+    // Chặn sớm: AI service trả 422 nếu task_ids rỗng, thông báo rõ ràng hơn cho UI.
+    return { ok: false, status: 0, error: "Cần ít nhất 1 task để xếp lịch." };
+  }
+  return aiFetch<ProposeScheduleResponse>("/schedule/propose", {
+    method: "POST",
+    body: JSON.stringify({
+      task_ids: ids,
+      language: body.language ?? "vi",
+    }),
+  });
+}
+
+/* ================================================================
  * DOMAINS (domain = lĩnh vực / chủ đề của task)
  * ================================================================ */
 
@@ -998,6 +1072,8 @@ export interface CalendarItemDto {
   explanation?: string | null;
   isManualOverride?: boolean;
   syncFailed?: boolean;
+  /** Có event tương ứng trên Google Calendar hay không. */
+  googleEventId?: string | null;
 }
 
 export interface CalendarResponseDto {
@@ -1039,6 +1115,7 @@ export async function listCalendar(params: {
  *   GET  /chat/tasks/{task_id}                    -> TaskChatResponse
  *   POST /chat/tasks/{task_id}/messages           -> ChatTurnResponse
  *   POST /chat/tasks/{task_id}/apply              -> AppliedResponse
+ *   POST /schedule/propose                        -> ProposeScheduleResponse
  * ================================================================ */
 
 const AI_BASE_URL =

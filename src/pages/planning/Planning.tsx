@@ -193,9 +193,7 @@ export function PlanningPage() {
 
   /* Toast thông báo giữa màn hình */
   const [toasts, toast] = useCenterToast();
-  const toastDismiss = useCallback((id: number) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
+  const toastDismiss = toast.dismiss;
 
   function openScheduleModal(taskId: string, taskTitle: string) {
     // Default: next hour to next hour + 1

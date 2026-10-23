@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import {
+  ProposalDialog,
+} from "../../components/ScheduleProposal";
+import { useScheduleProposal } from "../../components/schedule-proposal-logic";
 import { CenterToasts, useCenterToast } from "../../components/Toast";
 import { useStaggeredMount } from "../../hooks/useStaggeredMount";
 import {
@@ -16,7 +20,6 @@ import {
   type ScheduleSlotDto,
   type SubtaskDto,
   type TaskDto,
-  type UpdateScheduleSlotRequest,
 } from "../../lib/api-client";
 import "./schedule.css";
 
@@ -251,14 +254,11 @@ export function SchedulePage() {
   const [scheduleSlots, setScheduleSlots] = useState<ScheduleSlotDto[]>([]);
   /* Toast thông báo giữa màn hình */
   const [toasts, toast] = useCenterToast();
-  const toastDismiss = useCallback(
-    (id: number) => setToasts((prev) => prev.filter((t) => t.id !== id)),
-    []
-  );
+  const toastDismiss = toast.dismiss;
   /** Calendar items từ API (BE merged + enriched) */
   const [calendarItems, setCalendarItems] = useState<CalendarItemDto[]>([]);
-  /** Work hours config từ calendar response */
-  const [calendarConfig, setCalendarConfig] = useState<{
+  /** Work hours + timezone từ calendar response (AI xếp lịch dựa trên vùng này) */
+  const [workHours, setWorkHours] = useState<{
     timeZone?: string;
     workDayStart?: string | null;
     workDayEnd?: string | null;
@@ -307,7 +307,7 @@ export function SchedulePage() {
     } catch {
       // ignore parse errors
     }
-  }, []);
+  }, [toast]);
 
   /** Listen for drag events từ Planning page */
   useEffect(() => {
@@ -321,10 +321,9 @@ export function SchedulePage() {
       const data = e.dataTransfer?.getData("application/x-metanoia-task");
       if (data) {
         try {
-          const taskData = JSON.parse(data);
-          // Store to localStorage for cross-tab support
+          // Validate JSON trước khi lưu cross-tab, rồi drop vào ngày hiện tại.
+          JSON.parse(data);
           localStorage.setItem("metanoia:drag-task", data);
-          // Drop vào ngày hiện tại
           handleScheduleDrop(new Date());
         } catch {
           // ignore
@@ -401,12 +400,13 @@ export function SchedulePage() {
       const calRes = await listCalendar({ from, to, includeCancelled: false });
 
       // Nếu 404 → mark as unavailable và fall through
-      if (calRes.status === 404) {
+      if (!calRes.ok && calRes.status === 404) {
         calendarApiUnavailable.current = true;
       } else if (calRes.ok && calRes.data.items.length > 0) {
         // Dùng calendar items từ BE
         setCalendarItems(calRes.data.items);
-        setCalendarConfig({
+        // Work-hours config: AI propose dựa trên giờ làm việc nên cần giữ lại.
+        setWorkHours({
           timeZone: calRes.data.timeZone,
           workDayStart: calRes.data.workDayStart,
           workDayEnd: calRes.data.workDayEnd,
@@ -525,6 +525,59 @@ export function SchedulePage() {
     const m: Record<string, TaskDto> = {};
     for (const t of tasks) m[t.id] = t;
     return m;
+  }, [tasks]);
+
+  /** Bản Map cho AI proposal — lookup O(1) khi render danh sách slot. */
+  const tasksByIdMap = useMemo(() => {
+    const m = new Map<string, TaskDto>();
+    for (const t of tasks) m.set(t.id, t);
+    return m;
+  }, [tasks]);
+
+  /** Task đã có ít nhất 1 schedule slot → loại khỏi danh sách xin AI xếp lịch. */
+  const scheduledTaskIds = useMemo(
+    () => new Set(scheduleSlots.map((s) => s.taskId).filter(Boolean)),
+    [scheduleSlots],
+  );
+
+  /** Đếm task Flexible còn xếp được — dùng để bật/tắt nút Auto-schedule. */
+  const schedulableCount = useMemo(() => {
+    let n = 0;
+    for (const t of tasks) {
+      if (scheduledTaskIds.has(t.id)) continue;
+      if (t.fixedStart || t.fixedEnd) continue;
+      if ((t.taskType ?? "").toLowerCase() !== "flexible") continue;
+      const st = (t.status ?? "").toLowerCase();
+      if (st === "done" || st === "completed" || st === "cancelled" || st === "skipped") continue;
+      n += 1;
+    }
+    return n;
+  }, [tasks, scheduledTaskIds]);
+
+  /* ---------- AI schedule proposal ---------- */
+  const [proposalOpen, setProposalOpen] = useState(false);
+  const proposal = useScheduleProposal({
+    scheduledTaskIds,
+    tasksById: tasksByIdMap,
+    toast,
+  });
+
+  /** Mở panel và nhờ AI xếp lịch ngay (nút "Auto-schedule" / ribbon AI). */
+  const openProposal = useCallback(() => {
+    setProposalOpen(true);
+    void proposal.run();
+  }, [proposal]);
+
+  /**
+   * Sau khi duyệt → nạp lại schedule slot của toàn bộ task.
+   * Cách này giống hệt `loadData` nên không lệ logic với phần còn lại của trang.
+   */
+  const handleProposalDone = useCallback(async () => {
+    setProposalOpen(false);
+    const results = await Promise.all(tasks.map((t) => listScheduleSlotsByTask(t.id)));
+    const merged: ScheduleSlotDto[] = [];
+    for (const r of results) if (r.ok) merged.push(...r.data);
+    setScheduleSlots(merged);
   }, [tasks]);
 
   /* ---------- Bước 1: event thô từ BE (nếu có) hoặc fallback từ local ---------- */
@@ -1114,7 +1167,21 @@ export function SchedulePage() {
               <span className="material-symbols-outlined sch-icon-18">edit_calendar</span>
               Planning
             </Link>
-            <button type="button" className="sch-btn sch-btn--primary">
+            <button
+              type="button"
+              className="sch-btn sch-btn--primary"
+              onClick={openProposal}
+              disabled={proposal.loading || schedulableCount === 0}
+              title={
+                schedulableCount === 0
+                  ? "Không còn task flexible nào chưa có lịch"
+                  : `AI sẽ xếp lịch cho ${schedulableCount} task flexible${
+                      workHours.workDayStart && workHours.workDayEnd
+                        ? ` trong khung giờ làm việc ${workHours.workDayStart}–${workHours.workDayEnd}`
+                        : ""
+                    }`
+              }
+            >
               <span className="material-symbols-outlined sch-icon-18">auto_awesome</span>
               Auto-schedule
             </button>
@@ -1300,8 +1367,22 @@ export function SchedulePage() {
               </p>
             </div>
             <div className="sch-ai__actions">
-              <button type="button" className="sch-btn sch-btn--soft">View</button>
-              <button type="button" className="sch-btn sch-btn--primary">Apply</button>
+              <button
+                type="button"
+                className="sch-btn sch-btn--soft"
+                onClick={openProposal}
+                disabled={schedulableCount === 0}
+              >
+                Auto-schedule
+              </button>
+              <button
+                type="button"
+                className="sch-btn sch-btn--primary"
+                onClick={openProposal}
+                disabled={schedulableCount === 0}
+              >
+                Let AI re-plan
+              </button>
             </div>
           </div>
         )}
@@ -1345,6 +1426,15 @@ export function SchedulePage() {
           info={popover.info}
           onClose={() => setPopover(null)}
           onSelectEvent={(e) => setSelected(e)}
+        />
+      )}
+
+      {proposalOpen && (
+        <ProposalDialog
+          hook={proposal}
+          tasksById={tasksByIdMap}
+          onClose={() => setProposalOpen(false)}
+          onDone={handleProposalDone}
         />
       )}
 

@@ -1347,6 +1347,79 @@
   border-bottom-color: rgba(255, 107, 107, 0.3);
 }
 
+/* ===========================================================
+ * AI schedule proposal card
+ * Bọc <ProposalBody>/<ProposalActions> từ components/ScheduleProposal.
+ * =========================================================== */
+.cp-propose {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--cp-hairline);
+  background: var(--cp-canvas);
+}
+.cp-propose-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.cp-propose-title {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+.cp-propose-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: 1px solid var(--cp-hairline);
+  border-radius: var(--cp-r-sm, 6px);
+  background: var(--cp-panel, #1a1a1a);
+  color: var(--cp-primary);
+}
+.cp-propose-title strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--cp-ink);
+  line-height: 1.3;
+}
+.cp-propose-title span {
+  display: block;
+  margin-top: 2px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--cp-mute);
+}
+/* cp-btn--primary có flex:1 — ở header nút phải giữ kích thước tự nhiên. */
+.cp-propose-head .cp-btn--primary {
+  flex: 0 0 auto;
+  padding: 8px 14px;
+  min-height: 32px;
+  font-size: 13px;
+}
+
+/* Bên trong card: bỏ viền dưới của actions vì không nằm ở chân card. */
+.cp-propose .sp-actions {
+  margin: 14px -24px -16px;
+  padding-left: 24px;
+  padding-right: 24px;
+  background: var(--cp-canvas);
+  border-radius: 0;
+}
+.cp-propose .sp-actions-hint {
+  color: var(--cp-mute);
+}
+
+@media (max-width: 720px) {
+  .cp-propose { padding: 14px 16px; }
+  .cp-propose .sp-actions { margin-left: -16px; margin-right: -16px; padding-left: 16px; padding-right: 16px; }
+}
+
 /* ex-empty-state-card */
 .cp-empty {
   display: flex;

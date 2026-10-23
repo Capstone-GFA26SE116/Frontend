@@ -1,16 +1,27 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./copilot.css";
+import {
+  ProposalBody,
+  ProposalActions,
+} from "../../components/ScheduleProposal";
+import {
+  useScheduleProposal,
+  collectSchedulableTasks,
+} from "../../components/schedule-proposal-logic";
+import { CenterToasts, useCenterToast } from "../../components/Toast";
 import {
   applyTaskChat as apiApplyTaskChat,
   getSimilarMemory,
   getTaskChat,
   listProjects,
+  listScheduleSlotsByTask,
   listTasks,
   sendTaskMessage,
   type AiMessage,
   type AppliedResponse,
   type ChatTurnResponse,
   type ProjectDto,
+  type ScheduleSlotDto,
   type SimilarItem,
   type SummaryResponse,
   type TaskChatResponse,
@@ -136,6 +147,63 @@ export function CopilotPage() {
 
   const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set());
   const [applyError, setApplyError] = useState<string | null>(null);
+
+  /* Toast thông báo giữa màn hình */
+  const [toasts, toast] = useCenterToast();
+
+  /* ============ AI schedule proposal ============
+   * Cùng bộ logic với trang /schedule: Copilot là nơi AI chủ động gợi ý,
+   * còn /schedule là nơi người dùng chủ động bấm. */
+  const [scheduleSlots, setScheduleSlots] = useState<ScheduleSlotDto[]>([]);
+  /** Task vừa được phân rã xong — ứng viên xếp lịch nổi bật. */
+  const [scheduleHintTaskId, setScheduleHintTaskId] = useState<string | null>(null);
+
+  const scheduledTaskIds = useMemo(
+    () => new Set(scheduleSlots.map((s) => s.taskId).filter(Boolean)),
+    [scheduleSlots],
+  );
+
+  /** Ưu tiên task vừa chat, sau đó mới tới task khác trong cùng project. */
+  const schedulableTasks = useMemo(() => {
+    const base = tasks.length > 0 ? tasks : [];
+    const pool = collectSchedulableTasks(base, scheduledTaskIds);
+    if (!scheduleHintTaskId) return pool;
+    const hit = pool.find((t) => t.id === scheduleHintTaskId);
+    if (!hit) return pool;
+    return [hit, ...pool.filter((t) => t.id !== scheduleHintTaskId)];
+  }, [tasks, scheduledTaskIds, scheduleHintTaskId]);
+
+  /**
+   * Task sẽ gửi lên AI khi bấm "Đề xuất lịch".
+   *
+   * Ưu tiên task đang chọn ở dropdown (đây mới là task user đang muốn xếp
+   * lịch). Trước đây nút này gửi **mọi** task flexible chưa có lịch, nên bấm
+   * "Đề xuất lịch" cho task mới vẫn ra kết quả của task cũ đã quá hạn.
+   *
+   * Task đang chọn không hợp lệ (Fixed / đã có lịch / done) → bỏ qua, dùng
+   * danh sách đầy đủ để user vẫn xếp được hàng loạt.
+   */
+  const preferredScheduleTaskIds = useMemo(() => {
+    const picked = tasks.find((t) => t.id === taskId);
+    if (picked && schedulableTasks.some((t) => t.id === picked.id)) {
+      return [picked.id];
+    }
+    return schedulableTasks.map((t) => t.id);
+  }, [tasks, taskId, schedulableTasks]);
+
+  const tasksByIdMap = useMemo(() => {
+    const m = new Map<string, TaskDto>();
+    for (const t of tasks) m.set(t.id, t);
+    return m;
+  }, [tasks]);
+
+  const proposal = useScheduleProposal({
+    scheduledTaskIds,
+    tasksById: tasksByIdMap,
+    toast,
+  });
+
+  const proposalOpen = proposal.proposal !== null || proposal.loading;
 
   /* RAG panel (right) */
   const [ragItems, setRagItems] = useState<SimilarItem[]>([]);
@@ -293,7 +361,27 @@ export function CopilotPage() {
         kind: "text",
       },
     ]);
+
+    // Task vừa phân rã xong là ứng viên tốt nhất để xếp lịch → đánh dấu lại.
+    setScheduleHintTaskId(taskId);
+    // Nạp slot hiện có của task để loại trừ đúng khi tính đề xuất.
+    const slotRes = await listScheduleSlotsByTask(taskId);
+    if (slotRes.ok) {
+      setScheduleSlots((prev) => [
+        ...prev.filter((s) => s.taskId !== taskId),
+        ...slotRes.data,
+      ]);
+    }
   }
+
+  /** Nạp lại toàn bộ slot của các task đang xem — gọi sau khi duyệt proposal. */
+  const refreshSlots = useCallback(async () => {
+    if (tasks.length === 0) return;
+    const results = await Promise.all(tasks.map((t) => listScheduleSlotsByTask(t.id)));
+    const merged: ScheduleSlotDto[] = [];
+    for (const r of results) if (r.ok) merged.push(...r.data);
+    setScheduleSlots(merged);
+  }, [tasks]);
 
   return (
     <section className="cp">
@@ -533,6 +621,57 @@ export function CopilotPage() {
               </div>
             )}
 
+            {/* ============ AI schedule proposal ============
+                Sau khi phân rã xong, AI đề nghị xếp lịch luôn cho các task
+                flexible chưa có giờ. Cùng component với trang /schedule. */}
+            <div className="cp-propose">
+              <div className="cp-propose-head">
+                <div className="cp-propose-title">
+                  <span className="material-symbols-outlined cp-propose-icon">auto_awesome</span>
+                  <div>
+                    <strong>Xếp lịch bằng AI</strong>
+                    <span>
+                      {(() => {
+                        const picked = tasks.find((t) => t.id === taskId);
+                        const onlyPicked =
+                          preferredScheduleTaskIds.length === 1 &&
+                          picked?.id === preferredScheduleTaskIds[0];
+                        const n = preferredScheduleTaskIds.length;
+                        if (n === 0) return "Mọi task flexible đều đã có lịch.";
+                        const scope = onlyPicked
+                          ? `task "${truncate(picked?.title ?? "", 40)}"`
+                          : `${n} task flexible chưa có lịch`;
+                        const hint = onlyPicked
+                          ? ""
+                          : picked
+                            ? " — chọn 1 task ở dropdown để xếp riêng"
+                            : "";
+                        return `Sẽ xếp ${scope}${hint}.`;
+                      })()}
+                    </span>
+                  </div>
+                </div>
+                {!proposalOpen && (
+                  <button
+                    type="button"
+                    className="cp-btn cp-btn--primary"
+                    onClick={() => void proposal.run(preferredScheduleTaskIds)}
+                    disabled={preferredScheduleTaskIds.length === 0 || proposal.loading}
+                  >
+                    <span className="material-symbols-outlined cp-btn-icon">auto_awesome</span>
+                    Đề xuất lịch
+                  </button>
+                )}
+              </div>
+
+              {proposalOpen && (
+                <div className="sp-root">
+                  <ProposalBody hook={proposal} tasksById={tasksByIdMap} />
+                  <ProposalActions hook={proposal} onDone={() => void refreshSlots()} />
+                </div>
+              )}
+            </div>
+
             {/* Composer */}
             <div className="cp-composer">
               <div className="cp-pills">
@@ -741,6 +880,8 @@ export function CopilotPage() {
           </aside>
         </div>
       </div>
+
+      <CenterToasts toasts={toasts} onDismiss={toast.dismiss} />
     </section>
   );
 }

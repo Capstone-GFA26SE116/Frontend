@@ -15,11 +15,14 @@ interface ToastApi {
   success: (title: string, detail?: string) => void;
   error: (title: string, detail?: string) => void;
   info: (title: string, detail?: string) => void;
+  /** Tự đóng 1 toast theo id (dùng cho nút onDismiss của <CenterToasts>). */
+  dismiss: (id: number) => void;
 }
 
 /* ===========================================================
  * Hook: useCenterToast
- * Trả về { toasts, api } — api.show() để bắn toast, toasts để render.
+ * Trả về [toasts, api] — api.success()/error()/info() để bắn toast,
+ * api.dismiss(id) để đóng thủ công, toasts để render.
  * Toast tự ẩn sau 3.2s, tự dismiss được bằng click.
  * =========================================================== */
 export function useCenterToast(): [ToastItem[], ToastApi] {
@@ -53,8 +56,10 @@ export function useCenterToast(): [ToastItem[], ToastApi] {
     success: (t, d) => show("success", t, d),
     error: (t, d) => show("error", t, d),
     info: (t, d) => show("info", t, d),
+    dismiss,
   });
   api.current.show = show;
+  api.current.dismiss = dismiss;
 
   return [toasts, api.current];
 }

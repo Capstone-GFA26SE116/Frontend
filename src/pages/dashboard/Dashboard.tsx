@@ -429,7 +429,7 @@ export function DashboardPage() {
               <span className="material-symbols-outlined dash-btn-icon">
                 add
               </span>
-              <span>+ Quick add task</span>
+              <span>Quick add task</span>
             </button>
           </div>
         </section>

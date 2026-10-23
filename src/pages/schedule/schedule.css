@@ -1996,6 +1996,115 @@
   margin-top: 6px;
   padding-left: 16px;
 }
+
+/* ---- Danh sách task chi tiết trong ngày ---- */
+.sch-cell-popover__list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sch-cell-popover__list--nested {
+  margin-top: 6px;
+  padding-left: 20px;
+  gap: 4px;
+}
+.sch-cell-popover__task {
+  border-left: 2px solid var(--sch-line);
+  padding-left: 10px;
+}
+.sch-cell-popover__task-row,
+.sch-cell-popover__subtask {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--sch-text-2);
+}
+.sch-cell-popover__subtask {
+  color: var(--sch-text-3);
+  font-size: 12.5px;
+}
+.sch-cell-popover__task-row .material-symbols-outlined,
+.sch-cell-popover__subtask .material-symbols-outlined {
+  color: var(--sch-text-3);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.sch-cell-popover__task-title {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.sch-cell-popover__task-parent {
+  color: var(--sch-text-3);
+  font-style: normal;
+  font-size: 11.5px;
+}
+.sch-cell-popover__task-est {
+  font-family: var(--sch-mono);
+  font-size: 11px;
+  color: var(--sch-text-3);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.sch-cell-popover__task-desc {
+  margin: 4px 0 0;
+  padding-left: 20px;
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--sch-text-3);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---- Tag: giờ bắt đầu, thời lượng, trạng thái ---- */
+.sch-cell-popover__task-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding-left: 20px;
+}
+.sch-cell-popover__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  border: 1px solid var(--sch-line);
+  border-radius: 9999px;
+  background: var(--sch-bg);
+  font-family: var(--sch-mono);
+  font-size: 10.5px;
+  line-height: 15px;
+  color: var(--sch-text-3);
+  white-space: nowrap;
+}
+.sch-cell-popover__tag--status {
+  text-transform: capitalize;
+}
+
+/* Item clickable → có pointer + hover */
+.sch-cell-popover__task[role="button"] {
+  cursor: pointer;
+  border-radius: var(--sch-r-sm);
+  transition: background 0.12s ease;
+}
+.sch-cell-popover__task[role="button"]:hover {
+  background: var(--sch-line);
+}
+.sch-cell-popover__task[role="button"]:focus-visible {
+  outline: 2px solid var(--sch-primary);
+  outline-offset: 1px;
+}
 .sch-cell-popover__foot {
   padding: 10px 16px 12px;
   border-top: 1px solid var(--sch-line);

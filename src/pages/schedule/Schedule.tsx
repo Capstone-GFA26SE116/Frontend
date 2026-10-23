@@ -160,12 +160,105 @@ function sourceLabel(source: CalSource): string {
 }
 
 /* ===========================================================
+ * Gom task của 1 ngày từ danh sách event đã gộp.
+ *
+ * Vì sao cần: `pickAccentForDay` chỉ xét deadline + fixed time, nên BỎ SÓT
+ * các task chỉ có schedule slot (nguồn lịch thực tế chính) và task có
+ * calendar event. `events` đã gộp đủ 4 nguồn (calendar / task deadline /
+ * subtask / schedule slot) nên dùng nó làm nguồn sự thật.
+ * =========================================================== */
+type DayItem = {
+  /** Task (có thể null nếu event không gắn với task nào). */
+  task: TaskDto | null;
+  /** Subtask (nếu event là subtask). */
+  subtask: SubtaskDto | null;
+  /** Các slot thuộc task này trong ngày. */
+  slots: ScheduleSlotDto[];
+  /** Tổng phút ước tính của các item trong ngày. */
+  minutes: number;
+  /** Event đầu tiên (để biết giờ bắt đầu + mở modal chi tiết). */
+  start: Date;
+  /** Event gốc đầu tiên — dùng để mở modal khi click. */
+  event: CalEvent;
+  /** Trạng thái ưu tiên: done < in-progress < todo. */
+  status: string;
+  isAllDay: boolean;
+};
+
+function collectDayItems(events: CalEvent[], day: Date): DayItem[] {
+  const dayEnd = addDays(startOfDay(day), 1);
+  const dayEvents = events.filter((ev) => {
+    if (ev.isAllDay) return isSameDay(ev.start, day);
+    // Event có thể kéo dài qua nhiều ngày → tính cả phần chồng lên ngày này.
+    return ev.start < dayEnd && ev.end > startOfDay(day);
+  });
+
+  const byTask = new Map<string, DayItem>();
+
+  for (const ev of dayEvents) {
+    const key = ev.taskId ?? ev.id;
+    let item = byTask.get(key);
+    if (!item) {
+      item = {
+        task: ev.task ?? null,
+        subtask: ev.subtask ?? null,
+        slots: [],
+        minutes: 0,
+        start: ev.start,
+        event: ev,
+        status: ev.status,
+        isAllDay: ev.isAllDay,
+      };
+      byTask.set(key, item);
+    }
+    if (ev.scheduleSlot) item.slots.push(ev.scheduleSlot);
+    if (ev.aggregatedSlots) item.slots.push(...ev.aggregatedSlots);
+    // Tính phút theo phần thực sự nằm trong ngày này.
+    const s = ev.start > startOfDay(day) ? ev.start : startOfDay(day);
+    const e = ev.end < dayEnd ? ev.end : dayEnd;
+    const mins = Math.max(0, Math.round((e.getTime() - s.getTime()) / 60000));
+    item.minutes += mins;
+    if (ev.start < item.start) item.start = ev.start;
+  }
+
+  return [...byTask.values()].sort((a, b) => a.start.getTime() - b.start.getTime());
+}
+
+/** Ưu tiên hiển thị item quan trọng hơn: đang chạy > chưa xong > xong rồi. */
+const STATUS_RANK: Record<string, number> = {
+  inprogress: 0,
+  "in progress": 0,
+  "in_progress": 0,
+  active: 0,
+  todo: 1,
+  "to do": 1,
+  notstarted: 1,
+  "not started": 1,
+  blocked: 2,
+  done: 3,
+  completed: 3,
+  cancelled: 4,
+  skipped: 4,
+};
+
+function statusRank(s: string | undefined): number {
+  if (!s) return 1;
+  return STATUS_RANK[s.toLowerCase()] ?? 1;
+}
+
+/* ===========================================================
  * Cell accent picker — tính "project chính" cho 1 ngày + số liệu tổng.
  * Pure function, dùng cho week/month cell để render 1 màu + badge.
  * =========================================================== */
 type CellAccent = {
   accent: ProjectSpan;
-  allSpans: Array<{ sp: ProjectSpan; taskCount: number; subtaskCount: number; total: number; urgency: number }>;
+  allSpans: Array<{
+    sp: ProjectSpan;
+    taskCount: number;
+    subtaskCount: number;
+    total: number;
+    urgency: number;
+  }>;
   totalTasks: number;
   totalSubtasks: number;
   projectCount: number;
@@ -187,35 +280,42 @@ function pickAccentForDay(
   const dayStart = new Date(day); dayStart.setHours(0, 0, 0, 0);
   const dayEnd = new Date(day); dayEnd.setHours(23, 59, 59, 999);
   const stats = touching.map((sp) => {
-    let taskCount = 0;
-    let subtaskCount = 0;
     let bestDeadlineDelta = Number.POSITIVE_INFINITY;
     const projTasks = tasks.filter((t) => t.projectId === sp.project.id);
-    for (const t of projTasks) {
+    // Task "active" trong ngày: có deadline đúng ngày, hoặc fixed time bao phủ ngày.
+    const activeTasks = projTasks.filter((t) => {
       const deadline = t.deadline ?? null;
       const fixedStart = t.fixedStart ? new Date(t.fixedStart) : null;
       const fixedEnd = t.fixedEnd ? new Date(t.fixedEnd) : null;
-      const isActive =
-        (deadline && isSameDay(new Date(deadline), day)) ||
-        (fixedStart && fixedEnd && fixedStart <= dayEnd && fixedEnd >= dayStart);
-      if (isActive) taskCount++;
-      if (deadline) {
-        const dl = new Date(deadline).getTime();
-        const delta = Math.abs(dl - dc);
-        if (delta < bestDeadlineDelta) bestDeadlineDelta = delta;
-      }
+      return (
+        (!!deadline && isSameDay(new Date(deadline), day)) ||
+        (!!fixedStart && !!fixedEnd && fixedStart <= dayEnd && fixedEnd >= dayStart)
+      );
+    });
+    const taskCount = activeTasks.length;
+    for (const t of projTasks) {
+      if (!t.deadline) continue;
+      const dl = new Date(t.deadline).getTime();
+      const delta = Math.abs(dl - dc);
+      if (delta < bestDeadlineDelta) bestDeadlineDelta = delta;
     }
     const taskIds = new Set(projTasks.map((t) => t.id));
-    for (const st of subtasks) {
-      if (!taskIds.has(st.taskId)) continue;
+    // Subtask có lịch (scheduledStart/End) bao phủ ngày này.
+    const activeSubtasks = subtasks.filter((st) => {
+      if (!taskIds.has(st.taskId)) return false;
       const sStart = st.scheduledStart ? new Date(st.scheduledStart) : null;
       const sEnd = st.scheduledEnd ? new Date(st.scheduledEnd) : null;
-      const isActive =
-        sStart && sEnd && sStart <= dayEnd && sEnd >= dayStart;
-      if (isActive) subtaskCount++;
-    }
+      return !!sStart && !!sEnd && sStart <= dayEnd && sEnd >= dayStart;
+    });
+    const subtaskCount = activeSubtasks.length;
     const total = taskCount + subtaskCount;
-    return { sp, taskCount, subtaskCount, total, urgency: bestDeadlineDelta };
+    return {
+      sp,
+      taskCount,
+      subtaskCount,
+      total,
+      urgency: bestDeadlineDelta,
+    };
   });
   stats.sort((a, b) => {
     if (a.urgency !== b.urgency) return a.urgency - b.urgency;
@@ -1066,14 +1166,17 @@ export function SchedulePage() {
   /* Selected event for detail */
   const [selected, setSelected] = useState<CalEvent | null>(null);
 
-  /** Cell popover: hiện khi click 1 cell có nhiều projects/tasks. */
-  const [popover, setPopover] = useState<{ day: Date; info: CellAccent } | null>(null);
+  /** Cell popover: hiện khi click 1 cell — liệt kê TẤT CẢ task trong ngày. */
+  const [popover, setPopover] = useState<{ day: Date; items: DayItem[] } | null>(null);
 
-  const openCellPopover = useCallback((day: Date) => {
-    const info = pickAccentForCell(day);
-    if (!info) return;
-    setPopover({ day, info });
-  }, [pickAccentForCell]);
+  const openCellPopover = useCallback(
+    (day: Date) => {
+      // Gom từ `events` (đã gộp calendar + task deadline + subtask + slot)
+      // để không bỏ sót task nào trong ngày.
+      setPopover({ day, items: collectDayItems(events, day) });
+    },
+    [events],
+  );
 
   /** Đóng popover khi click ra ngoài. */
   useEffect(() => {
@@ -1419,11 +1522,11 @@ export function SchedulePage() {
         />
       )}
 
-      {/* Cell popover: hiện khi click 1 cell có nhiều projects/tasks */}
+      {/* Cell popover: hiện khi click 1 cell — liệt kê tất cả task trong ngày */}
       {popover && (
         <CellPopover
           day={popover.day}
-          info={popover.info}
+          items={popover.items}
           onClose={() => setPopover(null)}
           onSelectEvent={(e) => setSelected(e)}
         />
@@ -1982,17 +2085,32 @@ function Sidebar({
 }
 
 /* ===========================================================
- * Cell popover — liệt kê tất cả projects + tasks đang active trong 1 ngày
- * (khi cell có >1 project, hoặc user muốn xem chi tiết).
+ * Cell popover — liệt kê TẤT CẢ task/subtask/slot đang có trong 1 ngày.
+ *
+ * Dùng `items` (đã gom từ `events` — nguồn sự thật gồm cả calendar, task
+ * deadline, subtask và schedule slot) nên không bỏ sót task nào.
  * =========================================================== */
 function CellPopover({
-  day, info, onClose, onSelectEvent: _onSelectEvent,
+  day, items, onClose, onSelectEvent,
 }: {
   day: Date;
-  info: CellAccent;
+  items: DayItem[];
   onClose: () => void;
   onSelectEvent: (e: CalEvent) => void;
 }) {
+  const totalMinutes = items.reduce((s, i) => s + i.minutes, 0);
+  const taskCount = items.filter((i) => i.task).length;
+  const subtaskCount = items.filter((i) => !i.task && i.subtask).length;
+
+  // Sắp xếp: đang chạy trước, chưa xong sau, xong rồi cuối cùng.
+  // Cùng nhóm thì theo giờ bắt đầu.
+  const sorted = [...items].sort((a, b) => {
+    const ra = statusRank(a.status);
+    const rb = statusRank(b.status);
+    if (ra !== rb) return ra - rb;
+    return a.start.getTime() - b.start.getTime();
+  });
+
   return (
     <div className="sch-cell-popover" role="dialog" aria-modal="false" aria-label={`Details for ${day.toDateString()}`}>
       <div className="sch-cell-popover__head">
@@ -2001,36 +2119,112 @@ function CellPopover({
             {day.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
           </div>
           <div className="sch-cell-popover__meta">
-            {info.projectCount} project{info.projectCount !== 1 ? "s" : ""}
-            {" • "}
-            {info.totalTasks + info.totalSubtasks} item{(info.totalTasks + info.totalSubtasks) !== 1 ? "s" : ""}
+            {items.length} item{items.length !== 1 ? "s" : ""}
+            {taskCount > 0 && <>{" • "}{taskCount} task{taskCount !== 1 ? "s" : ""}</>}
+            {subtaskCount > 0 && <>{" • "}{subtaskCount} subtask{subtaskCount !== 1 ? "s" : ""}</>}
+            {totalMinutes > 0 && <>{" • "}{formatMinutesShort(totalMinutes * 60000)}</>}
           </div>
         </div>
         <button type="button" className="sch-icon-btn" onClick={onClose} aria-label="Close">
           <span className="material-symbols-outlined">close</span>
         </button>
       </div>
+
       <div className="sch-cell-popover__body">
-        {info.allSpans.map((s) => (
-          <div key={s.sp.project.id} className="sch-cell-popover__project">
-            <div className="sch-cell-popover__project-head">
-              <span className="sch-cell-popover__dot" style={{ background: s.sp.color }} />
-              <span className="sch-cell-popover__project-name">{s.sp.project.name}</span>
-              <span className="sch-cell-popover__project-count">
-                {s.taskCount} task{s.taskCount !== 1 ? "s" : ""}
-                {s.subtaskCount > 0 ? `, ${s.subtaskCount} subtask${s.subtaskCount !== 1 ? "s" : ""}` : ""}
-              </span>
-            </div>
-            {s.taskCount === 0 && s.subtaskCount === 0 && (
-              <div className="sch-cell-popover__empty">No active items today</div>
-            )}
-            {/* Note: trong scope này ta không truyền tasks chi tiết vào,
-                chỉ summary. Click "Open project" để drilldown. */}
+        {items.length === 0 ? (
+          <div className="sch-cell-popover__empty">
+            Không có task nào trong ngày này.
           </div>
-        ))}
+        ) : (
+          <ul className="sch-cell-popover__list">
+            {sorted.map((it) => {
+              const title = it.task?.title ?? it.subtask?.title ?? "Untitled";
+              const desc = it.task?.description ?? it.subtask?.description ?? null;
+              const est = it.task?.estimatedMinutes ?? it.subtask?.estimatedMinutes ?? 0;
+              const isSubtask = !it.task && !!it.subtask;
+              const done = /done|completed/i.test(it.status);
+              return (
+                <li
+                  key={`${it.task?.id ?? it.subtask?.id ?? it.start.getTime()}`}
+                  className="sch-cell-popover__task"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onSelectEvent(it.event)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onSelectEvent(it.event);
+                    }
+                  }}
+                >
+                  <div className="sch-cell-popover__task-row">
+                    <span className="material-symbols-outlined sch-icon-14">
+                      {done ? "check_circle" : isSubtask ? "subdirectory_arrow_right" : "task_alt"}
+                    </span>
+                    <span
+                      className="sch-cell-popover__task-title"
+                      style={done ? { color: "var(--sch-text-3)", textDecoration: "line-through" } : undefined}
+                    >
+                      {title}
+                    </span>
+                    {est > 0 && (
+                      <span className="sch-cell-popover__task-est">{est}m</span>
+                    )}
+                  </div>
+
+                  {/* Giờ bắt đầu + trạng thái */}
+                  <div className="sch-cell-popover__task-tags">
+                    {!it.isAllDay && (
+                      <span className="sch-cell-popover__tag">
+                        <span className="material-symbols-outlined sch-icon-12">schedule</span>
+                        {it.start.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    )}
+                    {it.minutes > 0 && (
+                      <span className="sch-cell-popover__tag">
+                        {formatMinutesShort(it.minutes * 60000)}
+                      </span>
+                    )}
+                    {it.status && (
+                      <span className="sch-cell-popover__tag sch-cell-popover__tag--status">
+                        {it.status}
+                      </span>
+                    )}
+                  </div>
+
+                  {desc && <p className="sch-cell-popover__task-desc">{desc}</p>}
+
+                  {/* Các khung giờ (schedule slot) của item này trong ngày */}
+                  {it.slots.length > 0 && (
+                    <ul className="sch-cell-popover__list sch-cell-popover__list--nested">
+                      {it.slots.map((sl) => (
+                        <li key={sl.id} className="sch-cell-popover__subtask">
+                          <span className="material-symbols-outlined sch-icon-12">event</span>
+                          <span className="sch-cell-popover__task-title">
+                            {new Date(sl.startTime).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                            {" – "}
+                            {new Date(sl.endTime).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                          {sl.explanation && (
+                            <em className="sch-cell-popover__task-parent">{sl.explanation}</em>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
+
       <div className="sch-cell-popover__foot">
-        <span className="sch-cell-popover__hint">Primary project: {info.accent.project.name}</span>
+        <span className="sch-cell-popover__hint">
+          {items.length > 0
+            ? "Click a task to see details"
+            : "Nothing scheduled"}
+        </span>
       </div>
     </div>
   );

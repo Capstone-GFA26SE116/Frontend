@@ -9,6 +9,7 @@ import {
   collectSchedulableTasks,
 } from "../../components/schedule-proposal-logic";
 import { CenterToasts, useCenterToast } from "../../components/Toast";
+import { useAuth } from "../../auth/AuthContext";
 import {
   applyTaskChat as apiApplyTaskChat,
   getSimilarMemory,
@@ -82,14 +83,63 @@ const aiHostLabel = (() => {
   }
 })();
 
-const USER_AVATAR =
-  "https://lh3.googleusercontent.com/aida/AEtjO1VkhB70CYIE8k03FbZ0QM6Oaxu-usX545ZcwWr12L2YZ0OfwjuOXTnHMVPiXoeOA8n2LxbMqBOSE7M-hmrWzsVvnzx3fgKywMqOuOrMmtD5FqcsWdyB-aE7FtbaPzvUHE1bqRDK1W9mmC9xrQ4P8JA2ahLWx05v83aS0eju4Yfjd0f_OeNJTVlVlOdi5U5ZtE5dIwZbudHWLf4FDh_UEXFkqv0K06M-1ZCRez46A0-BL6z_5IEcP9OYk9U";
+/**
+ * Avatar mặc định khi user không có ảnh (Google avatar URL hết hạn rất nhanh).
+ * Dùng SVG inline — không phụ thuộc mạng, không bao giờ 403.
+ */
+const DEFAULT_AVATAR =
+  "data:image/svg+xml;charset=UTF-8," +
+  encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40" height="40">
+      <circle cx="20" cy="20" r="20" fill="#7c3aed"/>
+      <circle cx="20" cy="16" r="7" fill="#ddd6fe"/>
+      <path d="M6 38a14 14 0 0 1 28 0z" fill="#ddd6fe"/>
+    </svg>`,
+  );
+
+/**
+ * Quick prompts.
+ *
+ * Cần nói rõ "this task" vì AI đọc task từ DB theo task_id — nếu prompt chỉ
+ * nói "break this" mà không nhắc tới task, AI có thể hiểu là cần hỏi lại
+ * thêm thông tin (đặc biệt khi task thiếu description).
+ */
+/**
+ * Dựng phần ngữ cảnh task để gắn vào message gửi AI.
+ *
+ * AI service đọc task từ DB theo `task_id`, nhưng khi task **thiếu
+ * `description`** thì AI chỉ thấy một title mơ hồ (vd: "Build admin panel")
+ * và sẽ hỏi lại "what specific features do you need?" thay vì tách subtask.
+ *
+ * Gửi kèm title + description giúp AI tách được ngay cả với task mơ hồ.
+ * Trả về chuỗi rỗng nếu không có task (trường hợp paste UUID lạ).
+ */
+function buildTaskContext(task: TaskDto | undefined): string {
+  if (!task) return "";
+  const parts: string[] = [`[Task] ${task.title}`];
+  const desc = task.description?.trim();
+  if (desc) parts.push(`[Description] ${desc}`);
+  else parts.push("[Description] (not provided — infer the subtasks from the title above.)");
+  return parts.join("\n");
+}
 
 const QUICK_PROMPTS = [
-  { icon: "⚡", text: "Break this into 3-5 subtasks, each ≤ 60 minutes" },
-  { icon: "🧠", text: "Estimate realistic minutes based on similar past tasks" },
-  { icon: "☕", text: "Add a 10-minute rest buffer after each subtask" },
-  { icon: "🔄", text: "Re-order by dependencies (DB → API → UI)" },
+  {
+    icon: "⚡",
+    text: "Break this task into 3-5 subtasks, each ≤ 60 minutes. Use the task title and description as the scope.",
+  },
+  {
+    icon: "🧠",
+    text: "Estimate realistic minutes for each subtask of this task, based on similar past tasks.",
+  },
+  {
+    icon: "☕",
+    text: "Break this task into subtasks and add a 10-minute rest buffer after each subtask.",
+  },
+  {
+    icon: "🔄",
+    text: "Break this task into subtasks, ordered by dependencies (DB → API → UI).",
+  },
 ];
 
 /* ---------- helpers ---------- */
@@ -141,6 +191,9 @@ function aiMessageToUi(m: AiMessage): ChatMessage {
  * Main page
  * ============================================================ */
 export function CopilotPage() {
+  const { user } = useAuth();
+  /** Avatar hiển thị cạnh bubble — ưu tiên ảnh thật, không có thì dùng SVG. */
+  const avatarSrc = user?.avatarUrl || DEFAULT_AVATAR;
   const [taskId, setTaskId] = useState<string>("");
   const [taskIdDraft, setTaskIdDraft] = useState<string>("");
   const [taskIdError, setTaskIdError] = useState<string | null>(null);
@@ -332,8 +385,8 @@ export function CopilotPage() {
   }
 
   function handleSend(text?: string) {
-    const content = (text ?? draft).trim();
-    if (!content || !taskId) return;
+    const raw = (text ?? draft).trim();
+    if (!raw || !taskId) return;
     // Chặn gửi trùng: nếu không có guard này, bấm Enter liên tục hoặc bấm nút
     // 2 lần trước khi request đầu về sẽ bắn ra 2 request song song → BE trả
     // 409 Conflict và 1 trong 2 message bị mất.
@@ -342,10 +395,22 @@ export function CopilotPage() {
     if (sendingRef.current) return;
     sendingRef.current = true;
     setSendError(null);
-    // optimistic user bubble
+
+    // Gắn ngữ cảnh task vào message.
+    //
+    // Vì sao: AI đọc task từ DB theo task_id, nhưng nếu task thiếu `description`
+    // thì AI chỉ thấy một title mơ hồ ("Build admin panel") và sẽ hỏi lại
+    // "what specific features do you need?" thay vì tách subtask. Gửi kèm
+    // title + description giúp AI tách được ngay cả với task mơ hồ.
+    const currentTask = tasks.find((t) => t.id === taskId);
+    const context = buildTaskContext(currentTask);
+    const content = context ? `${context}\n\n${raw}` : raw;
+
+    // optimistic user bubble — hiển thị đúng những gì user gõ, không lộ context
+    // đã thêm vào request.
     setMessages((prev) => [
       ...prev,
-      { id: uid(), role: "user", text: content, time: nowHHmm(), kind: "text" },
+      { id: uid(), role: "user", text: raw, time: nowHHmm(), kind: "text" },
     ]);
     setDraft("");
     setIsTyping(true);
@@ -355,8 +420,8 @@ export function CopilotPage() {
       setIsTyping(false);
       if (!res.ok) {
         setSendError(res.error);
-        // Trả lại nội dung vào ô nhập để user không mất đã gõ.
-        setDraft(content);
+        // Trả lại nội dung đã gõ vào ô nhập để user không mất ý định.
+        setDraft(raw);
         return;
       }
       const turn: ChatTurnResponse = res.data;
@@ -627,6 +692,7 @@ export function CopilotPage() {
                   msg={m}
                   applied={appliedIds.has(m.id)}
                   onApply={handleApply}
+                  avatarSrc={avatarSrc}
                 />
               ))}
 
@@ -940,10 +1006,12 @@ function Message({
   msg,
   applied,
   onApply,
+  avatarSrc,
 }: {
   msg: ChatMessage;
   applied: boolean;
   onApply: (messageId: string) => void;
+  avatarSrc: string;
 }) {
   if (msg.role === "user") {
     return (
@@ -954,7 +1022,7 @@ function Message({
           </div>
           <div className="cp-bubble cp-bubble--user">{msg.text}</div>
         </div>
-        <img className="cp-msg-avatar" src={USER_AVATAR} alt="You" />
+        <img className="cp-msg-avatar" src={avatarSrc} alt="You" />
       </div>
     );
   }

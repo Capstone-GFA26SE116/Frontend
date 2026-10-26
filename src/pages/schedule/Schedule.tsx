@@ -211,9 +211,16 @@ function collectDayItems(events: CalEvent[], day: Date): DayItem[] {
       };
       byTask.set(key, item);
     }
-    if (ev.scheduleSlot) item.slots.push(ev.scheduleSlot);
-    if (ev.aggregatedSlots) item.slots.push(...ev.aggregatedSlots);
-    // Tính phút theo phần thực sự nằm trong ngày này.
+    // DEDUPE slot: aggregate event mang cả `scheduleSlot` (slot đầu) LẪN
+    // `aggregatedSlots` (toàn bộ) → slot đầu bị đếm 2 lần. Dedupe theo id.
+    const slotSeen = new Set(item.slots.map((s) => s.id));
+    const pushSlot = (s: ScheduleSlotDto) => {
+      if (slotSeen.has(s.id)) return;
+      slotSeen.add(s.id);
+      item!.slots.push(s);
+    };
+    if (ev.scheduleSlot) pushSlot(ev.scheduleSlot);
+    if (ev.aggregatedSlots) ev.aggregatedSlots.forEach(pushSlot);
     const s = ev.start > startOfDay(day) ? ev.start : startOfDay(day);
     const e = ev.end < dayEnd ? ev.end : dayEnd;
     const mins = Math.max(0, Math.round((e.getTime() - s.getTime()) / 60000));
@@ -750,8 +757,17 @@ export function SchedulePage() {
       }
     }
     // 3) Subtask có scheduledStart/End -> event timed
+    //
+    // DEDUPE: BE trả cả `subtask.scheduledStart/End` LẪN `scheduleSlot` cho cùng
+    // 1 subtask với cùng khung giờ. Nếu dựng event từ cả 2 nguồn thì mỗi subtask
+    // xuất hiện 2 lần trên lịch (và 2 lần trong modal task detail).
+    // Slot là nguồn chính xác hơn (có kbiasUsed, isManualOverride, status riêng)
+    // nên subtask nào đã có slot thì bỏ qua event từ subtask.
+    const subTaskIdsWithSlot = new Set(
+      scheduleSlots.map((s) => s.subTaskId).filter((x): x is string => !!x),
+    );
     for (const st of subtasks) {
-      if (st.scheduledStart && st.scheduledEnd) {
+      if (st.scheduledStart && st.scheduledEnd && !subTaskIdsWithSlot.has(st.id)) {
         const s = new Date(st.scheduledStart);
         const e = new Date(st.scheduledEnd);
         if (!Number.isNaN(s.getTime()) && !Number.isNaN(e.getTime())) {
@@ -820,7 +836,20 @@ export function SchedulePage() {
         slotsByTask.set(ev.taskId, arr);
       }
     }
-    for (const [taskId, evs] of slotsByTask) {
+    for (const [taskId, allEvs] of slotsByTask) {
+      // DEDUPE LẦN 2 (phòng thủ): cùng subtask + cùng khung giờ thì chỉ giữ 1.
+      // Bảo vệ trường hợp BE trả slot không có subTaskId nhưng vẫn trùng
+      // scheduledStart/End của subtask.
+      const seen = new Set<string>();
+      const evs = allEvs
+        .slice()
+        .sort((a, b) => a.start.getTime() - b.start.getTime())
+        .filter((e) => {
+          const key = `${e.subTaskId ?? "task"}|${e.start.getTime()}|${e.end.getTime()}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
       // Chỉ 1 event thì hiển thị bình thường, không cần aggregate
       if (evs.length <= 1) continue;
       const parentTask = evs[0].task ?? tasksById[taskId];
@@ -849,16 +878,23 @@ export function SchedulePage() {
         subtask: evs[0].subtask,
         // Danh sách block con để modal hiển thị: ưu tiên slot thật, nếu không có
         // thì dùng chính các event gốc (subtask event từ BE).
-        aggregatedSlots: evs.map((e) => e.scheduleSlot).filter((x): x is ScheduleSlotDto => !!x),
+        // Dedupe theo slot id — tránh modal đếm trùng khi 1 slot xuất hiện nhiều lần.
+        aggregatedSlots: Array.from(
+          new Map(
+            evs
+              .map((e) => e.scheduleSlot)
+              .filter((x): x is ScheduleSlotDto => !!x)
+              .map((s) => [s.id, s]),
+          ).values(),
+        ),
         aggregatedEvents: evs,
       });
     }
-    // Lọc: bỏ các event thuộc task đã được gộp
-    const aggregatedTaskIds = new Set(
-      Array.from(slotsByTask.entries())
-        .filter(([, evs]) => evs.length > 1)
-        .map(([taskId]) => taskId),
-    );
+    // Lọc: bỏ các event thuộc task ĐÃ THỰC SỰ được gộp.
+    // Lưu ý: phải dựa trên danh sách aggregate đã tạo (sau dedupe), KHÔNG dùng
+    // slotsByTask thô — nếu không, task có 2 event trùng (dedupe còn 1, không tạo
+    // aggregate) sẽ bị xoá sạch khỏi lịch.
+    const aggregatedTaskIds = new Set(aggregateEvents.map((e) => e.taskId!));
     const filtered = list.filter(
       (ev) => !(ev.taskId && !ev.isAllDay && aggregatedTaskIds.has(ev.taskId)),
     );

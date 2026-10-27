@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, NavLink, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { MetanoiaLogo } from "../components/MetanoiaLogo";
+import { useGoogleCalendar } from "../hooks/useGoogleCalendar";
 import "./site-layout.css";
 
 /**
@@ -16,8 +17,16 @@ import "./site-layout.css";
  */
 export function SiteLayout() {
   const { isAuthenticated, user, logout } = useAuth();
+  const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Trạng thái Google Calendar cho item trong user menu.
+   * Chỉ gọi API khi đã đăng nhập — tránh 401 → clearTokens → redirect
+   * /login khi user đang ở trang public (landing/pricing).
+   */
+  const gcal = useGoogleCalendar(isAuthenticated);
 
   // Đóng menu khi click ra ngoài hoặc nhấn Escape
   useEffect(() => {
@@ -41,6 +50,21 @@ export function SiteLayout() {
   function handleLogout() {
     setMenuOpen(false);
     logout();
+  }
+
+  /**
+   * Item Google Calendar trong user menu:
+   * - Chưa kết nối → bắt đầu OAuth (redirect toàn trang).
+   * - Đã kết nối  → mở /schedule để quản lý sync / disconnect.
+   */
+  function handleGoogleCalendar() {
+    setMenuOpen(false);
+    if (gcal.isConnected) {
+      navigate("/schedule");
+    } else {
+      // `connect()` là async (gọi API lấy authorizationUrl rồi redirect).
+      void gcal.connect();
+    }
   }
 
   return (
@@ -197,6 +221,47 @@ export function SiteLayout() {
                         </span>
                         <span>Workspace</span>
                       </Link>
+                      <Link
+                        to="/profile"
+                        className="site-user-menu-item"
+                        role="menuitem"
+                        onClick={() => setMenuOpen(false)}
+                      >
+                        <span
+                          className="material-symbols-outlined"
+                          aria-hidden="true"
+                        >
+                          account_circle
+                        </span>
+                        <span>Profile</span>
+                      </Link>
+                      <button
+                        type="button"
+                        className="site-user-menu-item site-user-menu-item--gcal"
+                        role="menuitem"
+                        onClick={handleGoogleCalendar}
+                        disabled={gcal.loading}
+                        title={
+                          gcal.isConnected
+                            ? "Google Calendar đã kết nối"
+                            : "Kết nối Google Calendar"
+                        }
+                      >
+                        <span
+                          className="material-symbols-outlined"
+                          aria-hidden="true"
+                        >
+                          event_available
+                        </span>
+                        <span>
+                          {gcal.isConnected
+                            ? "Google Calendar connected"
+                            : "Connect Google Calendar"}
+                        </span>
+                        {gcal.isConnected && (
+                          <span className="site-user-menu-gcal-dot" aria-hidden="true" />
+                        )}
+                      </button>
                       <button
                         type="button"
                         className="site-user-menu-item site-user-menu-item--danger"

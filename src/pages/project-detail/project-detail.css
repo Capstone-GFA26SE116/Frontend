@@ -727,6 +727,529 @@
 }
 
 /* ===========================================================
+ * 8.5. Milestones preview (section)
+ * =========================================================== */
+.pd-ms {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  animation: pd-fade-up 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: 200ms;
+}
+
+.pd-ms-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.pd-ms-head-left { display: flex; flex-direction: column; gap: 6px; }
+
+.pd-ms-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+/* Milestone stat — button-pill-tag variant */
+.pd-ms-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  background: var(--canvas);
+  color: var(--ink);
+  border: 1px solid var(--hairline);
+  white-space: nowrap;
+}
+.pd-ms-stat .material-symbols-outlined { font-size: 14px; }
+.pd-ms-stat--active {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: rgba(0, 217, 146, 0.06);
+}
+.pd-ms-stat--done {
+  color: var(--primary-deep);
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+/* View all — eyebrow-mono link */
+.pd-ms-view-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--primary);
+  text-decoration: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--hairline);
+  background: var(--canvas);
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+.pd-ms-view-all:hover {
+  border-color: var(--primary);
+  background: rgba(0, 217, 146, 0.06);
+}
+.pd-ms-view-all .material-symbols-outlined {
+  font-size: 16px;
+  transition: transform 200ms ease;
+}
+.pd-ms-view-all:hover .material-symbols-outlined {
+  transform: translateX(3px);
+}
+
+.pd-ms-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.25rem 1.5rem;
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--body);
+}
+.pd-ms-loading .material-symbols-outlined {
+  font-size: 18px;
+  color: var(--primary);
+  animation: pd-spin 0.9s linear infinite;
+}
+
+.pd-ms-error {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.25rem 1.5rem;
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--body);
+}
+.pd-ms-error .material-symbols-outlined { font-size: 18px; color: var(--mute); }
+
+.pd-ms-empty {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 1.25rem 1.5rem;
+  background: var(--canvas);
+  border: 1px dashed rgba(79, 93, 117, 0.4);
+  border-radius: 8px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--body);
+}
+.pd-ms-empty > .material-symbols-outlined {
+  font-size: 20px;
+  color: var(--mute);
+  flex-shrink: 0;
+}
+.pd-ms-empty-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--primary);
+  text-decoration: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--hairline);
+  background: var(--canvas);
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+.pd-ms-empty-cta:hover {
+  border-color: var(--primary);
+  background: rgba(0, 217, 146, 0.06);
+}
+.pd-ms-empty-cta .material-symbols-outlined {
+  font-size: 16px;
+  transition: transform 200ms ease;
+}
+.pd-ms-empty-cta:hover .material-symbols-outlined { transform: translateX(3px); }
+
+/* List — rail + card */
+.pd-ms-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  counter-reset: pdms;
+}
+
+.pd-ms-item {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  flex-wrap: wrap;
+  padding: 14px 20px;
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  transition: border-color 160ms ease, background-color 160ms ease,
+    transform 160ms ease;
+  animation: pd-fade-up 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  min-width: 0;
+}
+.pd-ms-item:hover {
+  border-color: var(--primary);
+  background: var(--canvas-soft);
+  transform: translateX(2px);
+}
+
+.pd-ms-index {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 9999px;
+  background: var(--canvas-soft);
+  border: 1px solid var(--hairline);
+  color: var(--mute);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 550;
+}
+.pd-ms-index--active {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.pd-ms-index--done {
+  border-color: rgba(16, 185, 129, 0.5);
+  color: var(--primary-deep);
+}
+.pd-ms-index--revision {
+  color: var(--body);
+}
+
+.pd-ms-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  flex: 1;
+}
+.pd-ms-name {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 21px;
+  font-weight: 600;
+  color: var(--ink-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pd-ms-name--done { color: var(--ink); }
+
+.pd-ms-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  min-width: 0;
+}
+.pd-ms-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 9999px;
+  border: 1px solid var(--hairline);
+  font-family: var(--font-sans);
+  font-size: 10px;
+  line-height: 15px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--body);
+  white-space: nowrap;
+}
+.pd-ms-status-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: currentColor;
+  flex-shrink: 0;
+}
+.pd-ms-status--active {
+  color: var(--primary);
+  border-color: rgba(0, 217, 146, 0.35);
+  background: rgba(0, 217, 146, 0.06);
+}
+.pd-ms-status--done {
+  color: var(--primary-deep);
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+.pd-ms-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--mute);
+  white-space: nowrap;
+}
+.pd-ms-meta-item span {
+  font-size: 13px;
+  color: var(--hairline);
+  flex-shrink: 0;
+}
+.pd-ms-meta-item--soon {
+  color: var(--primary);
+}
+.pd-ms-meta-item--soon span { color: var(--primary); }
+.pd-ms-meta-item--overdue {
+  color: var(--ink);
+}
+.pd-ms-meta-item--overdue span { color: var(--primary); }
+
+.pd-ms-approved {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 9999px;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: var(--primary-deep);
+}
+.pd-ms-approved span { font-size: 15px; }
+
+/* Nút mở task của phase */
+.pd-ms-expand {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  padding: 0;
+  border-radius: 6px;
+  background: var(--canvas-soft);
+  border: 1px solid var(--hairline);
+  color: var(--body);
+  cursor: pointer;
+  transition: border-color 160ms ease, color 160ms ease,
+    background-color 160ms ease, transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.pd-ms-expand span { font-size: 15px; }
+.pd-ms-expand:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  transform: translateY(-1px);
+}
+.pd-ms-expand--open {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: rgba(0, 217, 146, 0.06);
+}
+
+/* Task của phase — xuống dòng, full width */
+.pd-ms-tasks {
+  flex-basis: 100%;
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(79, 93, 117, 0.4);
+  animation: pd-fade-up 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  min-width: 0;
+}
+.pd-ms-tasks-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--canvas-soft);
+  border: 1px solid var(--hairline);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--mute);
+}
+.pd-ms-tasks-state .material-symbols-outlined {
+  font-size: 17px;
+  color: var(--primary);
+  flex-shrink: 0;
+}
+.pd-ms-tasks-state--error {
+  border-color: rgba(0, 217, 146, 0.35);
+  color: var(--body);
+}
+.pd-ms-task-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* Task line trong phase — dạng ledger gọn */
+.pd-ms-task {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px 10px 12px;
+  border-radius: 6px;
+  background: var(--canvas-soft);
+  border: 1px solid transparent;
+  min-width: 0;
+  transition: background-color 200ms ease, border-color 200ms ease,
+    transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: pd-fade-up 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.pd-ms-task:hover {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: var(--hairline);
+  transform: translateX(2px);
+}
+.pd-ms-task::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 9999px;
+  background: var(--hairline);
+}
+.pd-ms-task--active::before { background: var(--primary); }
+.pd-ms-task--scheduled::before { background: var(--primary-soft); }
+.pd-ms-task--done::before { background: var(--primary-deep); opacity: 0.6; }
+
+.pd-ms-task-marker {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  border: 1px solid var(--hairline);
+  background: var(--canvas);
+}
+.pd-ms-task-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--mute);
+}
+.pd-ms-task-dot--active { background: var(--primary); }
+.pd-ms-task-dot--scheduled { background: var(--primary-soft); }
+.pd-ms-task-dot--done { background: var(--primary-deep); }
+
+.pd-ms-task-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.pd-ms-task-title {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 550;
+  color: var(--ink-strong);
+  letter-spacing: -0.1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pd-ms-task--done .pd-ms-task-title {
+  color: var(--mute);
+  font-weight: 500;
+  text-decoration: line-through;
+  text-decoration-color: var(--hairline);
+}
+.pd-ms-task-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 10px;
+  min-width: 0;
+}
+.pd-ms-task-type {
+  padding: 1px 7px;
+  border-radius: 4px;
+  border: 1px solid var(--hairline);
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.pd-ms-task-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--mute);
+  white-space: nowrap;
+}
+.pd-ms-task-meta-item .material-symbols-outlined {
+  font-size: 13px;
+  color: var(--hairline);
+  flex-shrink: 0;
+}
+.pd-ms-task-meta-item--overdue { color: var(--primary); }
+.pd-ms-task-meta-item--overdue .material-symbols-outlined { color: var(--primary); }
+.pd-ms-task-meta-item--soon { color: var(--primary-soft); }
+
+.pd-ms-task-status {
+  padding: 2px 8px;
+  border-radius: 9999px;
+  border: 1px solid var(--hairline);
+  font-family: var(--font-sans);
+  font-size: 9.5px;
+  line-height: 15px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.pd-ms-task-status--active {
+  color: var(--primary);
+  border-color: rgba(0, 217, 146, 0.4);
+  background: rgba(0, 217, 146, 0.07);
+}
+.pd-ms-task-status--scheduled {
+  color: var(--primary-soft);
+  border-color: rgba(47, 214, 161, 0.35);
+}
+.pd-ms-task-status--done {
+  color: var(--primary-deep);
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+/* ===========================================================
  * 9. Tasks preview (section)
  * =========================================================== */
 .pd-tasks {

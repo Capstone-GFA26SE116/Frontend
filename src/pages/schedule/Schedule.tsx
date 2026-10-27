@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import type { Ref } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   ProposalDialog,
 } from "../../components/ScheduleProposal";
 import { useScheduleProposal } from "../../components/schedule-proposal-logic";
 import { CenterToasts, useCenterToast } from "../../components/Toast";
 import { useStaggeredMount } from "../../hooks/useStaggeredMount";
+import { useGoogleCalendar } from "../../hooks/useGoogleCalendar";
 import {
   createScheduleSlot,
   deleteScheduleSlot,
@@ -493,6 +495,9 @@ export function SchedulePage() {
   /** Track if calendar API is unavailable (404) to skip future calls */
   const calendarApiUnavailable = useRef(false);
 
+  /** Ref tới month grid — dùng để cuộn tới ô "hôm nay" khi mở tháng view. */
+  const monthGridRef = useRef<HTMLDivElement | null>(null);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -624,6 +629,89 @@ export function SchedulePage() {
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- data-fetch pattern
+    void loadData();
+  }, [loadData]);
+
+  /* ===========================================================
+   * Kết quả OAuth Google Calendar (BE redirect về FE)
+   *
+   * BE có thể redirect về:
+   *   • `/auth/google/callback?calendar=connected` → trang xác nhận rồi
+   *     navigate sang /schedule kèm `location.state.calendarResult`
+   *   • hoặc thẳng `/schedule?calendar=connected|error|denied` (nếu
+   *     CalendarConnectedRedirectUri trỏ vào đây)
+   * Nên phải xử lý CẢ HAI nguồn.
+   * =========================================================== */
+  const location = useLocation();
+  const calendarResultHandled = useRef(false);
+
+  useEffect(() => {
+    const fromState = (
+      location.state as
+        | {
+            calendarResult?: {
+              outcome: "connected" | "denied" | "error";
+              connected?: boolean;
+              message?: string;
+            };
+          }
+        | null
+    )?.calendarResult;
+
+    const qs = new URLSearchParams(location.search);
+    const rawQuery = (qs.get("calendar") ?? "").toLowerCase();
+    const fromQuery =
+      rawQuery === "connected" || rawQuery === "denied" || rawQuery === "error"
+        ? {
+            outcome: rawQuery as "connected" | "denied" | "error",
+            connected: rawQuery === "connected",
+            message: qs.get("message") ?? undefined,
+          }
+        : null;
+
+    const result = fromState ?? fromQuery;
+    if (!result || calendarResultHandled.current) return;
+    calendarResultHandled.current = true;
+
+    if (result.outcome === "connected") {
+      toast.success(
+        "Đã kết nối Google Calendar",
+        "Sự kiện giờ được đồng bộ hai chiều với lịch của bạn.",
+      );
+    } else if (result.outcome === "denied") {
+      toast.error(
+        "Bạn đã từ chối cấp quyền",
+        "METANOIA cần quyền calendar.events để đồng bộ lịch.",
+      );
+    } else {
+      toast.error(
+        "Kết nối thất bại",
+        result.message ?? "Không liên kết được Google Calendar. Vui lòng thử lại.",
+      );
+    }
+
+    // Xoá query + state để reload trang không hiện lại toast.
+    if (rawQuery) {
+      const next = new URLSearchParams(location.search);
+      next.delete("calendar");
+      next.delete("message");
+      navigate(
+        { pathname: location.pathname, search: next.toString() },
+        { replace: true, state: null },
+      );
+    } else {
+      navigate(
+        { pathname: location.pathname, search: location.search },
+        { replace: true, state: null },
+      );
+    }
+    // Sau khi connect, nạp lại lịch để thấy sự kiện Google (nếu đã sync).
+    void loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chạy 1 lần theo kết quả OAuth
+  }, [location.state, location.search]);
+
+  /** Sau khi Sync Google Calendar → nạp lại lịch để thấy event mới. */
+  const handleCalendarSynced = useCallback(() => {
     void loadData();
   }, [loadData]);
 
@@ -1040,7 +1128,10 @@ export function SchedulePage() {
     return pickAccentForDay(day, projectSpans, tasks, subtasks);
   }, [projectSpans, tasks, subtasks]);
 
-  /** Lưu anchor của project span để "Jump to span". */
+  /**
+   * Lưu anchor của project span để nút "Jump to span" quay lại được.
+   * Chỉ ghi nhớ — KHÔNG tự setAnchor, để vào trang luôn dừng ở hôm nay.
+   */
   useEffect(() => {
     if (projectSpan) {
       // Đặt anchor vào khoảng giữa span để bao quát dễ nhìn
@@ -1048,20 +1139,20 @@ export function SchedulePage() {
         (projectSpan.start.getTime() + projectSpan.end.getTime()) / 2,
       );
       setSpanAnchor((prev) => prev ?? mid);
-      // Chỉ auto-jump anchor nếu anchor hiện tại nằm ngoài span (lần đầu vào)
-      // Và chưa có spanAnchor (lần đầu load)
-      // Anchor set về mid 1 lần
     }
   }, [projectSpan]);
 
-  /** Anchor mặc định lúc mount: nếu có project, nhảy vào giữa span. */
-  useEffect(() => {
-    if (spanAnchor) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional default anchor
-      setAnchor(spanAnchor);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on mount/span resolution
-  }, [spanAnchor]);
+  /**
+   * Anchor mặc định = HÔM NAY.
+   *
+   * Trước đây có effect setAnchor(spanAnchor) để nhảy vào giữa project span.
+   * Điều đó khiến vào trang Schedule lịch bị dời sang tuần/tháng khác — user
+   * phải tự bấm "Today" mới về đúng ngày hiện tại.
+   *
+   * Nay `anchor` khởi tạo sẵn là `new Date()` nên vào trang là đúng tuần/tháng
+   * của hôm nay. Nút "Jump to span" vẫn dùng `spanAnchor` để nhảy khi user
+   * muốn xem đúng khoảng thời gian của project.
+   */
 
   /** Helper: anchor hiện tại có nằm ngoài project span không? */
   const outsideSpan = useMemo<boolean>(() => {
@@ -1135,6 +1226,40 @@ export function SchedulePage() {
       };
     });
   }, [events, anchor]);
+
+  /**
+   * Cuộn month grid tới ô "hôm nay" để user luôn nhìn thấy ngày hiện tại
+   * khi mở tháng view (grid 6 hàng × 110px thường vượt quá viewport).
+   *
+   * Dùng `scrollTo` trên chính grid (không `scrollIntoView`) để KHÔNG cuộn
+   * cả trang — `scrollIntoView` sẽ kéo theo mọi scroll container cha.
+   */
+  useEffect(() => {
+    if (viewMode !== "month") return;
+    const grid = monthGridRef.current;
+    if (!grid) return;
+    const todayCell = grid.querySelector<HTMLElement>(
+      ".sch-month__cell--today",
+    );
+    if (!todayCell) {
+      // Tháng đang xem không chứa hôm nay (đã lướt sang tháng khác) →
+      // reset grid về đầu thay vì giữ vị trí scroll của tháng trước.
+      grid.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    // requestAnimationFrame để chờ layout xong sau khi đổi tháng.
+    const raf = requestAnimationFrame(() => {
+      // Dùng getBoundingClientRect để không phụ thuộc offsetParent:
+      // delta = vị trí cell so với mép trên của vùng nhìn grid.
+      const gridRect = grid.getBoundingClientRect();
+      const cellRect = todayCell.getBoundingClientRect();
+      const delta = cellRect.top - gridRect.top;
+      const target =
+        grid.scrollTop + delta - (grid.clientHeight - cellRect.height) / 2;
+      grid.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [viewMode, anchor, loading, error]);
 
   /* KPIs */
   const kpis = useMemo(() => {
@@ -1534,7 +1659,7 @@ export function SchedulePage() {
                 <WeekBoard days={visibleWeek} onSelectEvent={setSelected} tasksById={tasksById} spans={projectSpans} onCellClick={openCellPopover} accentByKey={cellAccentByKey} />
               )}
               {viewMode === "month" && (
-                <MonthGrid days={monthGrid} onSelectEvent={setSelected} spans={projectSpans} onCellClick={openCellPopover} accentByKey={cellAccentByKey} />
+                <MonthGrid days={monthGrid} onSelectEvent={setSelected} spans={projectSpans} onCellClick={openCellPopover} accentByKey={cellAccentByKey} gridRef={monthGridRef} />
               )}
               {viewMode === "gantt" && (
                 <GanttView days={visibleWeek} onSelectEvent={setSelected} spans={projectSpans} />
@@ -1543,6 +1668,7 @@ export function SchedulePage() {
 
             <aside className="sch-board__side">
               <Sidebar upcoming={upcomingEvents} totalEvents={events.length} onSelect={(e) => setSelected(e)} />
+              <GoogleCalendarCard toast={toast} onSynced={handleCalendarSynced} />
             </aside>
           </div>
         )}
@@ -1743,13 +1869,15 @@ function WeekBoard({
  * Month grid — 6 rows x 7 cols
  * =========================================================== */
 function MonthGrid({
-  days, onSelectEvent, spans, onCellClick, accentByKey,
+  days, onSelectEvent, spans, onCellClick, accentByKey, gridRef,
 }: {
   days: DayPlan[];
   onSelectEvent: (e: CalEvent) => void;
   spans: ProjectSpan[];
   onCellClick?: (day: Date) => void;
   accentByKey: Map<string, CellAccent | null>;
+  /** Ref tới grid — để parent cuộn tới ô "hôm nay". */
+  gridRef?: Ref<HTMLDivElement>;
 }) {
   return (
     <div className="sch-month">
@@ -1758,7 +1886,7 @@ function MonthGrid({
           <div key={d} className="sch-month__dow">{d}</div>
         ))}
       </div>
-      <div className="sch-month__grid">
+      <div className="sch-month__grid" ref={gridRef}>
         {days.map((d) => {
           const isToday = isSameDay(d.date, new Date());
           const showCount = 3;
@@ -2116,6 +2244,148 @@ function Sidebar({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ===========================================================
+ * Google Calendar connection card
+ *
+ * Hiển thị trạng thái liên kết Google Calendar của user và cho phép
+ * Connect (redirect OAuth) / Sync / Disconnect.
+ *
+ * Đặt trong sidebar của /schedule. Logic ở hook `useGoogleCalendar` để
+ * user menu (SiteLayout) dùng chung cùng một nguồn sự thật.
+ * =========================================================== */
+function GoogleCalendarCard({
+  toast,
+  onSynced,
+}: {
+  toast: ReturnType<typeof useCenterToast>[1];
+  onSynced?: () => void;
+}) {
+  const { isConnected, status, loading, busy, error, connect, disconnect, sync } =
+    useGoogleCalendar();
+
+  /** Định dạng `tokenExpiresAt` -> chuỗi ngắn gọn cho user đọc. */
+  const tokenExpiresAt = status?.tokenExpiresAt ?? null;
+  const [expiresLabel, setExpiresLabel] = useState<string | null>(null);
+  useEffect(() => {
+    function compute(): string | null {
+      if (!tokenExpiresAt) return null;
+      const d = new Date(tokenExpiresAt!);
+      if (Number.isNaN(d.getTime())) return null;
+      const mins = Math.round((d.getTime() - Date.now()) / 60000);
+      if (mins <= 0) return "Token expired";
+      if (mins < 60) return `Token valid ~${mins}m`;
+      const hours = Math.round(mins / 60);
+      if (hours < 48) return `Token valid ~${hours}h`;
+      return `Token valid until ${d.toLocaleDateString()}`;
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- derive từ tokenExpiresAt
+    setExpiresLabel(compute());
+  }, [tokenExpiresAt]);
+
+  async function handleSync() {
+    const res = await sync();
+    if (res.ok) {
+      toast.success(
+        "Google Calendar synced",
+        `${res.data.added} added · ${res.data.updated} updated · ${res.data.cancelled} cancelled`,
+      );
+      // Nạp lại lịch để thấy sự kiện vừa kéo về.
+      onSynced?.();
+    } else {
+      toast.error("Sync failed", res.error);
+    }
+  }
+
+  async function handleDisconnect() {
+    const res = await disconnect();
+    if (res.ok) {
+      toast.success("Disconnected", "Google Calendar has been unlinked.");
+      onSynced?.();
+    } else {
+      toast.error("Could not disconnect", res.error);
+    }
+  }
+
+  const connecting = busy === "connect";
+
+  return (
+    <div className="sch-card sch-gcal">
+      <div className="sch-card__head">
+        <span className="sch-card__eyebrow">Integrations</span>
+        <span
+          className={
+            "sch-gcal__badge" + (isConnected ? " sch-gcal__badge--on" : "")
+          }
+        >
+          {loading ? "…" : isConnected ? "Connected" : "Not connected"}
+        </span>
+      </div>
+      <h3 className="sch-card__title">Google Calendar</h3>
+
+      {loading ? (
+        <p className="sch-card__hint">Checking connection…</p>
+      ) : isConnected ? (
+        <>
+          <p className="sch-card__hint">
+            Events sync two-way with your Google account.
+          </p>
+          {expiresLabel && (
+            <div className="sch-side-meta">
+              <div className="sch-side-meta__row">
+                <span>Token</span>
+                <strong>{expiresLabel}</strong>
+              </div>
+            </div>
+          )}
+          <div className="sch-gcal__actions">
+            <button
+              type="button"
+              className="sch-btn sch-btn--primary sch-gcal__btn"
+              onClick={handleSync}
+              disabled={busy !== null}
+            >
+              <span className="material-symbols-outlined sch-icon-18">sync</span>
+              {busy === "sync" ? "Syncing…" : "Sync now"}
+            </button>
+            <button
+              type="button"
+              className="sch-btn sch-btn--soft sch-gcal__btn"
+              onClick={handleDisconnect}
+              disabled={busy !== null}
+            >
+              <span className="material-symbols-outlined sch-icon-18">link_off</span>
+              {busy === "disconnect" ? "Disconnecting…" : "Disconnect"}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="sch-card__hint">
+            Connect to mirror your scheduled blocks into Google Calendar.
+          </p>
+          <button
+            type="button"
+            className="sch-btn sch-btn--primary sch-gcal__btn sch-gcal__btn--full"
+            onClick={() => void connect()}
+            disabled={connecting}
+          >
+            <span className="material-symbols-outlined sch-icon-18">
+              {connecting ? "progress_activity" : "link"}
+            </span>
+            {connecting ? "Redirecting…" : "Connect Google Calendar"}
+          </button>
+          <p className="sch-gcal__note">
+            Bạn sẽ được chuyển sang Google để cấp quyền{" "}
+            <code>calendar.events</code>, sau đó quay lại đây.
+          </p>
+        </>
+      )}
+
+      {error && <p className="sch-gcal__error">{error}</p>}
     </div>
   );
 }

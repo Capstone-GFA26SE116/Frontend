@@ -50,12 +50,617 @@
 }
 
 .proj-container {
-  max-width: 80rem;
+  max-width: 96rem;
   margin: 0 auto;
   padding: 0 2rem;
+  display: grid;
+  grid-template-columns: 288px minmax(0, 1fr);
+  align-items: start;
+  column-gap: 2.75rem;
+  row-gap: 1.75rem;
+}
+/* Header chiếm trọn chiều ngang; rail + nội dung bắt đầu từ hàng dưới (sau gạch dashed) */
+.proj-header {
+  grid-column: 1 / -1;
+}
+@media (max-width: 1023px) {
+  .proj-container {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Nhịp dọc giữ nguyên như flex-column trước đây */
+.proj-main {
   display: flex;
   flex-direction: column;
   gap: 4rem; /* 4xl */
+  min-width: 0; /* chống grid con tràn ngang */
+}
+
+/* ===========================================================
+ * 1b. Rail trái — portfolio navigator
+ *     Chrome theo `ex-app-shell-row` của DESIGN.md:
+ *     canvas surface, hairline row, active indicator = primary,
+ *     rounded.sm 6px, padding spacing.md spacing.lg.
+ * =========================================================== */
+.proj-rail {
+  position: sticky;
+  top: 96px; /* dưới header cố định 73px + nhịp thở */
+  display: flex;
+  flex-direction: column;
+  gap: 1.125rem;
+  padding: 22px 18px 20px;
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(0, 217, 146, 0.05) 0%, rgba(0, 217, 146, 0) 160px),
+    var(--canvas-soft);
+  border: 1px solid var(--hairline);
+  /* Chỉ cuộn dọc — khoá ngang để không bao giờ sinh scrollbar ngang */
+  overflow-x: hidden;
+  overflow-y: auto;
+  max-height: calc(100vh - 120px);
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline) transparent;
+  opacity: 0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.proj-rail::-webkit-scrollbar {
+  width: 6px;
+}
+.proj-rail::-webkit-scrollbar-thumb {
+  background: var(--hairline);
+  border-radius: 9999px;
+}
+.proj-rail::-webkit-scrollbar-track {
+  background: transparent;
+}
+/* Không cho flex bóp chiều cao các block khi rail phải cuộn */
+.proj-rail > * {
+  flex-shrink: 0;
+}
+.proj-rail--in {
+  animation: proj-fade-up 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: 60ms;
+}
+@media (max-width: 1023px) {
+  .proj-rail {
+    position: static;
+    /* Giữ rail dạng cột như desktop — không chuyển thành hàng ngang
+       để tránh scrollbar ngang trong rail. */
+    flex-direction: column;
+    align-items: stretch;
+    overflow-x: hidden;
+    overflow-y: visible;
+    max-height: none;
+    gap: 1.125rem;
+    padding: 18px;
+    scrollbar-width: thin;
+  }
+  .proj-rail-hero {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .proj-rail-block {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .proj-rail-foot {
+    flex: 1 1 auto;
+    align-self: stretch;
+    margin-top: 0;
+  }
+  .proj-rail-clear {
+    width: auto;
+  }
+}
+/*
+ * Mobile (<768px): ẩn hẳn rail.
+ * Lý do: rail ngang cần ~669px nhưng viewport chỉ ~326px → cuộn ngang khó dùng,
+ * và nếu để dọc thì đẩy tiêu đề trang xuống quá sâu.
+ * Status + search đã có sẵn ở command strip ngay dưới header.
+ */
+@media (max-width: 767px) {
+  .proj-rail {
+    display: none;
+  }
+}
+
+.proj-rail-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+/* eyebrow-mono: nhãn nhóm — chữ nhỏ, tracking rộng, kèm gạch nhấn */
+.proj-rail-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.proj-rail-label::before {
+  content: "";
+  width: 12px;
+  height: 1px;
+  background: var(--primary);
+  opacity: 0.6;
+}
+
+/* ---------- Hero: ring progress + segmented distribution ---------- */
+.proj-rail-hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  padding: 14px 14px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--hairline);
+  background: linear-gradient(
+    160deg,
+    rgba(0, 217, 146, 0.09) 0%,
+    rgba(0, 217, 146, 0.02) 45%,
+    rgba(0, 0, 0, 0) 100%
+  );
+  overflow: hidden;
+}
+/* Vệt sáng góc trên phải — tạo cảm giác "đèn hiệu" chứ không phải shadow */
+.proj-rail-hero::after {
+  content: "";
+  position: absolute;
+  top: -60px;
+  right: -50px;
+  width: 140px;
+  height: 140px;
+  border-radius: 9999px;
+  background: radial-gradient(
+    circle,
+    rgba(0, 217, 146, 0.18) 0%,
+    rgba(0, 217, 146, 0) 70%
+  );
+  pointer-events: none;
+}
+
+.proj-rail-hero-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.proj-rail-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+.proj-rail-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--primary);
+  animation: proj-rail-pulse 2.4s ease-in-out infinite;
+}
+@keyframes proj-rail-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+}
+
+.proj-rail-hero-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 550;
+  letter-spacing: 0.4px;
+  color: var(--mute);
+}
+
+.proj-rail-ring-row {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+
+/* Conic ring — 1 element, không cần SVG */
+.proj-rail-ring {
+  --ring-size: 62px;
+  position: relative;
+  flex: 0 0 auto;
+  width: var(--ring-size);
+  height: var(--ring-size);
+  border-radius: 9999px;
+  background: conic-gradient(
+    var(--primary) var(--ring-pct, 0%),
+    var(--canvas) var(--ring-pct, 0%)
+  );
+  display: grid;
+  place-items: center;
+  transition: background 400ms ease;
+}
+.proj-rail-ring::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border-radius: 9999px;
+  background: var(--canvas);
+  box-shadow: inset 0 0 0 1px rgba(61, 58, 57, 0.5);
+}
+.proj-rail-ring-inner {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 1px;
+}
+.proj-rail-ring-value {
+  font-family: var(--font-mono);
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--ink-strong);
+}
+.proj-rail-ring-unit {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 550;
+  color: var(--mute);
+}
+
+.proj-rail-ring-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.proj-rail-ring-title {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  letter-spacing: 0.2px;
+  color: var(--ink-strong);
+}
+.proj-rail-ring-sub {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--primary-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.proj-rail-ring-tasks {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  color: var(--mute);
+}
+
+/* Segmented bar: active / pending / completed */
+.proj-rail-segments {
+  display: flex;
+  gap: 3px;
+  height: 5px;
+  border-radius: 9999px;
+  overflow: hidden;
+  background: var(--canvas);
+}
+.proj-rail-seg {
+  display: block;
+  height: 100%;
+  border-radius: 9999px;
+  min-width: 4px;
+  transform-origin: left center;
+  animation: proj-rail-seg-in 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes proj-rail-seg-in {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+.proj-rail-seg--active {
+  background: var(--primary);
+}
+.proj-rail-seg--pending {
+  background: var(--primary-deep);
+  opacity: 0.55;
+}
+.proj-rail-seg--done {
+  background: var(--hairline);
+}
+
+/* Divider mảnh giữa các nhóm */
+.proj-rail-divider {
+  display: block;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    rgba(61, 58, 57, 0) 0%,
+    var(--hairline) 18%,
+    var(--hairline) 82%,
+    rgba(61, 58, 57, 0) 100%
+  );
+}
+
+.proj-rail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Row chrome — ex-app-shell-row */
+.proj-rail-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 7px; /* rounded.sm */
+  background: transparent;
+  color: var(--body);
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  line-height: 19px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+.proj-rail-item:hover {
+  background: var(--canvas);
+  border-color: rgba(61, 58, 57, 0.7);
+  color: var(--ink);
+}
+.proj-rail-item:active {
+  transform: translateX(1px);
+}
+.proj-rail-item:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+.proj-rail-item--active {
+  background: linear-gradient(
+    90deg,
+    rgba(0, 217, 146, 0.13) 0%,
+    rgba(0, 217, 146, 0.03) 100%
+  );
+  border-color: rgba(0, 217, 146, 0.28);
+  color: var(--ink-strong);
+  font-weight: 600;
+}
+/* active indicator = primary (thanh dọc 2px như green-divider) */
+.proj-rail-item--active::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 9999px;
+  background: var(--primary);
+}
+
+/* Icon trạng thái (Material Symbols) */
+.proj-rail-item-icon {
+  font-size: 17px;
+  line-height: 1;
+  flex-shrink: 0;
+  color: var(--mute);
+  transition: color 160ms ease;
+}
+.proj-rail-item:hover .proj-rail-item-icon {
+  color: var(--body);
+}
+.proj-rail-item-icon--active {
+  color: var(--primary);
+}
+
+/* Avatar chữ cái đầu cho client */
+.proj-rail-avatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  border: 1px solid var(--hairline);
+  background: var(--canvas);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--mute);
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+.proj-rail-avatar--active {
+  border-color: rgba(0, 217, 146, 0.45);
+  background: rgba(0, 217, 146, 0.14);
+  color: var(--primary);
+}
+
+.proj-rail-item-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.proj-rail-item-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  color: var(--mute);
+  flex-shrink: 0;
+  min-width: 20px;
+  padding: 0 5px;
+  text-align: center;
+  border-radius: 4px;
+  background: var(--canvas);
+  border: 1px solid rgba(61, 58, 57, 0.6);
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+.proj-rail-item:hover .proj-rail-item-count {
+  color: var(--body);
+}
+.proj-rail-item--active .proj-rail-item-count {
+  color: var(--primary);
+  border-color: rgba(0, 217, 146, 0.4);
+  background: rgba(0, 217, 146, 0.12);
+}
+
+/* Deadline row — thanh màu trái + 2 dòng */
+.proj-rail-list--deadlines {
+  gap: 4px;
+}
+.proj-rail-deadline {
+  display: flex;
+  align-items: stretch;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 10px 8px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--body);
+  font-family: var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease;
+}
+.proj-rail-deadline:hover {
+  background: var(--canvas);
+  border-color: rgba(61, 58, 57, 0.7);
+}
+.proj-rail-deadline:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+.proj-rail-deadline-bar {
+  flex: 0 0 auto;
+  width: 2px;
+  border-radius: 9999px;
+  background: var(--hairline);
+}
+.proj-rail-deadline-bar--soon {
+  background: var(--primary);
+}
+.proj-rail-deadline-bar--overdue {
+  background: #ff6b6b;
+}
+.proj-rail-deadline-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+.proj-rail-deadline-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink);
+}
+.proj-rail-deadline-days {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 550;
+  line-height: 15px;
+  letter-spacing: 0.3px;
+  color: var(--mute);
+}
+.proj-rail-deadline-days--soon {
+  color: var(--primary);
+}
+.proj-rail-deadline-days--overdue {
+  color: #ff6b6b;
+}
+
+/* Foot: clear filters / hint */
+.proj-rail-foot {
+  margin-top: auto;
+  padding-top: 0.25rem;
+}
+.proj-rail-foot-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  line-height: 16px;
+  color: var(--mute);
+}
+.proj-rail-foot-hint .material-symbols-outlined {
+  font-size: 14px;
+}
+
+/* Clear filters — button-ghost-green */
+.proj-rail-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid rgba(0, 217, 146, 0.35);
+  border-radius: 7px;
+  background: rgba(0, 217, 146, 0.08);
+  color: var(--primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+.proj-rail-clear:hover {
+  background: rgba(0, 217, 146, 0.16);
+  border-color: var(--primary);
+  color: var(--ink-strong);
+}
+.proj-rail-clear .material-symbols-outlined {
+  font-size: 16px;
 }
 
 /* ===========================================================
@@ -88,30 +693,42 @@
   max-width: 60rem;
 }
 
-/* Eyebrow — eyebrow-mono (uppercase, tracked 2.52px at 14px) */
+/* Title — display-lg (60px / 400 / -0.65px tracking) */
 .proj-eyebrow {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.75rem;
   color: var(--primary);
   font-family: var(--font-sans);
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 20px;
-  letter-spacing: 2.52px;
-  text-transform: uppercase;
+  font-size: 60px;
+  font-weight: 400;
+  line-height: 60px;
+  letter-spacing: -0.65px;
+  text-transform: none;
+  margin: 0;
 }
 .proj-eyebrow-dot {
   display: inline-block;
-  width: 8px;
-  height: 8px;
+  width: 12px;
+  height: 12px;
   border-radius: 9999px;
   background: var(--primary);
-  box-shadow: 0 0 0 4px rgba(0, 217, 146, 0.18);
+  box-shadow: 0 0 0 5px rgba(0, 217, 146, 0.18);
   animation: proj-pulse 1.8s ease-in-out infinite;
 }
+@media (max-width: 768px) {
+  .proj-eyebrow {
+    font-size: 32px;
+    line-height: 36px;
+    letter-spacing: -0.5px;
+  }
+  .proj-eyebrow-dot {
+    width: 9px;
+    height: 9px;
+  }
+}
 
-/* Title — display-lg (36px / 400 / -0.9px tracking) */
+/* Title — legacy class kept for other usages */
 .proj-title {
   font-family: var(--font-sans);
   font-size: 60px;
@@ -188,6 +805,12 @@
 .proj-btn--ghost:hover {
   border-color: var(--primary);
   color: var(--primary);
+}
+
+/* Ghost có label chữ — cần padding ngang như button thường
+   (variant ghost gốc chỉ dành cho nút icon vuông). */
+.proj-btn--with-label {
+  padding: 12px 16px;
 }
 
 .proj-btn--text {
@@ -369,17 +992,17 @@
  * =========================================================== */
 .proj-kpi {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
 }
 @media (min-width: 640px) {
   .proj-kpi {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 @media (min-width: 1024px) {
   .proj-kpi {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
@@ -410,6 +1033,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 0.5rem;
+  min-width: 0;
 }
 .proj-kpi-label {
   font-family: var(--font-sans);
@@ -417,6 +1041,7 @@
   line-height: 20px;
   color: var(--body);
   font-weight: 600;
+  min-width: 0;
 }
 .proj-kpi-icon {
   padding: 8px;
@@ -443,7 +1068,9 @@
 .proj-kpi-value-row {
   display: flex;
   align-items: baseline;
+  flex-wrap: wrap;
   gap: 0.5rem;
+  min-width: 0;
 }
 /* Display values — SF Mono for numeric counters (the brand's specific voice) */
 .proj-kpi-value {
@@ -453,6 +1080,8 @@
   font-weight: 550;
   letter-spacing: -0.9px;
   color: var(--ink-strong);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .proj-kpi-value--primary {
   color: var(--primary);
@@ -572,20 +1201,28 @@
 /* Grid */
 .proj-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
 }
 @media (min-width: 768px) {
   .proj-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 @media (min-width: 1024px) {
   .proj-grid {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .proj-grid--list {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (min-width: 1400px) {
+  .proj-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .proj-grid--list {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -1132,88 +1769,345 @@
 }
 
 /* ===========================================================
- * 7. Inline expand — ex-auth-form-card style
+ * 7. Create-client form (proj-cf)
+ *    ex-auth-form-card / ex-modal-card chrome:
+ *    canvas surface + hairline border + 8px radius, no soft shadow.
+ *    Eyebrow in primary, display-md title, text-input primitives.
  * =========================================================== */
-.proj-inline-create {
-  margin-top: 12px;
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  background: var(--canvas-soft);
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  animation: proj-inline-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-@keyframes proj-inline-in {
-  from { opacity: 0; transform: translateY(-6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.proj-inline-create-head {
+
+/* --- Backdrop --- */
+/*
+ * LƯU Ý QUAN TRỌNG: form này render qua createPortal(..., document.body) nên
+ * nằm NGOÀI `.proj` — nơi khai báo toàn bộ design tokens. Nếu không khai báo
+ * lại ở đây thì mọi `var(--canvas)`, `var(--hairline)`… đều không resolve →
+ * card trong suốt, mất viền, mất màu chữ.
+ * Khai báo lại token trên overlay để portal có đủ biến.
+ */
+.proj-cf-overlay {
+  --canvas: #101010;
+  --canvas-soft: #1a1a1a;
+  --canvas-2: #141414;
+  --hairline: #3d3a39;
+  --hairline-soft: #2a2a2a;
+  --primary: #00d992;
+  --primary-soft: #2fd6a1;
+  --primary-deep: #10b981;
+  --on-primary: #101010;
+  --ink: #f2f2f2;
+  --ink-strong: #ffffff;
+  --body: #bdbdbd;
+  --mute: #8b949e;
+  --font-sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "SFMono-Regular", "JetBrains Mono", Menlo, Monaco, Consolas,
+    monospace;
+
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  font-family: var(--font-sans);
+  font-feature-settings: "calt", "rlig";
+  -webkit-font-smoothing: antialiased;
+  background: rgba(8, 8, 8, 0.72);
+  backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
+  padding: 24px;
+  animation: proj-cf-fade 160ms ease-out both;
 }
-.proj-inline-create-icon {
-  color: var(--primary);
-  font-size: 20px !important;
+
+/* --- Card --- */
+.proj-cf {
+  box-sizing: border-box;
+  position: relative;
+  width: min(520px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  /* Level 3 — modal stack (brand allows heavy shadow on dialogs only) */
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(148, 163, 184, 0.08) inset;
+  animation: proj-cf-pop 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
-.proj-inline-create-title {
+
+/* Top accent hairline — quiet green cue, 2px primary */
+.proj-cf::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 28px;
+  right: 28px;
+  height: 2px;
+  background: var(--primary);
+  border-radius: 0 0 2px 2px;
+  opacity: 0.9;
+}
+
+/* --- Header --- */
+.proj-cf__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 18px;
+  border-bottom: 1px dashed rgba(79, 93, 117, 0.4);
+}
+.proj-cf__heading {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* eyebrow-mono: 14px / 600 / 2.52px tracking, primary */
+.proj-cf__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
   font-family: var(--font-sans);
   font-size: 14px;
   font-weight: 600;
-  color: var(--ink-strong);
+  line-height: 20px;
+  letter-spacing: 2.52px;
+  text-transform: uppercase;
+  color: var(--primary);
 }
-.proj-inline-create-desc {
+.proj-cf__eyebrow-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: var(--primary);
+  box-shadow: 0 0 0 4px rgba(0, 217, 146, 0.16);
+  flex: none;
+}
+
+/* display-md: 24px / 700 / -0.6px */
+.proj-cf__title {
   margin: 0;
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 700;
+  letter-spacing: -0.6px;
+  color: var(--ink-strong);
+}
+.proj-cf__desc {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
   color: var(--mute);
 }
-.proj-inline-create-close {
-  margin-left: auto;
-  background: transparent;
-  border: 1px solid var(--hairline);
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
+
+/* Close — hairline square, 6px radius */
+.proj-cf__close {
+  box-sizing: border-box;
+  flex: none;
+  width: 32px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
   color: var(--mute);
-  transition: color 150ms ease, border-color 150ms ease;
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease,
+    background-color 150ms ease;
 }
-.proj-inline-create-close:hover:not(:disabled) {
-  background: var(--canvas);
-  color: var(--ink);
-  border-color: var(--mute);
+.proj-cf__close .material-symbols-outlined {
+  font-size: 18px;
 }
-.proj-inline-create-close:disabled {
+.proj-cf__close:hover:not(:disabled) {
+  color: var(--ink-strong);
+  border-color: var(--ink);
+  background: var(--canvas-soft);
+}
+.proj-cf__close:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
-.proj-inline-create-form {
+
+/* --- Form body --- */
+.proj-cf__form {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 18px;
 }
-.proj-inline-row {
+.proj-cf__field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-}
-.proj-inline-half {
-  flex: 1;
+  gap: 8px;
   min-width: 0;
 }
-.proj-inline-actions {
+.proj-cf__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+/* Label — body-sm-strong, with required / optional markers */
+.proj-cf__label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.proj-cf__req {
+  color: var(--primary);
+  font-weight: 600;
+}
+.proj-cf__opt {
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+/* text-input: canvas-soft fill, hairline border, 6px radius */
+.proj-cf__input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--canvas-soft);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease,
+    background-color 150ms ease;
+}
+.proj-cf__input::placeholder {
+  color: var(--mute);
+}
+.proj-cf__input:hover:not(:focus) {
+  border-color: var(--hairline-soft);
+}
+.proj-cf__input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0, 217, 146, 0.14);
+}
+.proj-cf__input--textarea {
+  resize: vertical;
+  min-height: 72px;
+  line-height: 1.55;
+}
+
+/* --- Footer actions --- */
+.proj-cf__actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 4px;
+  gap: 10px;
+  padding-top: 18px;
+  border-top: 1px dashed rgba(79, 93, 117, 0.4);
 }
+
+/* button-md: 16px / 600, 6px radius, 12px 16px */
+.proj-cf__btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 18px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 150ms ease, border-color 150ms ease,
+    color 150ms ease, transform 80ms ease;
+}
+.proj-cf__btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.proj-cf__btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.proj-cf__btn-icon {
+  font-size: 18px;
+}
+.proj-cf__btn-icon--spin {
+  animation: proj-spin 1s linear infinite;
+}
+
+/* button-outline-on-dark */
+.proj-cf__btn--ghost {
+  background: var(--canvas);
+  border-color: var(--hairline);
+  color: var(--ink);
+}
+.proj-cf__btn--ghost:hover:not(:disabled) {
+  border-color: var(--ink);
+  background: var(--canvas-soft);
+}
+
+/* button-primary — electric green, the only chromatic CTA */
+.proj-cf__btn--primary {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.proj-cf__btn--primary:hover:not(:disabled) {
+  background: var(--primary-soft);
+}
+
+@keyframes proj-cf-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes proj-cf-pop {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* --- Responsive: stack the two-up row on narrow screens --- */
+@media (max-width: 520px) {
+  .proj-cf {
+    padding: 22px 18px;
+  }
+  .proj-cf::before {
+    left: 18px;
+    right: 18px;
+  }
+  .proj-cf__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .proj-cf__actions {
+    flex-direction: column-reverse;
+  }
+  .proj-cf__btn {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .proj-cf,
+  .proj-cf-overlay {
+    animation: none !important;
+  }
+}
+
+/* Shared small button modifier (still used by the client-browser modal) */
 .proj-btn--sm {
   padding: 8px 14px !important;
   font-size: 13px !important;
@@ -1298,13 +2192,13 @@
 /* Steps — 3-up grid of card-feature */
 .proj-steps {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
   position: relative;
 }
 @media (min-width: 768px) {
   .proj-steps {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 .proj-step {
@@ -1473,12 +2367,12 @@
 }
 .proj-field-row {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 @media (min-width: 640px) {
   .proj-field-row {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 }
 .proj-label {
@@ -1599,7 +2493,7 @@
  * =========================================================== */
 .proj-toast {
   position: fixed;
-  bottom: 24px;
+  bottom: 168px;
   right: 24px;
   z-index: 60;
   display: flex;
@@ -1641,6 +2535,128 @@
 }
 .proj-toast-icon--error {
   color: var(--body);
+}
+
+/* ===========================================================
+ * 10b. AI Copilot FAB — nút nổi góc phải dưới
+ *      Chrome theo DESIGN.md: canvas-soft surface + hairline,
+ *      accent electric-green, không drop-shadow mềm.
+ * =========================================================== */
+.proj-fab {
+  position: fixed;
+  right: 32px;
+  bottom: 96px;
+  z-index: 55;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border-radius: 9999px;
+  border: 1px solid rgba(0, 217, 146, 0.4);
+  background:
+    linear-gradient(135deg, rgba(0, 217, 146, 0.18) 0%, rgba(0, 217, 146, 0.05) 100%),
+    var(--canvas-soft);
+  color: var(--primary);
+  cursor: pointer;
+  overflow: hidden;
+  isolation: isolate;
+  box-shadow:
+    0 0 0 1px rgba(0, 217, 146, 0.08),
+    0 12px 32px rgba(0, 0, 0, 0.55);
+  transition:
+    border-color 200ms ease,
+    color 200ms ease,
+    transform 200ms ease,
+    box-shadow 200ms ease;
+}
+.proj-fab:hover {
+  border-color: var(--primary);
+  color: var(--ink-strong);
+  transform: translateY(-2px);
+  box-shadow:
+    0 0 0 1px rgba(0, 217, 146, 0.28),
+    0 16px 40px rgba(0, 217, 146, 0.16),
+    0 12px 32px rgba(0, 0, 0, 0.55);
+}
+.proj-fab:active {
+  transform: translateY(0);
+}
+.proj-fab:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+
+/* Vầng sáng xoay chậm phía sau icon */
+.proj-fab-glow {
+  position: absolute;
+  left: -18px;
+  top: 50%;
+  width: 72px;
+  height: 72px;
+  margin-top: -36px;
+  border-radius: 9999px;
+  background: radial-gradient(
+    circle,
+    rgba(0, 217, 146, 0.35) 0%,
+    rgba(0, 217, 146, 0) 70%
+  );
+  animation: proj-fab-breathe 3s ease-in-out infinite;
+  pointer-events: none;
+  z-index: -1;
+}
+@keyframes proj-fab-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+}
+
+.proj-fab-icon {
+  font-size: 24px;
+  line-height: 1;
+  animation: proj-fab-tilt 5s ease-in-out infinite;
+}
+@keyframes proj-fab-tilt {
+  0%,
+  88%,
+  100% {
+    transform: rotate(0deg);
+  }
+  92% {
+    transform: rotate(-10deg);
+  }
+  96% {
+    transform: rotate(10deg);
+  }
+}
+
+/* Màn hình hẹp: thu nhỏ nhẹ để không che nội dung */
+@media (max-width: 640px) {
+  .proj-fab {
+    right: 20px;
+    bottom: 88px;
+    width: 46px;
+    height: 46px;
+  }
+  .proj-fab-icon {
+    font-size: 21px;
+  }
+  .proj-toast {
+    bottom: 150px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .proj-fab-glow,
+  .proj-fab-icon {
+    animation: none !important;
+  }
 }
 
 /* ===========================================================
@@ -1825,41 +2841,7 @@
   text-align: right;
 }
 
-/* Inline create overlay (portal) */
-.proj-inline-create-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1100;
-  background: rgba(10, 14, 22, 0.85);
-  backdrop-filter: blur(8px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  animation: proj-inline-create-fade-in 0.16s ease-out;
-}
-@keyframes proj-inline-create-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-.proj-inline-create-overlay .proj-inline-create {
-  position: relative;
-  width: min(440px, 100%);
-  max-height: calc(100vh - 32px);
-  overflow-y: auto;
-  background: var(--canvas-soft);
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
-  padding: 18px 20px 20px;
-  animation: proj-inline-create-pop-in 0.18s cubic-bezier(0.18, 0.89, 0.32, 1.28);
-  margin-top: 0;
-}
-@keyframes proj-inline-create-pop-in {
-  from { transform: scale(0.94); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
-}
+/* Inline create overlay (portal) — legacy aliases removed; form uses .proj-cf */
 
 /* ===========================================================
  * 12. Keyframes

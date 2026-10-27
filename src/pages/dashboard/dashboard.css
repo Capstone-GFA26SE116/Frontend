@@ -76,12 +76,29 @@
 
 .dash-container {
   width: 100%;
-  max-width: 80rem;
+  max-width: 96rem;
   margin: 0 auto;
   padding: 3rem 2rem 5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 3rem;
+  display: grid;
+  grid-template-columns: 288px minmax(0, 1fr);
+  column-gap: 2.75rem;
+  row-gap: 3rem;
+  align-items: start;
+}
+/* Welcome + metrics chiếm trọn 2 cột; rail và workspace nằm ở hàng dưới. */
+.dash-welcome,
+.dash-metrics {
+  grid-column: 1 / -1;
+}
+@media (max-width: 1023px) {
+  .dash-container {
+    grid-template-columns: 1fr;
+    padding: 2rem 1.25rem 4rem;
+  }
+  /* Ẩn rail trên màn hẹp — nội dung chính (workspace) đã chiếm trọn chiều ngang. */
+  .dash-rail {
+    display: none;
+  }
 }
 
 /* ================= Welcome Bar ================= */
@@ -224,14 +241,17 @@
   background: var(--primary-soft);
 }
 
-/* ================= 3 Metrics ================= */
+/* ================= 4 Metrics ================= */
 .dash-metrics {
   display: grid;
   grid-template-columns: 1fr;
   gap: 1rem;
 }
-@media (min-width: 768px) {
-  .dash-metrics { grid-template-columns: repeat(3, 1fr); }
+@media (min-width: 640px) {
+  .dash-metrics { grid-template-columns: repeat(2, 1fr); }
+}
+@media (min-width: 1024px) {
+  .dash-metrics { grid-template-columns: repeat(4, 1fr); }
 }
 
 .dash-metric {
@@ -468,6 +488,254 @@
   transition: width 500ms ease;
 }
 
+/* ================= Rail trái: mini calendar + summary ================= */
+.dash-rail {
+  position: sticky;
+  top: 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.dash-rail-block {
+  background: var(--canvas-soft);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+/* ----- Mini month calendar ----- */
+.dash-rail-cal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+}
+
+.dash-rail-cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+.dash-rail-cal-month {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  color: var(--ink-strong);
+  white-space: nowrap;
+}
+.dash-rail-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--mute);
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+.dash-rail-nav:hover {
+  color: var(--primary);
+  border-color: var(--hairline);
+}
+.dash-rail-nav .material-symbols-outlined {
+  font-size: 18px;
+}
+
+.dash-rail-cal-weekdays,
+.dash-rail-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.dash-rail-cal-weekday {
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0;
+  color: var(--mute);
+  padding-bottom: 2px;
+}
+
+.dash-rail-cal-day {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  aspect-ratio: 1;
+  padding: 0;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--body);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease,
+    border-color 140ms ease;
+}
+.dash-rail-cal-day:hover {
+  background: var(--canvas);
+  color: var(--ink-strong);
+}
+.dash-rail-cal-day--out {
+  color: #4a4a4a;
+}
+.dash-rail-cal-day--has {
+  color: var(--ink-strong);
+}
+.dash-rail-cal-day--today {
+  border-color: var(--primary);
+  color: var(--primary);
+  font-weight: 600;
+}
+.dash-rail-cal-day-num {
+  line-height: 1;
+}
+.dash-rail-cal-day-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--primary);
+  flex-shrink: 0;
+}
+.dash-rail-cal-day--today .dash-rail-cal-day-dot {
+  background: var(--primary);
+}
+/* Trong lúc tải: giảm nhẹ độ tương phản, không layout shift */
+.dash-rail-cal-grid--loading {
+  opacity: 0.6;
+}
+
+.dash-rail-cal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--body);
+  text-decoration: none;
+  transition: color 150ms ease;
+}
+.dash-rail-cal-foot:hover {
+  color: var(--primary);
+}
+.dash-rail-cal-foot .material-symbols-outlined {
+  font-size: 14px;
+}
+
+/* ----- Summary block ----- */
+.dash-rail-title {
+  margin: 0 0 10px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 2.2px;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.dash-rail-stat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+}
+.dash-rail-stat + .dash-rail-stat {
+  border-top: 1px solid rgba(61, 58, 57, 0.5);
+}
+.dash-rail-stat-label {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--body);
+}
+.dash-rail-stat-value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 550;
+  letter-spacing: 0;
+  color: var(--ink-strong);
+}
+
+/* ================= AI Copilot FAB ================= */
+.dash-fab {
+  position: fixed;
+  right: 32px;
+  bottom: 96px;
+  z-index: 55;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border-radius: 9999px;
+  border: 1px solid rgba(0, 217, 146, 0.4);
+  background:
+    linear-gradient(
+      135deg,
+      rgba(0, 217, 146, 0.18) 0%,
+      rgba(0, 217, 146, 0.05) 100%
+    ),
+    var(--canvas-soft);
+  color: var(--primary);
+  cursor: pointer;
+  overflow: hidden;
+  isolation: isolate;
+  transition: border-color 200ms ease, color 200ms ease,
+    transform 200ms ease, box-shadow 200ms ease;
+}
+.dash-fab:hover {
+  border-color: var(--primary);
+  color: var(--ink-strong);
+  transform: translateY(-2px);
+  box-shadow:
+    0 0 0 1px rgba(0, 217, 146, 0.28),
+    0 16px 40px rgba(0, 217, 146, 0.16);
+}
+.dash-fab:active {
+  transform: translateY(0);
+}
+.dash-fab:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+.dash-fab-icon {
+  position: relative;
+  z-index: 1;
+  font-size: 24px;
+}
+.dash-fab-glow {
+  position: absolute;
+  inset: -50%;
+  z-index: 0;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    rgba(0, 217, 146, 0.35) 90deg,
+    transparent 180deg
+  );
+  animation: dash-fab-spin 7s linear infinite;
+  opacity: 0.5;
+}
+@keyframes dash-fab-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dash-fab-glow { animation: none !important; }
+}
+
 /* ================= Workspace grid (8/4) ================= */
 .dash-workspace {
   display: grid;
@@ -603,6 +871,61 @@
 .dash-slots-state-retry:hover {
   background: var(--canvas-soft);
   border-color: var(--ink);
+}
+
+/* ----- Empty state (chưa có khối thời gian nào hôm nay) -----
+   Khối lớn có hành động cụ thể thay vì 1 dòng chữ. */
+.dash-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  min-height: 220px;
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+}
+.dash-empty-icon {
+  font-size: 40px;
+  color: var(--primary);
+  opacity: 0.55;
+}
+.dash-empty-title {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+  color: var(--ink-strong);
+}
+.dash-empty-text {
+  margin: 0;
+  max-width: 30rem;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--body);
+}
+.dash-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+.dash-empty-btn {
+  text-decoration: none;
+}
+.dash-btn-icon--spin {
+  animation: dash-spin 1s linear infinite;
+}
+.dash-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* ----- Focus Slot (timeline card) -----
@@ -986,6 +1309,191 @@
   font-size: 18px;
 }
 
+/* ================= Quick capture (right column) ================= */
+.dash-captured {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dash-captured-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--canvas-soft);
+  border: 1px solid var(--hairline);
+}
+.dash-captured-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--primary);
+  flex-shrink: 0;
+  margin-top: 6px;
+}
+.dash-captured-title {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ink);
+  word-break: break-word;
+}
+
+/* ================= Deadline radar (right column) ================= */
+.dash-radar {
+  background: var(--canvas);
+  border-radius: 8px;
+  border: 1px solid var(--hairline);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dash-radar-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--mute);
+  font-size: 0.875rem;
+  line-height: 20px;
+}
+.dash-radar-state-icon {
+  font-size: 28px;
+  opacity: 0.7;
+}
+.dash-radar-state .dash-link-primary {
+  margin-top: 0.25rem;
+}
+
+.dash-radar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Một dòng project sắp tới hạn */
+.dash-radar-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--canvas-soft);
+  border: 1px solid var(--hairline);
+  text-decoration: none;
+  overflow: hidden;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
+}
+/* Accent trái: xanh = bình thường, vàng = sắp hạn, đỏ = quá hạn */
+.dash-radar-item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--primary);
+  opacity: 0.5;
+  transition: opacity 160ms ease, width 160ms ease;
+}
+.dash-radar-item--soon::before {
+  background: #f0b429;
+  opacity: 0.9;
+}
+.dash-radar-item--overdue::before {
+  background: #ff6b6b;
+  opacity: 1;
+}
+.dash-radar-item:hover {
+  border-color: var(--primary);
+  transform: translateX(2px);
+}
+.dash-radar-item:hover::before {
+  opacity: 1;
+  width: 4px;
+}
+
+.dash-radar-item-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.dash-radar-item-name {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--ink-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 160ms ease;
+}
+.dash-radar-item:hover .dash-radar-item-name {
+  color: var(--primary);
+}
+.dash-radar-item-days {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0;
+  color: var(--body);
+}
+.dash-radar-item-days--soon {
+  color: #f0b429;
+  font-weight: 550;
+}
+.dash-radar-item-days--overdue {
+  color: #ff6b6b;
+  font-weight: 550;
+}
+
+.dash-radar-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0;
+  color: var(--mute);
+}
+.dash-radar-item-client {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dash-radar-item-tasks {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--body);
+}
+
+/* Thanh progress mảnh */
+.dash-radar-bar {
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
+  overflow: hidden;
+}
+.dash-radar-bar-fill {
+  height: 100%;
+  border-radius: 9999px;
+  background: var(--primary);
+  transition: width 400ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 /* ================= Quick task drawer (right) ================= */
 .dash-drawer {
   background: var(--canvas);
@@ -1361,13 +1869,29 @@
   animation: dash-stagger-up 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+.dash-radar-item {
+  opacity: 0;
+}
+.dash-radar-item--in {
+  animation: dash-stagger-up 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.dash-captured-item {
+  opacity: 0;
+}
+.dash-captured-item--in {
+  animation: dash-stagger-up 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .dash-welcome,
   .dash-metrics,
   .dash-workspace,
   .dash-metric,
   .dash-slot,
-  .dash-task {
+  .dash-task,
+  .dash-radar-item,
+  .dash-captured-item {
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;

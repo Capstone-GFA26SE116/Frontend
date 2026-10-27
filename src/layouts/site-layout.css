@@ -423,6 +423,25 @@
   color: var(--primary);
 }
 
+/* Item "Connect Google Calendar" trong user menu */
+.site-user-menu-item--gcal .material-symbols-outlined {
+  color: var(--primary);
+}
+.site-user-menu-item--gcal:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+/* Chấm xanh báo đã kết nối — đẩy về cuối hàng. */
+.site-user-menu-gcal-dot {
+  width: 6px;
+  height: 6px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0, 217, 146, 0.15);
+  flex-shrink: 0;
+}
+
 /* ================= MAIN ================= */
 .site-main {
   flex: 1;

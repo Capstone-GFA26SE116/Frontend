@@ -329,24 +329,145 @@ export async function logoutApi(): Promise<void> {
   clearTokens();
 }
 
+/**
+ * Gói thuê bao hiện tại của user (BE trả về trong GET /api/me).
+ */
+export interface CurrentSubscriptionDto {
+  subscriptionId: string;
+  planId: string;
+  planName: string;
+  /** ISO timestamp hết hạn. */
+  endAt: string;
+}
+
+/**
+ * Response của `GET /api/me`.
+ *
+ * Lưu ý: BE đã mở rộng payload (thêm `currentSubscription`,
+ * `defaultBufferMinutes`, `reminderLeadMinutes`). Các field mới để
+ * `?` optional để FE vẫn chạy với BE deploy cũ trả shape cũ.
+ */
 export interface MeResponse {
   id: string;
   email: string | null;
   fullName: string | null;
   role: string | null;
   /** URL ảnh đại diện từ Google (nếu có). */
-  avatarUrl: string | null;
+  avatarUrl?: string | null;
   onboardingCompleted: boolean;
   timeZone: string | null;
   workDayStart: string;
   workDayEnd: string;
   worksOnWeekend: boolean;
   googleCalendarStatus: string | null;
-  currentPlanName: string | null;
+  /** Tên gói hiện tại (BE deploy cũ). */
+  currentPlanName?: string | null;
+  /** Gói thuê bao hiện tại (BE deploy mới). */
+  currentSubscription?: CurrentSubscriptionDto | null;
+  /** Phút buffer mặc định giữa 2 block (BE deploy mới). */
+  defaultBufferMinutes?: number;
+  /** Phút nhắc trước khi block bắt đầu (BE deploy mới). */
+  reminderLeadMinutes?: number;
 }
 
 export async function getMe(): Promise<ApiResult<MeResponse>> {
-  return get<MeResponse>("/api/me");
+  const res = await get<MeResponse>("/api/me");
+  /* MOCK: nếu đã từng gọi PUT /api/me/profile trong phiên này, áp overlay
+     để lần load sau vẫn thấy tên mới (BE thật sẽ tự lưu — overlay này
+     chỉ để test FE trước khi BE ready). */
+  if (res.ok && MOCK_PROFILE_OVERLAY) {
+    return {
+      ok: true,
+      data: { ...res.data, ...MOCK_PROFILE_OVERLAY },
+    };
+  }
+  return res;
+}
+
+/* ---------- profile update ---------- */
+
+/**
+ * Body của `PUT /api/me/profile`.
+ * Swagger hiện chỉ nhận `fullName`; để optional-safe, các field khác
+ * không gửi kèm để tránh BE validate lỗi.
+ */
+export interface UpdateProfileRequest {
+  fullName: string;
+}
+
+/**
+ * MOCKED: `PUT /api/me/profile`
+ * BE vừa trả Swagger nhưng chưa ổn định → ta mock để FE test được luồng
+ * đổi tên. Khi BE ready, thay thân hàm bằng:
+ *
+ *   return put<MeResponse>("/api/me/profile", body);
+ *
+ * Response shape giống hệt `GET /api/me` (MeResponse).
+ */
+export async function updateProfile(
+  body: UpdateProfileRequest,
+): Promise<ApiResult<MeResponse>> {
+  const fullName = (body.fullName ?? "").trim();
+
+  if (!fullName) {
+    return delay({
+      ok: false,
+      error: "Tên hiển thị không được để trống.",
+      status: 400,
+    });
+  }
+  if (fullName.length > 100) {
+    return delay({
+      ok: false,
+      error: "Tên hiển thị tối đa 100 ký tự.",
+      status: 400,
+    });
+  }
+
+  /* Gộp vào overlay để `getMe()` sau đó trả về tên mới. */
+  MOCK_PROFILE_OVERLAY = { ...(MOCK_PROFILE_OVERLAY ?? {}), fullName };
+
+  const base = MOCK_PROFILE_BASE;
+  const merged: MeResponse = {
+    ...base,
+    ...(MOCK_PROFILE_OVERLAY ?? {}),
+    fullName,
+  };
+
+  return delay({ ok: true, data: merged }, 500);
+}
+
+/**
+ * Mock overlay cho profile — `null` nghĩa là chưa update lần nào
+ * (getMe trả nguyên response thật).
+ */
+let MOCK_PROFILE_OVERLAY: Partial<MeResponse> | null = null;
+
+/**
+ * Profile mặc định dùng để dựng response cho `PUT /api/me/profile`.
+ * Khớp shape `MeResponse` + ví dụ trong Swagger.
+ */
+const MOCK_PROFILE_BASE: MeResponse = {
+  id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  email: "user@metanoia.app",
+  fullName: "Metanoia User",
+  role: "student",
+  avatarUrl: null,
+  onboardingCompleted: true,
+  timeZone: "Asia/Ho_Chi_Minh",
+  workDayStart: "08:00:00",
+  workDayEnd: "17:00:00",
+  worksOnWeekend: false,
+  googleCalendarStatus: "not_connected",
+  currentPlanName: "Free plan",
+  currentSubscription: null,
+  defaultBufferMinutes: 15,
+  reminderLeadMinutes: 10,
+};
+
+/** Reset overlay — dùng cho test / logout. */
+export function resetMockProfile(): void {
+  MOCK_PROFILE_OVERLAY = null;
 }
 
 /* ---------- projects ---------- */
@@ -543,34 +664,77 @@ export async function getProjectProgress(
   );
 }
 
-/* ---------- clients (cho dropdown clientId) ---------- */
+/* ---------- clients (CRUD đầy đủ) ---------- */
 
+/**
+ * DTO trả về từ GET /api/clients và GET /api/clients/{clientId}.
+ * BE dùng camelCase và trường `contactEmail` / `createdAt`.
+ */
 export interface ClientDto {
   id: string;
   name: string;
-  email: string | null;
+  contactEmail: string | null;
   phone: string | null;
-  company: string | null;
   notes: string | null;
-  createdAtUtc: string;
+  createdAt: string;
 }
 
-export async function listClients(): Promise<ApiResult<ClientDto[]>> {
-  return get<ClientDto[]>("/api/clients");
-}
-
-export interface CreateClientRequest {
+export interface ClientRequest {
   name: string;
   contactEmail: string;
   phone: string;
   notes: string;
 }
 
+export async function listClients(): Promise<ApiResult<ClientDto[]>> {
+  return get<ClientDto[]>("/api/clients");
+}
+
+/**
+ * GET /api/clients/filter?userId&name
+ * Lọc theo owner và/hoặc tên (BE so khớp tương đối).
+ */
+export async function filterClients(params: {
+  userId?: string;
+  name?: string;
+} = {}): Promise<ApiResult<ClientDto[]>> {
+  const sp = new URLSearchParams();
+  if (params.userId) sp.set("userId", params.userId.trim());
+  if (params.name) sp.set("name", params.name.trim());
+  const qs = sp.toString();
+  return get<ClientDto[]>(`/api/clients/filter${qs ? `?${qs}` : ""}`);
+}
+
+export async function getClient(
+  clientId: string,
+): Promise<ApiResult<ClientDto>> {
+  return get<ClientDto>(`/api/clients/${encodeURIComponent(clientId)}`);
+}
+
 export async function createClient(
-  body: CreateClientRequest,
+  body: ClientRequest,
 ): Promise<ApiResult<ClientDto>> {
   return post<ClientDto>("/api/clients", body);
 }
+
+export async function updateClient(
+  clientId: string,
+  body: ClientRequest,
+): Promise<ApiResult<ClientDto>> {
+  return put<ClientDto>(
+    `/api/clients/${encodeURIComponent(clientId)}`,
+    body,
+  );
+}
+
+export async function deleteClient(
+  clientId: string,
+): Promise<ApiResult<void>> {
+  return del<void>(`/api/clients/${encodeURIComponent(clientId)}`);
+}
+
+/** @deprecated Giữ alias cũ cho code đang import CreateClientRequest. */
+export type CreateClientRequest = ClientRequest;
 
 /* ================================================================
  * TASKS
@@ -775,6 +939,17 @@ export async function listMilestones(
 ): Promise<ApiResult<MilestoneDto[]>> {
   return get<MilestoneDto[]>(
     `/api/projects/${encodeURIComponent(projectId)}/milestones`,
+  );
+}
+
+/**
+ * GET /api/milestones/{milestoneId}
+ */
+export async function getMilestone(
+  milestoneId: string,
+): Promise<ApiResult<MilestoneDto>> {
+  return get<MilestoneDto>(
+    `/api/milestones/${encodeURIComponent(milestoneId)}`,
   );
 }
 
@@ -1188,6 +1363,174 @@ export async function listCalendar(params: {
   return apiFetch<CalendarResponseDto>(`/api/calendar?${qs.toString()}`, {
     method: "GET",
   });
+}
+
+/* ================================================================
+ * GOOGLE CALENDAR — tích hợp tài khoản Google của user
+ *
+ * BE đã deploy đủ 9 endpoint (tag `GoogleCalendar` trong swagger.json).
+ *
+ * Luồng OAuth:
+ *   1. FE redirect CẢ TRANG tới `GET /api/google-calendar/connect`
+ *      (endpoint này trả 302 sang trang consent của Google).
+ *   2. User đồng ý → Google gọi `GET /api/google-calendar/callback`.
+ *   3. BE lưu token rồi redirect về FE (kèm query báo thành công/lỗi).
+ *   4. FE gọi `GET /api/google-calendar/status` để biết đã kết nối chưa.
+ *
+ * Vì bước 1 là redirect toàn trang nên KHÔNG fetch() được — fetch sẽ hỏng
+ * vì CORS + không mang được header Authorization. Do đó hàm
+ * `getGoogleCalendarConnectUrl()` chỉ trả URL để component tự
+ * `window.location.assign()`.
+ * ================================================================ */
+
+export interface GoogleCalendarStatusDto {
+  isConnected: boolean;
+  status: string | null;
+  /** ISO datetime — thời điểm access token Google hết hạn. */
+  tokenExpiresAt: string | null;
+}
+
+export interface CalendarEventDto {
+  id: string;
+  title: string | null;
+  description: string | null;
+  location: string | null;
+  /** ISO datetime. */
+  start: string;
+  /** ISO datetime. */
+  end: string;
+  htmlLink: string | null;
+}
+
+export interface CalendarEventRequestDto {
+  title: string;
+  description?: string;
+  location?: string;
+  /** ISO datetime. */
+  start: string;
+  /** ISO datetime. */
+  end: string;
+}
+
+export interface GoogleCalendarSyncResultDto {
+  added: number;
+  updated: number;
+  cancelled: number;
+}
+
+/**
+ * URL dự phòng để bắt đầu OAuth khi không gọi được API (BE cũ trả 302).
+ *
+ * ⚠️ Endpoint `/api/google-calendar/connect` yêu cầu JWT, nên redirect thẳng
+ * vào URL này sẽ 401. Luôn ưu tiên `fetchGoogleCalendarAuthorizationUrl()`.
+ */
+export function getGoogleCalendarConnectUrl(): string {
+  return `${BASE_URL}/api/google-calendar/connect`;
+}
+
+export interface GoogleCalendarConnectDto {
+  /** URL consent của Google (đã chứa `state` mã hoá userId, sống 10 phút). */
+  authorizationUrl: string;
+}
+
+/**
+ * GET /api/google-calendar/connect — yêu cầu Bearer token.
+ *
+ * BE trả `{ authorizationUrl }` thay vì 302, nên FE phải:
+ *   1. gọi endpoint này kèm Authorization (để BE biết user nào),
+ *   2. rồi `window.location.assign(authorizationUrl)` để sang trang Google.
+ *
+ * Không thể `window.location.assign()` thẳng endpoint vì trình duyệt không
+ * gắn được header Authorization vào một điều hướng.
+ */
+export async function fetchGoogleCalendarAuthorizationUrl(): Promise<
+  ApiResult<GoogleCalendarConnectDto>
+> {
+  return get<GoogleCalendarConnectDto>("/api/google-calendar/connect");
+}
+
+/**
+ * GET /api/google-calendar/status
+ * Trạng thái kết nối của user hiện tại.
+ */
+export async function getGoogleCalendarStatus(): Promise<
+  ApiResult<GoogleCalendarStatusDto>
+> {
+  return get<GoogleCalendarStatusDto>("/api/google-calendar/status");
+}
+
+/**
+ * DELETE /api/google-calendar/disconnect
+ * Huỷ liên kết — BE xoá token Google đã lưu.
+ * Trả 200 không body nên dùng `apiFetch<void>` thay vì `del<T>`.
+ */
+export async function disconnectGoogleCalendar(): Promise<ApiResult<void>> {
+  return apiFetch<void>("/api/google-calendar/disconnect", {
+    method: "DELETE",
+  });
+}
+
+/**
+ * POST /api/google-calendar/sync
+ * Đồng bộ 2 chiều giữa schedule slot của METANOIA và Google Calendar.
+ */
+export async function syncGoogleCalendar(): Promise<
+  ApiResult<GoogleCalendarSyncResultDto>
+> {
+  return post<GoogleCalendarSyncResultDto>("/api/google-calendar/sync", {});
+}
+
+/**
+ * GET /api/google-calendar/events?from=&to=
+ * Đọc event TRỰC TIẾP từ Google Calendar (không phải schedule slot nội bộ).
+ */
+export async function listGoogleCalendarEvents(
+  from: string,
+  to: string,
+): Promise<ApiResult<CalendarEventDto[]>> {
+  const qs = new URLSearchParams();
+  qs.set("from", from);
+  qs.set("to", to);
+  return apiFetch<CalendarEventDto[]>(
+    `/api/google-calendar/events?${qs.toString()}`,
+    { method: "GET" },
+  );
+}
+
+/**
+ * POST /api/google-calendar/events
+ * Tạo event mới trên Google Calendar.
+ */
+export async function createGoogleCalendarEvent(
+  body: CalendarEventRequestDto,
+): Promise<ApiResult<CalendarEventDto>> {
+  return post<CalendarEventDto>("/api/google-calendar/events", body);
+}
+
+/**
+ * PUT /api/google-calendar/events/{eventId}
+ */
+export async function updateGoogleCalendarEvent(
+  eventId: string,
+  body: CalendarEventRequestDto,
+): Promise<ApiResult<CalendarEventDto>> {
+  return put<CalendarEventDto>(
+    `/api/google-calendar/events/${encodeURIComponent(eventId)}`,
+    body,
+  );
+}
+
+/**
+ * DELETE /api/google-calendar/events/{eventId}
+ * Trả 200 không body → dùng `apiFetch<void>`.
+ */
+export async function deleteGoogleCalendarEvent(
+  eventId: string,
+): Promise<ApiResult<void>> {
+  return apiFetch<void>(
+    `/api/google-calendar/events/${encodeURIComponent(eventId)}`,
+    { method: "DELETE" },
+  );
 }
 
 /* ================================================================

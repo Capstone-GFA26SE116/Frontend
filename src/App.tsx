@@ -8,11 +8,15 @@ import { DashboardPage } from "./pages/dashboard/Dashboard";
 import { OnboardingPage } from "./pages/onboarding/Onboarding";
 import { PricingPage } from "./pages/pricing/Pricing";
 import { ProjectsPage } from "./pages/projects/Projects";
+import { ClientsPage } from "./pages/clients/Clients";
 import { ProjectDetailPage } from "./pages/project-detail/ProjectDetail";
 import { PlanningPage } from "./pages/planning/Planning";
+import { MilestonesPage } from "./pages/milestones/Milestones";
 import { SchedulePage } from "./pages/schedule/Schedule";
 import { CopilotPage } from "./pages/copilot/Copilot";
 import { PaymentsPage } from "./pages/payments/Payments";
+import { ProfilePage } from "./pages/profile/Profile";
+import { GoogleCalendarCallbackPage } from "./pages/auth/GoogleCalendarCallback";
 import {
   ProtectedRoute,
   RedirectIfAuthenticated,
@@ -39,8 +43,11 @@ function guarded(label: string, node: ReactNode) {
  *  /onboarding        -> Cần đăng nhập; lần đầu sẽ được ProtectedRoute đẩy vào đây
  *  /dashboard         -> Cần đăng nhập + đã hoàn tất onboarding (Lịch ngày)
  *  /projects          -> Cần đăng nhập + đã hoàn tất onboarding (Không gian dự án)
+ *  /projects/:id/milestones -> Quản lý milestone của dự án
+ *  /clients           -> Cần đăng nhập + đã hoàn tất onboarding (Danh bạ khách hàng)
  *  /schedule          -> Cần đăng nhập + đã hoàn tất onboarding (Lịch Tuần & Tháng)
  *  /copilot           -> Cần đăng nhập + đã hoàn tất onboarding (AI Schedule Coordinator)
+ *  /profile           -> Cần đăng nhập + đã hoàn tất onboarding (Hồ sơ người dùng)
  *
  * Mọi route khác đều fallback về Landing.
  */
@@ -78,6 +85,7 @@ function App() {
         <Route path="/onboarding" element={guarded("Thiết lập", <OnboardingPage />)} />
         <Route path="/dashboard" element={guarded("Lịch ngày", <DashboardPage />)} />
         <Route path="/projects" element={guarded("Dự án", <ProjectsPage />)} />
+        <Route path="/clients" element={guarded("Khách hàng", <ClientsPage />)} />
         <Route
           path="/projects/:projectId"
           element={guarded("Chi tiết dự án", <ProjectDetailPage />)}
@@ -87,11 +95,21 @@ function App() {
           element={guarded("Lập kế hoạch", <PlanningPage />)}
         />
         <Route
+          path="/projects/:projectId/milestones"
+          element={guarded("Milestones", <MilestonesPage />)}
+        />
+        <Route
           path="/projects/:projectId/schedule"
           element={guarded("Lịch dự án", <SchedulePage />)}
         />
         <Route path="/schedule" element={guarded("Lịch tuần & tháng", <SchedulePage />)} />
         <Route path="/copilot" element={guarded("AI Copilot", <CopilotPage />)} />
+        <Route path="/profile" element={guarded("Hồ sơ", <ProfilePage />)} />
+        {/* Google Calendar OAuth callback — BE redirect về đây kèm ?calendar=... */}
+        <Route
+          path="/auth/google/callback"
+          element={guarded("Google Calendar", <GoogleCalendarCallbackPage />)}
+        />
       </Route>
 
       <Route path="*" element={guarded("Trang chủ", <LandingPage />)} />

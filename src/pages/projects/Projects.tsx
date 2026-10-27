@@ -3,6 +3,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type FormEvent,
 } from "react";
 import { createPortal } from "react-dom";
@@ -12,6 +13,7 @@ import {
   createClient,
   createProject,
   filterProjects,
+  getProjectProgress,
   listClients,
   type ApiResult,
   type ClientDto,
@@ -135,8 +137,10 @@ function dtoToProject(d: ProjectDto): Project {
     deadline: fmtDate(d.deadline),
     daysLeft: days,
     status,
-    // Phái sinh theo status — placeholder cho tới khi BE trả progress.
-    progress: status === "completed" ? 100 : status === "pending" ? 10 : 35,
+    // Progress thật lấy từ GET /api/projects/{id}/progress (xem loadProgressFor).
+    // `/api/projects/filter` không trả field progress, nên khởi tạo 0 và để
+    // request song song điền vào — tránh hiển thị số giả (trước đây hardcode 35).
+    progress: 0,
     doneTasks: 0,
     totalTasks: 0,
     badgeKind:
@@ -177,6 +181,14 @@ const STATUS_FILTERS: { id: "all" | ProjectStatus; label: string }[] = [
   { id: "completed", label: "Completed" },
 ];
 
+/** Icon cho từng trạng thái ở rail trái — Material Symbols. */
+const STATUS_ICONS: Record<"all" | ProjectStatus, string> = {
+  all: "apps",
+  active: "bolt",
+  pending: "hourglass_top",
+  completed: "task_alt",
+};
+
 export function ProjectsPage() {
   const navigate = useNavigate();
   const [projects, setProjects] = useState<Project[]>([]);
@@ -185,6 +197,8 @@ export function ProjectsPage() {
   const [listError, setListError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | ProjectStatus>("all");
+  /** Lọc theo client ở rail trái — "" = tất cả client. */
+  const [clientFilter, setClientFilter] = useState<string>("");
   const [view, setView] = useState<ViewMode>("grid");
   const [modalOpen, setModalOpen] = useState(false);
   const [clientInlineOpen, setClientInlineOpen] = useState(false);
@@ -238,6 +252,9 @@ export function ProjectsPage() {
           projRes.data,
         );
         setProjects(projRes.data.map(dtoToProject));
+        // Danh sách dự án không kèm progress → gọi /progress song song.
+        // Không block UI: card hiện ngay, số liệu cập nhật khi về.
+        void loadProgressFor(projRes.data.map((p) => p.id), () => cancelled);
       } else {
         console.error("[Projects] API error:", projRes);
         setListError(projRes.error);
@@ -258,6 +275,56 @@ export function ProjectsPage() {
     };
   }, []);
 
+  /**
+   * Lấy progress thật cho từng project qua GET /api/projects/{id}/progress.
+   *
+   * `/api/projects/filter` KHÔNG trả field progress nào, nên phải gọi N+1.
+   * Chạy song song (Promise.all) để không cộng dồn latency.
+   * - `isCancelled` để tránh setState sau khi unmount.
+   * - Project nào lỗi thì giữ nguyên giá trị hiện tại (không reset về 0).
+   */
+  async function loadProgressFor(
+    projectIds: string[],
+    isCancelled: () => boolean = () => false,
+  ) {
+    if (projectIds.length === 0) return;
+
+    const results = await Promise.all(
+      projectIds.map(async (id) => {
+        const res = await getProjectProgress(id);
+        return { id, res };
+      }),
+    );
+    if (isCancelled()) return;
+
+    const byId = new Map<
+      string,
+      Extract<Awaited<ReturnType<typeof getProjectProgress>>, { ok: true }>["data"]
+    >();
+    for (const { id, res } of results) {
+      if (res.ok) byId.set(id, res.data);
+    }
+    if (byId.size === 0) return;
+
+    setProjects((prev) =>
+      prev.map((p) => {
+        const prog = byId.get(p.id);
+        if (!prog) return p;
+        // BE khai báo progressPercent là number nhưng vẫn phòng null/undefined
+        // → Math.round(null) === 0, còn undefined sẽ ra NaN và làm hỏng
+        // `width: NaN%` của progress bar.
+        const rawPercent = Number(prog.progressPercent);
+        const safePercent = Number.isFinite(rawPercent) ? rawPercent : 0;
+        return {
+          ...p,
+          progress: Math.max(0, Math.min(100, Math.round(safePercent))),
+          doneTasks: prog.completedTasks ?? 0,
+          totalTasks: prog.totalTasks ?? 0,
+        };
+      }),
+    );
+  }
+
   /** Đếm status để hiển thị "(N)" cạnh filter chip. */
   const counts = useMemo(() => {
     return {
@@ -268,11 +335,34 @@ export function ProjectsPage() {
     };
   }, [projects]);
 
+  /** Trung bình tiến độ portfolio — dùng cho meter ở rail trái. */
+  const avgProgress = useMemo(() => {
+    if (projects.length === 0) return 0;
+    const sum = projects.reduce((acc, p) => acc + (p.progress || 0), 0);
+    return Math.round(sum / projects.length);
+  }, [projects]);
+
+  /** Tổng task đã xong / tổng task — dùng cho KPI "Tasks done". */
+  const taskStats = useMemo(() => {
+    let done = 0;
+    let total = 0;
+    for (const p of projects) {
+      done += p.doneTasks || 0;
+      total += p.totalTasks || 0;
+    }
+    return {
+      done,
+      total,
+      pct: total === 0 ? 0 : Math.round((done / total) * 100),
+    };
+  }, [projects]);
+
   /** Áp dụng search + filter, giữ placeholder card ở cuối. */
   const filteredProjects = useMemo(() => {
     const q = search.trim().toLowerCase();
     return projects.filter((p) => {
       if (filter !== "all" && p.status !== filter) return false;
+      if (clientFilter && p.clientId !== clientFilter) return false;
       if (!q) return true;
       return (
         p.name.toLowerCase().includes(q) ||
@@ -280,7 +370,55 @@ export function ProjectsPage() {
         p.clientTag.toLowerCase().includes(q)
       );
     });
-  }, [projects, search, filter]);
+  }, [projects, search, filter, clientFilter]);
+
+  /**
+   * Data cho rail trái.
+   * - `clientRows`: gộp client từ API + client xuất hiện trong project (đề phòng
+   *   client bị xoá khỏi danh mục nhưng project vẫn tham chiếu tới), kèm số đếm.
+   * - `deadlineRows`: tối đa 4 project có deadline gần nhất, bỏ project đã xong.
+   */
+  const clientRows = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; count: number }>();
+    for (const c of clients) {
+      map.set(c.id, { id: c.id, name: c.name, count: 0 });
+    }
+    for (const p of projects) {
+      if (!p.clientId) continue;
+      const existing = map.get(p.clientId);
+      if (existing) existing.count += 1;
+      else
+        map.set(p.clientId, {
+          id: p.clientId,
+          name: p.client || "Unknown client",
+          count: 1,
+        });
+    }
+    return [...map.values()].sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return a.name.localeCompare(b.name);
+    });
+  }, [clients, projects]);
+
+  const deadlineRows = useMemo(() => {
+    return projects
+      .filter((p) => p.status !== "completed" && p.deadline !== "Not set")
+      .slice()
+      .sort((a, b) => a.daysLeft - b.daysLeft)
+      .slice(0, 4);
+  }, [projects]);
+
+  /** Project có deadline gần nhất (bỏ project đã hoàn thành) — cho KPI. */
+  const nearestDeadline = deadlineRows[0] ?? null;
+
+  /** Có filter nào đang bật không — dùng để hiện nút "Clear". */
+  const hasActiveFilter = filter !== "all" || clientFilter !== "" || search !== "";
+
+  function clearAllFilters() {
+    setFilter("all");
+    setClientFilter("");
+    setSearch("");
+  }
 
   function showToast(
     text: string,
@@ -348,6 +486,8 @@ export function ProjectsPage() {
     }
 
     setProjects((prev) => [dtoToProject(res.data), ...prev]);
+    // Project mới tạo chưa có task → progress 0, nhưng vẫn hỏi BE cho chắc.
+    void loadProgressFor([res.data.id]);
     setModalOpen(false);
     form.reset();
     setSelectedClientId("");
@@ -471,7 +611,7 @@ export function ProjectsPage() {
     if (!q) return true;
     return (
       (c.name ?? "").toLowerCase().includes(q) ||
-      (c.email ?? "").toLowerCase().includes(q) ||
+      (c.contactEmail ?? "").toLowerCase().includes(q) ||
       (c.phone ?? "").toLowerCase().includes(q)
     );
   });
@@ -549,23 +689,18 @@ export function ProjectsPage() {
 
   return (
     <div className="proj">
-      {/* Ambient glow blobs */}
-      <div className="proj-ambient proj-ambient--left" aria-hidden="true" />
-      <div className="proj-ambient proj-ambient--right" aria-hidden="true" />
-
       <div className="proj-container">
-        {/* ================= 1. Header ================= */}
+        {/* ================= 1. Header (span toàn bộ chiều ngang) ================= */}
         <header
           className={
             "proj-header" + (headerAnim.mounted ? " proj-header--in" : "")
           }
         >
           <div className="proj-header-text">
-            <div className="proj-eyebrow">
-              <span className="proj-eyebrow-dot" />
+            <h1 className="proj-eyebrow">
+              <span className="proj-eyebrow-dot" aria-hidden="true" />
               <span>Project Workspace</span>
-            </div>
-            <h1 className="proj-title">My Projects</h1>
+            </h1>
           </div>
           <div className="proj-header-actions">
             <button
@@ -581,6 +716,17 @@ export function ProjectsPage() {
             </button>
             <button
               type="button"
+              className="proj-btn proj-btn--ghost proj-btn--with-label"
+              onClick={() => navigate("/clients")}
+              title="Manage clients"
+            >
+              <span className="material-symbols-outlined proj-btn-icon">
+                group
+              </span>
+              <span>Clients</span>
+            </button>
+            <button
+              type="button"
               className="proj-btn proj-btn--ghost"
               title="Configure AI Agent"
             >
@@ -591,6 +737,242 @@ export function ProjectsPage() {
           </div>
         </header>
 
+        {/* ================= Rail trái: portfolio navigator ================= */}
+        <aside
+          className={
+            "proj-rail" + (headerAnim.mounted ? " proj-rail--in" : "")
+          }
+          aria-label="Portfolio filters"
+        >
+          {/* --- 1. Hero: ring progress + status band --- */}
+          <div className="proj-rail-hero">
+            <div className="proj-rail-hero-head">
+              <span className="proj-rail-live">
+                <span className="proj-rail-live-dot" aria-hidden="true" />
+                <span>AI Ready</span>
+              </span>
+              <span className="proj-rail-hero-count">
+                {counts.all} total
+              </span>
+            </div>
+
+            <div className="proj-rail-ring-row">
+              <div
+                className="proj-rail-ring"
+                style={
+                  { "--ring-pct": `${avgProgress}%` } as CSSProperties
+                }
+                role="img"
+                aria-label={`${avgProgress}% average progress across ${counts.all} projects`}
+              >
+                <div className="proj-rail-ring-inner">
+                  <span className="proj-rail-ring-value">{avgProgress}</span>
+                  <span className="proj-rail-ring-unit">%</span>
+                </div>
+              </div>
+              <div className="proj-rail-ring-meta">
+                <span className="proj-rail-ring-title">Portfolio</span>
+                <span className="proj-rail-ring-sub">
+                  {avgProgress === 0
+                    ? "No progress logged yet"
+                    : avgProgress >= 75
+                      ? "On track"
+                      : avgProgress >= 40
+                        ? "Steady pace"
+                        : "Needs attention"}
+                </span>
+                <span className="proj-rail-ring-tasks">
+                  {taskStats.done}/{taskStats.total} tasks
+                </span>
+              </div>
+            </div>
+
+            {/* Segmented distribution — thay cho 3 con số rời rạc */}
+            <div
+              className="proj-rail-segments"
+              aria-hidden="true"
+              title={`${counts.active} active · ${counts.pending} pending · ${counts.completed} completed`}
+            >
+              {counts.active > 0 && (
+                <span
+                  className="proj-rail-seg proj-rail-seg--active"
+                  style={{ flexGrow: counts.active }}
+                />
+              )}
+              {counts.pending > 0 && (
+                <span
+                  className="proj-rail-seg proj-rail-seg--pending"
+                  style={{ flexGrow: counts.pending }}
+                />
+              )}
+              {counts.completed > 0 && (
+                <span
+                  className="proj-rail-seg proj-rail-seg--done"
+                  style={{ flexGrow: counts.completed }}
+                />
+              )}
+            </div>
+          </div>
+
+          <span className="proj-rail-divider" aria-hidden="true" />
+
+          {/* --- 2. Status --- */}
+          <nav className="proj-rail-block" aria-label="Filter by status">
+            <span className="proj-rail-label">Status</span>
+            <ul className="proj-rail-list">
+              {STATUS_FILTERS.map((f) => {
+                const active = filter === f.id;
+                return (
+                  <li key={f.id}>
+                    <button
+                      type="button"
+                      className={
+                        "proj-rail-item" + (active ? " proj-rail-item--active" : "")
+                      }
+                      aria-current={active ? "true" : undefined}
+                      onClick={() => setFilter(f.id)}
+                    >
+                      <span
+                        className={
+                          "material-symbols-outlined proj-rail-item-icon" +
+                          (active ? " proj-rail-item-icon--active" : "")
+                        }
+                        aria-hidden="true"
+                      >
+                        {STATUS_ICONS[f.id]}
+                      </span>
+                      <span className="proj-rail-item-label">{f.label}</span>
+                      <span className="proj-rail-item-count">
+                        {counts[f.id]}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+
+          <span className="proj-rail-divider" aria-hidden="true" />
+
+          {/* --- 3. Clients --- */}
+          {clientRows.length > 0 && (
+            <nav className="proj-rail-block" aria-label="Filter by client">
+              <span className="proj-rail-label">Clients</span>
+              <ul className="proj-rail-list">
+                {clientRows.slice(0, 6).map((c) => {
+                  const active = clientFilter === c.id;
+                  return (
+                    <li key={c.id}>
+                      <button
+                        type="button"
+                        className={
+                          "proj-rail-item" +
+                          (active ? " proj-rail-item--active" : "")
+                        }
+                        aria-current={active ? "true" : undefined}
+                        onClick={() => setClientFilter(active ? "" : c.id)}
+                        title={c.name}
+                      >
+                        <span
+                          className={
+                            "proj-rail-avatar" +
+                            (active ? " proj-rail-avatar--active" : "")
+                          }
+                          aria-hidden="true"
+                        >
+                          {c.name.trim().charAt(0).toUpperCase() || "?"}
+                        </span>
+                        <span className="proj-rail-item-label">{c.name}</span>
+                        <span className="proj-rail-item-count">{c.count}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </nav>
+          )}
+
+          <span className="proj-rail-divider" aria-hidden="true" />
+
+          {/* --- 4. Deadlines --- */}
+          {deadlineRows.length > 0 && (
+            <div className="proj-rail-block">
+              <span className="proj-rail-label">Deadlines</span>
+              <ul className="proj-rail-list proj-rail-list--deadlines">
+                {deadlineRows.map((p) => {
+                  const overdue = p.daysLeft < 0;
+                  const soon = !overdue && p.daysLeft <= 3;
+                  const tone = overdue ? "overdue" : soon ? "soon" : "calm";
+                  return (
+                    <li key={p.id}>
+                      <button
+                        type="button"
+                        className="proj-rail-deadline"
+                        onClick={() => navigate(`/projects/${p.id}`)}
+                        title={p.name}
+                      >
+                        <span
+                          className={
+                            "proj-rail-deadline-bar proj-rail-deadline-bar--" +
+                            tone
+                          }
+                          aria-hidden="true"
+                        />
+                        <span className="proj-rail-deadline-body">
+                          <span className="proj-rail-deadline-name">
+                            {p.name}
+                          </span>
+                          <span
+                            className={
+                              "proj-rail-deadline-days" +
+                              (overdue
+                                ? " proj-rail-deadline-days--overdue"
+                                : soon
+                                  ? " proj-rail-deadline-days--soon"
+                                  : "")
+                            }
+                          >
+                            {overdue
+                              ? `${Math.abs(p.daysLeft)}d overdue`
+                              : p.daysLeft === 0
+                                ? "Due today"
+                                : `in ${p.daysLeft}d`}
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+
+          {/* --- 5. Footer: clear filters + hint --- */}
+          <div className="proj-rail-foot">
+            {hasActiveFilter ? (
+              <button
+                type="button"
+                className="proj-rail-clear"
+                onClick={clearAllFilters}
+              >
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  filter_alt_off
+                </span>
+                <span>Clear filters</span>
+              </button>
+            ) : (
+              <span className="proj-rail-foot-hint">
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  layers
+                </span>
+                <span>Showing all {counts.all} projects</span>
+              </span>
+            )}
+          </div>
+        </aside>
+
+        {/* ================= Nội dung chính ================= */}
+        <div className="proj-main">
         {/* ================= 2. Command strip ================= */}
         <div
           className={
@@ -696,38 +1078,58 @@ export function ProjectsPage() {
           />
           <KpiCard
             label="AI Progress"
-            value="84%"
-            unit="+12%"
+            value={`${avgProgress}%`}
+            unit={projects.length === 0 ? "No data" : "Portfolio avg"}
             unitTone="primary"
             icon="auto_awesome"
             iconTone="primary"
-            progress={84}
-            foot="Auto-scheduled"
+            progress={avgProgress}
+            foot={
+              projects.length === 0
+                ? "Create a project to start"
+                : `${taskStats.done}/${taskStats.total} tasks completed`
+            }
             valueTone="primary"
             mounted={kpiAnim.mounted}
             delayStyle={kpiAnim.getDelay(1)}
           />
           <KpiCard
-            label="Cognitive Load"
-            value="1.18x"
-            unit="Balanced"
+            label="Tasks done"
+            value={String(taskStats.done)}
+            unit={`/ ${taskStats.total}`}
             unitTone="secondary"
             unitAsBadge
-            icon="psychology"
+            icon="check_circle"
             iconTone="tertiary"
-            progress={59}
-            foot="No conflicts"
+            progress={taskStats.pct}
+            foot={
+              taskStats.total === 0
+                ? "No tasks scheduled yet"
+                : `${taskStats.pct}% of all tasks across the portfolio`
+            }
             mounted={kpiAnim.mounted}
             delayStyle={kpiAnim.getDelay(2)}
           />
           <KpiCard
             label="Nearest deadline"
-            value="In 3 days"
+            value={
+              nearestDeadline
+                ? nearestDeadline.daysLeft < 0
+                  ? `${Math.abs(nearestDeadline.daysLeft)} days late`
+                  : nearestDeadline.daysLeft === 0
+                    ? "Today"
+                    : `In ${nearestDeadline.daysLeft} day${nearestDeadline.daysLeft === 1 ? "" : "s"}`
+                : "None set"
+            }
             icon="timer"
             iconTone="error"
-            progress={80}
-            progressPulse
-            foot="Milestone Backend API (FinTech)"
+            progress={
+              nearestDeadline
+                ? Math.max(4, Math.min(100, 100 - nearestDeadline.daysLeft * 8))
+                : 0
+            }
+            progressPulse={!!nearestDeadline && nearestDeadline.daysLeft <= 3}
+            foot={nearestDeadline ? nearestDeadline.name : "No upcoming deadline"}
             footEmphasized
             valueTone="error"
             mounted={kpiAnim.mounted}
@@ -815,8 +1217,10 @@ export function ProjectsPage() {
                   setListError(null);
                   (async () => {
                     const r = await filterProjects({});
-                    if (r.ok) setProjects(r.data.map(dtoToProject));
-                    else setListError(r.error);
+                    if (r.ok) {
+                      setProjects(r.data.map(dtoToProject));
+                      void loadProgressFor(r.data.map((p) => p.id));
+                    } else setListError(r.error);
                     setListLoading(false);
                   })();
                 }}
@@ -883,6 +1287,7 @@ export function ProjectsPage() {
               icon="flag"
               iconTone="primary"
               title="Initialize Goals"
+              desc="Nhập mục tiêu lớn, deadline và mức năng lượng hiện có của bạn."
               delayStyle={pipelineAnim.getDelay(0)}
             />
             <PipelineStep
@@ -891,6 +1296,7 @@ export function ProjectsPage() {
               icon="call_split"
               iconTone="secondary"
               title="AI Auto-Decomposition"
+              desc="Epic được chia thành subtask ≤45 phút, bù trừ K_bias theo thói quen của bạn."
               delayStyle={pipelineAnim.getDelay(1)}
             />
             <PipelineStep
@@ -898,10 +1304,12 @@ export function ProjectsPage() {
               icon="calendar_clock"
               iconTone="tertiary"
               title="Adaptive Schedule Sync"
+              desc="Tự xếp vào khung focus, đồng bộ Google Calendar và dời lịch khi có biến động."
               delayStyle={pipelineAnim.getDelay(2)}
             />
           </div>
         </section>
+        </div>
       </div>
 
       {/* ================= Modal tạo dự án ================= */}
@@ -1002,7 +1410,7 @@ export function ProjectsPage() {
                   {clients.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
-                      {c.company ? ` (${c.company})` : ""}
+                      {c.contactEmail ? ` (${c.contactEmail})` : ""}
                     </option>
                   ))}
                 </select>
@@ -1018,33 +1426,37 @@ export function ProjectsPage() {
                 {clientInlineOpen &&
                   createPortal(
                     <div
-                      className="proj-inline-create-overlay"
+                      className="proj-cf-overlay"
                       onClick={() => {
                         if (!clientSubmitting) setClientInlineOpen(false);
                       }}
                     >
                       <div
-                        className="proj-inline-create"
+                        className="proj-cf"
                         role="region"
                         aria-label="Create new client"
                         onClick={(e) => e.stopPropagation()}
                       >
-                      <div className="proj-inline-create-head">
-                        <span className="material-symbols-outlined proj-inline-create-icon">
-                          person_add
-                        </span>
-                        <div>
-                          <p className="proj-inline-create-title">
+                      <div className="proj-cf__head">
+                        <div className="proj-cf__heading">
+                          <p className="proj-cf__eyebrow">
+                            <span
+                              className="proj-cf__eyebrow-dot"
+                              aria-hidden="true"
+                            />
                             New client
                           </p>
-                          <p className="proj-inline-create-desc">
-                            Fill quickly — will be auto-selected after
-                            creation.
+                          <h2 className="proj-cf__title">
+                            Create a client record
+                          </h2>
+                          <p className="proj-cf__desc">
+                            Saved immediately and selected in the project
+                            form.
                           </p>
                         </div>
                         <button
                           type="button"
-                          className="proj-inline-create-close"
+                          className="proj-cf__close"
                           onClick={() => setClientInlineOpen(false)}
                           aria-label="Close create-client form"
                           disabled={clientSubmitting}
@@ -1056,7 +1468,7 @@ export function ProjectsPage() {
                       </div>
 
                       <form
-                        className="proj-inline-create-form"
+                        className="proj-cf__form"
                         ref={(el) => {
                           clientInlineFormRef.current = el;
                         }}
@@ -1076,77 +1488,81 @@ export function ProjectsPage() {
                           }
                         }}
                       >
-                        <div className="proj-inline-row proj-inline-row--name">
+                        <div className="proj-cf__field">
                           <label
-                            className="proj-label"
+                            className="proj-cf__label"
                             htmlFor="client-f-name"
                           >
-                            Client name *
+                            Client name
+                            <span className="proj-cf__req">*</span>
                           </label>
                           <input
                             id="client-f-name"
                             name="clientName"
                             type="text"
-                            className="proj-input"
+                            className="proj-cf__input"
                             placeholder="e.g. Techcombank Bank…"
                             required
                             autoFocus
                           />
                         </div>
 
-                        <div className="proj-inline-row">
-                          <div className="proj-inline-half">
+                        <div className="proj-cf__row">
+                          <div className="proj-cf__field">
                             <label
-                              className="proj-label"
+                              className="proj-cf__label"
                               htmlFor="client-f-email"
                             >
                               Contact email
+                              <span className="proj-cf__opt">optional</span>
                             </label>
                             <input
                               id="client-f-email"
                               name="contactEmail"
                               type="email"
-                              className="proj-input"
+                              className="proj-cf__input"
                               placeholder="contact@example.com"
                             />
                           </div>
-                          <div className="proj-inline-half">
+                          <div className="proj-cf__field">
                             <label
-                              className="proj-label"
+                              className="proj-cf__label"
                               htmlFor="client-f-phone"
                             >
                               Phone
+                              <span className="proj-cf__opt">optional</span>
                             </label>
                             <input
                               id="client-f-phone"
                               name="phone"
                               type="tel"
-                              className="proj-input"
+                              className="proj-cf__input"
                               placeholder="0901 234 567"
                             />
                           </div>
                         </div>
 
-                        <div className="proj-inline-row">
+                        <div className="proj-cf__field">
                           <label
-                            className="proj-label"
+                            className="proj-cf__label"
                             htmlFor="client-f-notes"
                           >
                             Notes
+                            <span className="proj-cf__opt">optional</span>
                           </label>
                           <textarea
                             id="client-f-notes"
                             name="notes"
                             rows={2}
-                            className="proj-input proj-input--textarea"
+                            className="proj-cf__input proj-cf__input--textarea"
                             placeholder="Short description…"
                           />
                         </div>
 
-                        <div className="proj-inline-actions">
+                        <div className="proj-cf__actions">
                           <button
                             type="button"
-                            className="proj-btn proj-btn--text"
+                            className="proj-cf__btn proj-cf__btn--ghost"
                             onClick={() => setClientInlineOpen(false)}
                             disabled={clientSubmitting}
                           >
@@ -1154,14 +1570,14 @@ export function ProjectsPage() {
                           </button>
                           <button
                             type="submit"
-                            className="proj-btn proj-btn--primary proj-btn--sm"
+                            className="proj-cf__btn proj-cf__btn--primary"
                             disabled={clientSubmitting}
                           >
                             <span
                               className={
-                                "material-symbols-outlined proj-btn-icon" +
+                                "material-symbols-outlined proj-cf__btn-icon" +
                                 (clientSubmitting
-                                  ? " proj-btn-icon--spin"
+                                  ? " proj-cf__btn-icon--spin"
                                   : "")
                               }
                             >
@@ -1381,8 +1797,8 @@ export function ProjectsPage() {
                                     )}
                                   </span>
                                   <span className="proj-browser-item-meta">
-                                    {c.email || c.phone
-                                      ? [c.email, c.phone]
+                                    {c.contactEmail || c.phone
+                                      ? [c.contactEmail, c.phone]
                                           .filter(Boolean)
                                           .join(" • ")
                                       : "No contact info"}
@@ -1407,6 +1823,20 @@ export function ProjectsPage() {
           </div>
         </div>
       )}
+
+      {/* ================= AI Copilot FAB (góc phải dưới) ================= */}
+      <button
+        type="button"
+        className="proj-fab"
+        onClick={() => navigate("/copilot")}
+        aria-label="Mở AI Copilot"
+        title="Mở AI Copilot"
+      >
+        <span className="proj-fab-glow" aria-hidden="true" />
+        <span className="material-symbols-outlined proj-fab-icon" aria-hidden="true">
+          smart_toy
+        </span>
+      </button>
 
       {/* ================= Toast ================= */}
       <div
@@ -1725,6 +2155,7 @@ function PipelineStep({
   icon,
   iconTone,
   title,
+  desc,
   delayStyle,
 }: {
   step: string;
@@ -1732,8 +2163,7 @@ function PipelineStep({
   icon: string;
   iconTone: "primary" | "secondary" | "tertiary";
   title: string;
-  // desc không còn hiển thị — title + icon đủ để truyền tải ý nghĩa.
-  // Prop giữ để tránh vỡ call-sites; nên đã xoá khỏi destructure.
+  desc: string;
   delayStyle: { animationDelay: string };
 }) {
   return (
@@ -1745,7 +2175,7 @@ function PipelineStep({
         </span>
       </div>
       <h3 className="proj-step-title">{title}</h3>
-      <p className="proj-step-desc">{title}</p>
+      <p className="proj-step-desc">{desc}</p>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { getProject, listSubtasks, listTasks, type ProjectDto, type SubtaskDto, type TaskDto } from "../../lib/api-client";
+import { getProject, listMilestones, listSubtasks, listTasks, type MilestoneDto, type ProjectDto, type SubtaskDto, type TaskDto } from "../../lib/api-client";
 import "./project-detail.css";
 
 /**
@@ -9,14 +9,15 @@ import "./project-detail.css";
  * Route: /projects/:projectId
  * API:   GET /api/projects/{projectId}  -> ProjectDto
  *
- * UI is split into 6 sections:
+ * UI is split into 8 sections:
  *   1. Top bar (back + breadcrumb)
  *   2. Hero (status pill, name, description)
  *   3. KPI strip (start / deadline / duration / remaining)
  *   4. Timeline (visual progress bar start → end, "today" marker)
- *   5. Tasks preview (collapsible with subtasks)
- *   6. Two direction cards (Planning / Execution)
- *   7. Footer (client card + createdAt)
+ *   5. Milestones preview (key phases + "View all")
+ *   6. Tasks preview (collapsible with subtasks)
+ *   7. Two direction cards (Planning / Execution)
+ *   8. Footer (client card + createdAt)
  *
  * Theme: aligned with the Projects page (Cognitive Minimalist Dark).
  */
@@ -29,6 +30,11 @@ export function ProjectDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
 
+  // Milestone preview (phases of this project)
+  const [milestones, setMilestones] = useState<MilestoneDto[]>([]);
+  const [milestonesLoading, setMilestonesLoading] = useState(true);
+  const [milestonesError, setMilestonesError] = useState<string | null>(null);
+
   // Task list preview
   const [tasks, setTasks] = useState<TaskDto[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
@@ -38,6 +44,8 @@ export function ProjectDetailPage() {
   const [subtasksMap, setSubtasksMap] = useState<Record<string, SubtaskDto[]>>({});
   const [subtasksLoading, setSubtasksLoading] = useState<Record<string, boolean>>({});
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
+  /** Milestone đang mở rộng trong phần preview (chỉ 1 phase tại 1 thời điểm). */
+  const [expandedMilestone, setExpandedMilestone] = useState<string | null>(null);
 
   // Lazy-load subtasks for a task (only first time)
   function loadSubtasks(taskId: string) {
@@ -62,17 +70,19 @@ export function ProjectDetailPage() {
     });
   }
 
+  /** Mở / đóng danh sách task của một phase trong phần preview. */
+  function toggleMilestoneExpand(milestoneId: string) {
+    setExpandedMilestone((prev) => (prev === milestoneId ? null : milestoneId));
+  }
+
   useEffect(() => {
     let cancelled = false;
-    async function load() {
+    void (async () => {
       if (!projectId) {
         setNotFound(true);
         setLoading(false);
         return;
       }
-      setLoading(true);
-      setError(null);
-      setNotFound(false);
       const res = await getProject(projectId);
       if (cancelled) return;
       if (res.ok) {
@@ -85,8 +95,29 @@ export function ProjectDetailPage() {
         setError(res.error ?? "Failed to load project.");
       }
       setLoading(false);
-    }
-    void load();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  // Load milestone preview for this project
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+    void (async () => {
+      const res = await listMilestones(projectId);
+      if (cancelled) return;
+      if (res.ok) {
+        setMilestones(
+          [...(res.data ?? [])].sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0)),
+        );
+        setMilestonesError(null);
+      } else {
+        setMilestonesError(res.error ?? "Failed to load milestones");
+      }
+      setMilestonesLoading(false);
+    })();
     return () => {
       cancelled = true;
     };
@@ -96,14 +127,17 @@ export function ProjectDetailPage() {
   useEffect(() => {
     if (!projectId) return;
     let cancelled = false;
-    setTasksLoading(true);
-    setTasksError(null);
-    void listTasks(projectId).then((res) => {
+    void (async () => {
+      const res = await listTasks(projectId);
       if (cancelled) return;
-      if (res.ok) setTasks(res.data);
-      else setTasksError(res.error ?? "Failed to load tasks");
+      if (res.ok) {
+        setTasks(res.data);
+        setTasksError(null);
+      } else {
+        setTasksError(res.error ?? "Failed to load tasks");
+      }
       setTasksLoading(false);
-    });
+    })();
     return () => {
       cancelled = true;
     };
@@ -241,10 +275,15 @@ export function ProjectDetailPage() {
             tasks={tasks}
             tasksLoading={tasksLoading}
             tasksError={tasksError}
+            milestones={milestones}
+            milestonesLoading={milestonesLoading}
+            milestonesError={milestonesError}
             subtasksMap={subtasksMap}
             subtasksLoading={subtasksLoading}
             expandedTasks={expandedTasks}
             onToggleTask={toggleTaskExpand}
+            expandedMilestone={expandedMilestone}
+            onToggleMilestone={toggleMilestoneExpand}
           />
         )}
       </div>
@@ -260,19 +299,29 @@ function ProjectDetailBody({
   tasks,
   tasksLoading,
   tasksError,
+  milestones,
+  milestonesLoading,
+  milestonesError,
   subtasksMap,
   subtasksLoading,
   expandedTasks,
   onToggleTask,
+  expandedMilestone,
+  onToggleMilestone,
 }: {
   project: ProjectDto;
   tasks: TaskDto[];
   tasksLoading: boolean;
   tasksError: string | null;
+  milestones: MilestoneDto[];
+  milestonesLoading: boolean;
+  milestonesError: string | null;
   subtasksMap: Record<string, SubtaskDto[]>;
   subtasksLoading: Record<string, boolean>;
   expandedTasks: Set<string>;
   onToggleTask: (taskId: string) => void;
+  expandedMilestone: string | null;
+  onToggleMilestone: (milestoneId: string) => void;
 }) {
   const timeline = useMemo(
     () => computeTimeline(project.startDate, project.deadline),
@@ -364,6 +413,19 @@ function ProjectDetailBody({
           <span>{formatDate(project.deadline)}</span>
         </div>
       </section>
+
+      {/* Milestones preview */}
+      <MilestonesPreview
+        projectId={project.id}
+        milestones={milestones}
+        loading={milestonesLoading}
+        error={milestonesError}
+        tasks={tasks}
+        tasksLoading={tasksLoading}
+        tasksError={tasksError}
+        expandedMilestone={expandedMilestone}
+        onToggleMilestone={onToggleMilestone}
+      />
 
       {/* Tasks preview */}
       <TasksPreview
@@ -487,6 +549,294 @@ function ProjectDetailBody({
         </div>
       </footer>
     </article>
+  );
+}
+
+/* ============================================================
+ * MilestonesPreview — vài milestone chính + link "View all"
+ * ============================================================ */
+const MILESTONE_PREVIEW_LIMIT = 4;
+
+function MilestonesPreview({
+  projectId,
+  milestones,
+  loading,
+  error,
+  tasks,
+  tasksLoading,
+  tasksError,
+  expandedMilestone,
+  onToggleMilestone,
+}: {
+  projectId: string;
+  milestones: MilestoneDto[];
+  loading: boolean;
+  error: string | null;
+  tasks: TaskDto[];
+  tasksLoading: boolean;
+  tasksError: string | null;
+  expandedMilestone: string | null;
+  onToggleMilestone: (milestoneId: string) => void;
+}) {
+  const stats = useMemo(() => {
+    const total = milestones.length;
+    const done = milestones.filter(
+      (m) => milestoneTone(m.status) === "done",
+    ).length;
+    const active = milestones.filter(
+      (m) => milestoneTone(m.status) === "active",
+    ).length;
+    return { total, done, active };
+  }, [milestones]);
+
+  const preview = useMemo(
+    () => milestones.slice(0, MILESTONE_PREVIEW_LIMIT),
+    [milestones],
+  );
+
+  /** Task của từng milestone. */
+  const tasksByMilestone = useMemo(() => {
+    const map = new Map<string, TaskDto[]>();
+    for (const t of tasks) {
+      if (!t.milestoneId) continue;
+      const bucket = map.get(t.milestoneId);
+      if (bucket) bucket.push(t);
+      else map.set(t.milestoneId, [t]);
+    }
+    return map;
+  }, [tasks]);
+
+  return (
+    <section className="pd-ms" aria-label="Milestones">
+      <div className="pd-ms-head">
+        <div className="pd-ms-head-left">
+          <span className="pd-section-eyebrow">Milestones</span>
+          <h2 className="pd-section-title">
+            {stats.total > 0
+              ? `${stats.total} milestone${stats.total !== 1 ? "s" : ""}`
+              : "No milestones yet"}
+          </h2>
+        </div>
+        <div className="pd-ms-stats">
+          {stats.active > 0 && (
+            <span className="pd-ms-stat pd-ms-stat--active">
+              <span className="material-symbols-outlined">play_circle</span>
+              {stats.active} in progress
+            </span>
+          )}
+          {stats.done > 0 && (
+            <span className="pd-ms-stat pd-ms-stat--done">
+              <span className="material-symbols-outlined">task_alt</span>
+              {stats.done} done
+            </span>
+          )}
+          <Link
+            to={`/projects/${projectId}/milestones`}
+            className="pd-ms-view-all"
+          >
+            View all
+            <span className="material-symbols-outlined">arrow_forward</span>
+          </Link>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="pd-ms-loading" role="status">
+          <span className="material-symbols-outlined">progress_activity</span>
+          <span>Loading milestones…</span>
+        </div>
+      ) : error ? (
+        <div className="pd-ms-error" role="alert">
+          <span className="material-symbols-outlined">error</span>
+          <span>{error}</span>
+        </div>
+      ) : milestones.length === 0 ? (
+        <div className="pd-ms-empty">
+          <span className="material-symbols-outlined">flag</span>
+          <span>
+            No milestones yet. Milestones are the phases of this project — tasks
+            must belong to one.
+          </span>
+          <Link
+            to={`/projects/${projectId}/milestones`}
+            className="pd-ms-empty-cta"
+          >
+            Create milestone
+            <span className="material-symbols-outlined">arrow_forward</span>
+          </Link>
+        </div>
+      ) : (
+        <ol className="pd-ms-list">
+          {preview.map((m, i) => {
+            const tone = milestoneTone(m.status);
+            const due = milestoneDueLabel(m.dueDate);
+            const msTasks = tasksByMilestone.get(m.id) ?? [];
+            const isOpen = expandedMilestone === m.id;
+            return (
+              <li
+                key={m.id}
+                className="pd-ms-item"
+                style={{ animationDelay: `${i * 60}ms` }}
+              >
+                <span
+                  className={`pd-ms-index pd-ms-index--${tone}`}
+                  aria-hidden="true"
+                >
+                  {m.orderIndex ?? i + 1}
+                </span>
+                <div className="pd-ms-body">
+                  <span className={`pd-ms-name pd-ms-name--${tone}`}>
+                    {m.name}
+                  </span>
+                  <div className="pd-ms-meta">
+                    <span className={`pd-ms-status pd-ms-status--${tone}`}>
+                      <span className="pd-ms-status-dot" aria-hidden="true" />
+                      {prettyMilestoneStatus(m.status)}
+                    </span>
+                    <span className="pd-ms-meta-item">
+                      <span className="material-symbols-outlined">event</span>
+                      {formatDate(m.dueDate ?? "")}
+                    </span>
+                    {due.kind !== "none" && (
+                      <span className={`pd-ms-meta-item pd-ms-meta-item--${due.kind}`}>
+                        <span className="material-symbols-outlined">schedule</span>
+                        {due.label}
+                      </span>
+                    )}
+                    {m.revisionCount > 0 && (
+                      <span className="pd-ms-meta-item">
+                        <span className="material-symbols-outlined">history</span>
+                        {m.revisionCount} rev
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {m.approvedAt && (
+                  <span
+                    className="pd-ms-approved"
+                    title={`Approved ${formatDate(m.approvedAt)}`}
+                  >
+                    <span className="material-symbols-outlined">verified</span>
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className={
+                    "pd-ms-expand" + (isOpen ? " pd-ms-expand--open" : "")
+                  }
+                  onClick={() => onToggleMilestone(m.id)}
+                  title={isOpen ? "Hide tasks" : "View tasks in this phase"}
+                  aria-label={`${isOpen ? "Hide" : "View"} tasks of ${m.name}`}
+                  aria-expanded={isOpen}
+                >
+                  <span className="material-symbols-outlined">account_tree</span>
+                </button>
+
+                {/* Task của phase */}
+                {isOpen && (
+                  <div className="pd-ms-tasks">
+                    {tasksLoading ? (
+                      <div className="pd-ms-tasks-state" role="status">
+                        <span className="material-symbols-outlined pd-spin">
+                          progress_activity
+                        </span>
+                        <span>Loading tasks…</span>
+                      </div>
+                    ) : tasksError ? (
+                      <div
+                        className="pd-ms-tasks-state pd-ms-tasks-state--error"
+                        role="alert"
+                      >
+                        <span className="material-symbols-outlined">error</span>
+                        <span>{tasksError}</span>
+                      </div>
+                    ) : msTasks.length === 0 ? (
+                      <div className="pd-ms-tasks-state">
+                        <span className="material-symbols-outlined">task_alt</span>
+                        <span>No tasks in this phase yet.</span>
+                      </div>
+                    ) : (
+                      <ul className="pd-ms-task-list">
+                        {msTasks.map((t) => (
+                          <MilestoneTaskLine key={t.id} task={t} />
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+/* ============================================================
+ * MilestoneTaskLine — 1 dòng task gọn trong phase (không subtask)
+ * ============================================================ */
+function MilestoneTaskLine({ task }: { task: TaskDto }) {
+  const status = (task.status ?? "").toLowerCase();
+  const isDone = status === "done" || status === "completed";
+  const isActive = status === "inprogress" || status === "in_progress";
+  const isScheduled = status === "scheduled";
+
+  const deadlineInfo = useMemo(() => {
+    if (!task.deadline) return null;
+    const d = new Date(task.deadline);
+    if (Number.isNaN(d.getTime())) return null;
+    const now = new Date();
+    const days = Math.ceil((d.getTime() - now.getTime()) / 86_400_000);
+    const label = d.toLocaleDateString(undefined, {
+      month: "short",
+      day: "2-digit",
+    });
+    if (isDone) return { label, kind: "normal" as const };
+    if (days < 0) return { label, kind: "overdue" as const };
+    if (days <= 3) return { label, kind: "soon" as const };
+    return { label, kind: "normal" as const };
+  }, [task.deadline, isDone]);
+
+  const tone = isActive
+    ? "active"
+    : isScheduled
+      ? "scheduled"
+      : isDone
+        ? "done"
+        : "todo";
+
+  return (
+    <li className={`pd-ms-task pd-ms-task--${tone}${isDone ? " pd-ms-task--done" : ""}`}>
+      <span className="pd-ms-task-marker" aria-hidden="true">
+        <span className={`pd-ms-task-dot pd-ms-task-dot--${tone}`} />
+      </span>
+      <span className="pd-ms-task-body">
+        <span className="pd-ms-task-title">{task.title}</span>
+        <span className="pd-ms-task-meta">
+          {task.taskType && (
+            <span className="pd-ms-task-type">{task.taskType}</span>
+          )}
+          {task.estimatedMinutes > 0 && (
+            <span className="pd-ms-task-meta-item">
+              <span className="material-symbols-outlined">schedule</span>
+              {formatMinutesCompact(task.estimatedMinutes)}
+            </span>
+          )}
+          {deadlineInfo && (
+            <span
+              className={`pd-ms-task-meta-item pd-ms-task-meta-item--${deadlineInfo.kind}`}
+            >
+              <span className="material-symbols-outlined">event</span>
+              {deadlineInfo.label}
+            </span>
+          )}
+        </span>
+      </span>
+      <span className={`pd-ms-task-status pd-ms-task-status--${tone}`}>
+        {prettyTaskStatusLocal(task.status)}
+      </span>
+    </li>
   );
 }
 
@@ -774,6 +1124,57 @@ function SubtaskPreviewRow({ subtask }: { subtask: SubtaskDto }) {
       </span>
     </li>
   );
+}
+
+/* ============================================================
+ * Local helpers (milestone-specific)
+ * ============================================================ */
+
+/** Map status milestone → nhóm tone. */
+function milestoneTone(
+  status: string,
+): "planned" | "active" | "revision" | "done" {
+  const s = (status ?? "").toLowerCase();
+  if (s === "inprogress" || s === "in_progress") return "active";
+  if (s === "inrevision" || s === "revision") return "revision";
+  if (s === "delivered" || s === "approved" || s === "completed") return "done";
+  return "planned";
+}
+
+/** Label đẹp cho status milestone. */
+function prettyMilestoneStatus(status: string): string {
+  const s = (status ?? "").toLowerCase();
+  const map: Record<string, string> = {
+    planned: "Planned",
+    inprogress: "In Progress",
+    in_progress: "In Progress",
+    delivered: "Delivered",
+    inrevision: "In Revision",
+    revision: "In Revision",
+    approved: "Approved",
+    completed: "Completed",
+  };
+  return map[s] ?? status ?? "—";
+}
+
+/** Ngày tương đối so với hôm nay. */
+function milestoneDueLabel(dueDate: string | null): {
+  label: string;
+  kind: "none" | "soon" | "future" | "overdue";
+} {
+  if (!dueDate) return { label: "", kind: "none" };
+  const d = new Date(dueDate);
+  if (Number.isNaN(d.getTime())) return { label: "", kind: "none" };
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(d);
+  target.setHours(0, 0, 0, 0);
+  const days = Math.round((target.getTime() - today.getTime()) / 86_400_000);
+  if (days === 0) return { label: "Due today", kind: "soon" };
+  if (days === 1) return { label: "Due tomorrow", kind: "soon" };
+  if (days > 1) return { label: `In ${days} days`, kind: "future" };
+  if (days === -1) return { label: "1 day late", kind: "overdue" };
+  return { label: `${Math.abs(days)} days late`, kind: "overdue" };
 }
 
 /* ============================================================

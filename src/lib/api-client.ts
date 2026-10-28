@@ -335,13 +335,13 @@ export async function logoutApi(): Promise<void> {
 export interface CurrentSubscriptionDto {
   subscriptionId: string;
   planId: string;
-  planName: string;
-  /** ISO timestamp hết hạn. */
-  endAt: string;
+  planName: string | null;
+  /** ISO timestamp hết hạn. null = gói Miễn phí không hết hạn. */
+  endAt: string | null;
 }
 
 /**
- * Response của `GET /api/me`.
+ * Response của `GET /api/me` (MeDto).
  *
  * Lưu ý: BE đã mở rộng payload (thêm `currentSubscription`,
  * `defaultBufferMinutes`, `reminderLeadMinutes`). Các field mới để
@@ -435,6 +435,13 @@ export async function updateProfile(
   };
 
   return delay({ ok: true, data: merged }, 500);
+}
+
+/**
+ * Trì hoãn một promise (mô phỏng latency network cho các call mock).
+ */
+function delay<T>(value: T, ms = 600): Promise<T> {
+  return new Promise((res) => setTimeout(() => res(value), ms));
 }
 
 /**
@@ -1576,7 +1583,6 @@ async function aiFetch<T>(
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
   // [DEBUG] log outgoing request
-  // eslint-disable-next-line no-console
   console.log("[aiFetch] →", options.method ?? "GET", url, {
     headers: { ...headers, Authorization: token ? "Bearer ***" : "(none)" },
     body: options.body instanceof FormData
@@ -1593,7 +1599,6 @@ async function aiFetch<T>(
     const rawText = await res.text();
 
     // [DEBUG] log incoming response
-    // eslint-disable-next-line no-console
     console.log("[aiFetch] ←", res.status, res.statusText, url, {
       contentType: res.headers.get("content-type"),
       bodyPreview: rawText.slice(0, 500),
@@ -1621,7 +1626,6 @@ async function aiFetch<T>(
     return { ok: true, data: data as T };
   } catch (err) {
     // [DEBUG] log network / CORS / parse error
-    // eslint-disable-next-line no-console
     console.error("[aiFetch] ✖ error for", url, err);
     const raw = err instanceof Error ? err.message : String(err);
     return {
@@ -1804,7 +1808,6 @@ export async function sendTaskMessage(
     if (last.ok) return last;
     if (last.status !== 409) return last;
     if (attempt === MAX_RETRIES) break;
-    // eslint-disable-next-line no-console
     console.warn(
       `[sendTaskMessage] 409 Conflict — thử lại sau ${BACKOFF_MS[attempt]}ms (lần ${attempt + 1}/${MAX_RETRIES})`,
     );
@@ -1837,643 +1840,252 @@ export async function applyTaskChat(
 }
 
 /* ============================================================
- * Plan identifiers
+ * Subscription plans (GET /api/subscription-plans)
  * ----------------------------------------------------------
- * Source of truth cho plan FE/BE hiểu. PricingPage re-export
- * từ đây để đồng bộ.
- * ============================================================ */
-
-export type PlanKey = "starter" | "pro" | "team";
-
-/* ============================================================
- * Current plan helpers (mock persistence)
- * ----------------------------------------------------------
- * Lưu plan user đang dùng vào localStorage, dùng để Pricing
- * auto-select gói hiện tại. Sau khi BE ready, thay bằng
- * `GET /api/users/me` hoặc `GET /api/payment-transactions/me`.
- * ============================================================ */
-
-const USER_PLAN_KEY = "metanoia:user-plan";
-
-export function getCurrentPlan(): PlanKey | null {
-  if (typeof window === "undefined") return null;
-  const v = window.localStorage.getItem(USER_PLAN_KEY);
-  if (v === "pro" || v === "team" || v === "starter") return v;
-  return null;
-}
-
-export function setCurrentPlan(plan: PlanKey | null): void {
-  if (typeof window === "undefined") return;
-  if (plan === null) {
-    window.localStorage.removeItem(USER_PLAN_KEY);
-    return;
-  }
-  window.localStorage.setItem(USER_PLAN_KEY, plan);
-}
-
-/* ============================================================
- * Payments
- * ----------------------------------------------------------
- * MOCKED: Hiện tại BE chưa ready, ta wrap các endpoint từ Swagger
- * và trả mock data có delay mô phỏng network. Thay thế bằng
- * `fetch thật` (post/get/del) khi BE ready.
+ * Nguồn sự thật cho trang /pricing. Mỗi gói có:
+ *   id, name, price (VND), durationDays, aiCallLimit (null = không
+ *   giới hạn), storageLimitMb, projectLimit (null = không giới
+ *   hạn), isActive.
  *
- * Endpoints tham khảo (Swagger):
- *   POST   /api/payments/checkout                      → tạo payment
- *   POST   /api/payments/{paymentId}/sync              → đồng bộ trạng thái
- *   POST   /api/payments/{paymentId}/cancel             → hủy
- *   POST   /api/payments/{paymentId}/refunds            → hoàn tiền
+ * Chỉ gói `isActive = true` VÀ `price > 0` mới mua được.
+ * Gói Miễn phí (price = 0) không có nút mua.
  * ============================================================ */
 
+export interface SubscriptionPlanDto {
+  id: string;
+  name: string | null;
+  /** Giá (VND, số nguyên) cho 1 chu kỳ `durationDays`. */
+  price: number;
+  /** Thời hạn 1 chu kỳ thanh toán (ngày). */
+  durationDays: number;
+  /** null = không giới hạn. */
+  aiCallLimit: number | null;
+  /** Dung lượng lưu trữ (MB). */
+  storageLimitMb: number;
+  /** null = không giới hạn. */
+  projectLimit: number | null;
+  isActive: boolean;
+}
+
+export async function listSubscriptionPlans(): Promise<
+  ApiResult<SubscriptionPlanDto[]>
+> {
+  return get<SubscriptionPlanDto[]>("/api/subscription-plans");
+}
+
+/* ============================================================
+ * Payments — PayOS checkout
+ * ----------------------------------------------------------
+ * Luồng chuẩn (theo spec BE):
+ *
+ *   Trang bảng giá ──▶ bấm "Mua" ──▶ POST /api/payments/checkout
+ *        ▲                                  │ trả checkoutUrl
+ *        │                                  ▼
+ *   refetch /api/me  ◀─ trang kết quả ◀─ PayOS (khách quét QR, trả tiền)
+ *                            ▲                │
+ *                            │   PayOS redirect về ReturnUrl / CancelUrl
+ *                            └── POST /api/payments/{id}/sync
+ *
+ * ⚠️ Nguyên tắc quan trọng: FE KHÔNG tự kết luận "đã trả tiền" dựa
+ * vào URL PayOS chuyển về. Backend mới là nơi xác nhận. FE chỉ gọi
+ * `sync` rồi đọc `status`.
+ *
+ * Endpoints:
+ *   POST /api/payments/checkout          → tạo link thanh toán
+ *   POST /api/payments/{id}/sync          → xác nhận lại với server
+ *   POST /api/payments/{id}/cancel        → hủy đơn Pending
+ *   GET  /api/payment-transactions        → lịch sử giao dịch của user
+ *   GET  /api/invoices                    → hóa đơn của user
+ *   GET  /api/invoices/{invoiceId}        → chi tiết 1 hóa đơn
+ *   GET  /api/user-subscriptions          → các gói (kể cả Scheduled)
+ *
+ * Việc FE KHÔNG làm:
+ *   - Không gọi /api/payos/webhook (PayOS gọi vào backend).
+ *   - Không gọi confirm-webhook (việc của Admin).
+ *   - Không tự tính hạn gói hay tự cấp quyền — luôn đọc lại /api/me.
+ * ============================================================ */
+
+/**
+ * Trạng thái giao dịch theo spec BE.
+ *
+ * BE trả `status` kiểu string tự do (nullable), nên ta dùng union lỏng
+ * để vẫn có autocomplete mà không ép chặt (BE có thể thêm trạng thái mới).
+ */
 export type PaymentStatus =
-  | "pending"
-  | "waiting"
-  | "processing"
-  | "paid"
-  | "cancelled"
-  | "failed"
-  | "refunded";
+  | "Pending"
+  | "Succeeded"
+  | "Cancelled"
+  | "Expired"
+  | "Failed"
+  | (string & {});
 
-export type PaymentGateway = "VietQR" | "MoMo" | "Visa" | "MasterCard";
+/** Response của `POST /api/payments/checkout` (CheckoutResultDto). */
+export interface PaymentCheckoutDto {
+  /** Id giao dịch — lưu lại để dùng cho bước sync/cancel. */
+  paymentId: string;
+  /** Mã đơn hàng (PayOS orderCode). */
+  orderCode: number;
+  /** Trạng thái ban đầu (thường là "Pending"). */
+  status: string | null;
+  /** URL trang thanh toán PayOS (hosted page có QR + CK + form thẻ). */
+  checkoutUrl: string | null;
+  /** Chuỗi QR code (URL hoặc base64) do PayOS trả về. */
+  qrCode: string | null;
+  /** Hạn dùng của link (ISO timestamp, ~15 phút). */
+  expiresAt: string;
+  /** true = backend tái sử dụng link còn sống thay vì tạo mới. */
+  reused: boolean;
+}
 
+/** Response của `POST /api/payments/{id}/sync` (PaymentTransactionDto). */
 export interface PaymentTransactionDto {
   id: string;
   userId: string;
   planId: string;
   orderCode: number;
-  gateway: string;
+  /** Cổng thanh toán (luôn là "PayOS" ở flow hiện tại). */
+  gateway: string | null;
+  /** Số tiền (VND). */
   amount: number;
-  status: PaymentStatus;
+  /** "Pending" | "Succeeded" | "Cancelled" | "Expired" | "Failed". */
+  status: string | null;
   createdAt: string;
   expiresAt: string | null;
   paidAt: string | null;
   webhookReceivedAt: string | null;
-  /** URL trang PayOS thanh Checkout (QR + nút CK + form Visa/MC all-in-one). */
-  checkoutUrl?: string | null;
-  qrCodeUrl?: string | null;
-  qrData?: string | null;
-  bankInfo?: {
-    bankName: string;
-    accountNumber: string;
-    accountHolder: string;
-    transferContent: string;
-  } | null;
 }
 
-export interface CreateCheckoutRequest {
-  planId: string;
-  cycle: "monthly" | "annual";
-  gateway: PaymentGateway;
-  email: string;
-  fullName?: string;
-  amount?: number;
-  /** Alias used by FE checkout UI — not sent to BE. */
-  plan?: string;
-}
-
-export interface RefundRequest {
-  reason: string;
-}
-
-/**
- * PaymentRefund — theo Swagger spec
- * (POST /api/payments/{paymentId}/refunds trả về object này,
- *  KHÔNG phải PaymentTransactionDto).
- */
-export interface PaymentRefundDto {
+/** Hoá đơn của user (GET /api/invoices — InvoiceDto). */
+export interface InvoiceDto {
   id: string;
   paymentTransactionId: string;
-  userId: string;
+  /** Mã hoá đơn dạng "MTN-2026-000001". */
+  invoiceNumber: string | null;
+  planName: string | null;
   amount: number;
-  reason: string;
-  source: string; // "user" | "admin" | "system" | …
-  status: "pending" | "processing" | "completed" | "rejected";
-  adminNote?: string | null;
-  bankReference?: string | null;
-  createdAt: string;
-  processedAt?: string | null;
+  billingName: string | null;
+  billingEmail: string | null;
+  /** Ngày bắt đầu kỳ (YYYY-MM-DD). */
+  periodStart: string;
+  /** Ngày kết thúc kỳ (YYYY-MM-DD). */
+  periodEnd: string;
+  issuedAt: string;
 }
 
-/**
- * Body cho POST /api/payment-transactions
- * (BE cho phép tạo tx thủ công — admin/internal).
- */
-export interface CreatePaymentTransactionRequest {
+/** Gói thuê bao của user (GET /api/user-subscriptions — UserSubscriptionDto). */
+export interface UserSubscriptionDto {
+  id: string;
   userId: string;
   planId: string;
-  orderCode: number;
-  gateway: string;
-  amount: number;
-  status: PaymentStatus;
-  expiresAt?: string | null;
-  paidAt?: string | null;
-  webhookReceivedAt?: string | null;
-}
-
-/**
- * Body cho PUT /api/payment-transactions/{paymentId}
- * Cập nhật 1 số trường (status, paidAt, …).
- */
-export interface UpdatePaymentTransactionRequest {
-  userId?: string;
-  planId?: string;
-  orderCode?: number;
-  gateway?: string;
-  amount?: number;
-  status?: PaymentStatus;
-  expiresAt?: string | null;
-  paidAt?: string | null;
-  webhookReceivedAt?: string | null;
-}
-
-/* ----- Mock store (in-memory) ----- */
-const MOCK_PAYMENTS: Map<string, PaymentTransactionDto> = new Map();
-const MOCK_REFUNDS: Map<string, PaymentRefundDto> = new Map();
-function genId(): string {
-  // RFC4122-ish uuid v4 (mock)
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
-function genOrderCode(): number {
-  // META PRO <5 số ngẫu nhiên> (giống PayOS)
-  return Math.floor(10000 + Math.random() * 90000);
-}
-function delay<T>(value: T, ms = 600): Promise<T> {
-  return new Promise((res) => setTimeout(() => res(value), ms));
-}
-
-/**
- * POST /api/payments/checkout
- * Mock trả về payment pending cùng QR / bank info.
- */
-export async function createCheckout(
-  body: CreateCheckoutRequest,
-): Promise<ApiResult<PaymentTransactionDto>> {
-  // Validation
-  if (!body.planId) return { ok: false, error: "planId is required" };
-  if (!body.email || !/^\S+@\S+\.\S+$/.test(body.email))
-    return { ok: false, error: "A valid email is required" };
-
-  const now = new Date();
-  const id = genId();
-  const orderCode = genOrderCode();
-  const transferContent = `META ${body.planId.toUpperCase()} ${orderCode}`;
-  const amount = body.amount ?? (body.cycle === "annual" ? 1_428_000 : 149_000);
-
-  const tx: PaymentTransactionDto = {
-    id,
-    userId: "00000000-0000-0000-0000-000000000000", // mock user
-    planId: body.planId,
-    orderCode,
-    gateway: body.gateway,
-    amount,
-    status: "waiting",
-    createdAt: now.toISOString(),
-    expiresAt: new Date(now.getTime() + 15 * 60 * 1000).toISOString(), // +15min
-    paidAt: null,
-    webhookReceivedAt: null,
-    // ============================================================
-    // PayOS (MoMo gateway được map tương đương) flow:
-    //   - PayOS KHÔNG trả QR kiểu VietQR. Mỗi checkout trả về
-    //     `checkoutUrl` = hosted page có sẵn QR + form + nút CK.
-    //   - FE không tự dựng QR, chỉ mở/redirect sang checkoutUrl.
-    //   - Mock: tạo URL dạng PayOS-merchant để test UI flow.
-    // ============================================================
-    qrCodeUrl: null,
-    qrData:
-      body.gateway === "VietQR"
-        ? buildVietQRUrl({
-            account: "998824078899",
-            bank: "MBBank",
-            amount,
-            content: transferContent,
-          })
-        : body.gateway === "MoMo"
-        ? `https://pay.payos.vn/merchant/${orderCode}?amount=${amount}&content=${encodeURIComponent(transferContent)}`
-        : null,
-    checkoutUrl:
-      body.gateway === "MoMo"
-        ? `https://pay.payos.vn/merchant/${orderCode}?amount=${amount}&content=${encodeURIComponent(transferContent)}`
-        : null,
-    bankInfo:
-      body.gateway === "VietQR"
-        ? {
-            bankName: "MBBank (Military Commercial Joint Stock Bank)",
-            accountNumber: "9988 2407 8899",
-            accountHolder: "CONG TY CONG NGHE METANOIA LABS",
-            transferContent,
-          }
-        : null,
-  };
-
-  MOCK_PAYMENTS.set(id, tx);
-  return delay({ ok: true, data: tx });
+  paymentTransactionId: string | null;
+  startAt: string;
+  /** null = gói Miễn phí không hết hạn. */
+  endAt: string | null;
+  /** "Active" (đang chạy) | "Scheduled" (xếp hàng) | ... */
+  status: string | null;
+  aiCallsUsed: number;
+  quotaResetAt: string;
+  createdAt: string;
 }
 
 /* ============================================================
- * QR URL policy
- * ------------------------------------------------------------
- * QR phải đến từ GATEWAY THẬT, không tự dựng SVG giả:
- *   - VietQR: URL https://api.vietqr.io/image?account=...&bank=...
- *             (mock tạo URL đúng chuẩn cho test — link này thật)
- *   - MoMo:   deeplink `momoapp://...?orderCode=...` (gateway mới có)
- *             → FE render thành nút "Open MoMo app".
- *   - Visa/MC: không có QR.
- * Khi BE thật kết nối PayOS/MoMo thì chỉ cần thay nguồn qrData ở đây
- * (không đổi gì ở FE render).
+ * Checkout / Sync / Cancel
  * ============================================================ */
-function buildVietQRUrl(args: {
-  account: string;
-  bank: string;
-  amount: number;
-  content: string;
-}): string {
-  const q = new URLSearchParams({
-    account: args.account,
-    bank: args.bank,
-    amount: String(args.amount),
-    content: args.content,
-    template: "compact2",
-  });
-  return `https://api.vietqr.io/image?${q.toString()}`;
+
+/**
+ * POST /api/payments/checkout
+ *
+ * Tạo link thanh toán PayOS cho 1 gói. Body chỉ cần `planId`.
+ *
+ * Lưu ý hành vi BE:
+ *  - Bấm mua nhiều lần → BE tái sử dụng link còn sống (`reused = true`),
+ *    FE cứ dùng `checkoutUrl` trả về.
+ *  - Nếu đơn đã trả xong → `status` có thể là "Succeeded" và không có
+ *    link → FE phải kiểm tra `status` trước khi redirect.
+ *  - 503 = PayOS không kết nối được → hiện "Thử lại sau ít phút".
+ */
+export async function createPaymentCheckout(
+  planId: string,
+): Promise<ApiResult<PaymentCheckoutDto>> {
+  if (!planId) {
+    return { ok: false, error: "planId is required", status: 400 };
+  }
+  return post<PaymentCheckoutDto>("/api/payments/checkout", { planId });
 }
 
 /**
  * POST /api/payments/{paymentId}/sync
  *
- * Vai trò đúng (giống PayOS / MoMo / Stripe thật): kéo trạng thái mới nhất
- * từ CỔNG THANH TOÁN về. Cổng KHÔNG tự báo "paid" — chỉ khi user thật sự
- * chuyển khoản, webhook của cổng gọi về server mới chuyển sang "paid".
+ * Kéo trạng thái mới nhất từ server. An toàn khi gọi nhiều lần.
  *
- * Vậy nên mock này chỉ:
- *   - Trả status hiện tại của tx.
- *   - Nếu đã quá `expiresAt` → tự hạ về "cancelled" (hết hạn QR).
- *   - KHÔNG tự ý đổi sang "paid" (tránh bug "chưa thanh toán mà success").
- *
- * Muốn test "paid" trên mock: gọi `simulatePayOSWebhook(id)` (dev helper)
- * hoặc click nút "Tôi đã chuyển khoản" trên UI.
+ * ⚠️ 503 nghĩa là PayOS tạm lỗi → giữ màn hình "Đang xử lý" và thử lại,
+ * KHÔNG báo thất bại.
  */
 export async function syncPayment(
   paymentId: string,
 ): Promise<ApiResult<PaymentTransactionDto>> {
-  const tx = MOCK_PAYMENTS.get(paymentId);
-  if (!tx) return delay({ ok: false, error: "Payment not found", status: 404 });
-
-  // Tx đã chốt (paid/cancelled/refunded) → giữ nguyên, không đổi.
-  if (
-    tx.status === "paid" ||
-    tx.status === "cancelled" ||
-    tx.status === "refunded" ||
-    tx.status === "failed"
-  ) {
-    return delay({ ok: true, data: tx });
+  if (!paymentId) {
+    return { ok: false, error: "paymentId is required", status: 400 };
   }
-
-  // Hết hạn QR (expiresAt < now) khi đang waiting → hủy.
-  if (tx.expiresAt && new Date(tx.expiresAt).getTime() <= Date.now()) {
-    tx.status = "cancelled";
-    MOCK_PAYMENTS.set(paymentId, tx);
-    return delay({ ok: true, data: tx });
-  }
-
-  // Còn waiting → giữ nguyên để dashboard hiện "đang chờ thanh toán".
-  return delay({ ok: true, data: tx });
-}
-
-/**
- * FE-DEV ONLY — giả lập PayOS server GỌI WEBHOOK về BE.
- *
- * Luồng PayOS thật:
- *   1. User quét QR + CK xong bên banking app.
- *   2. PayOS server nhận tiền → gọi `POST {BE_URL}/api/payos/webhook`
- *      với body { data: { orderCode, status: "PAID" } }.
- *   3. BE nhận webhook → cập nhật `transactions.status = "paid"`.
- *   4. FE poll `GET /api/payment-transactions/{id}` → thấy "paid".
- *
- * Vì BE mock + FE cùng process, ta gọi thẳng `payosWebhook()` ở FE,
- * rồi `syncPayment()` để kéo status mới nhất về. Đây là thứ mô phỏng
- * đúng vai trò "PayOS server → webhook → BE".
- *
- * Không có trong Swagger. Khi BE ready: bỏ hàm này, BE tự nhận webhook.
- */
-export async function simulatePayOSWebhook(
-  paymentId: string,
-): Promise<ApiResult<PaymentTransactionDto>> {
-  const tx = MOCK_PAYMENTS.get(paymentId);
-  if (!tx) return delay({ ok: false, error: "Payment not found", status: 404 });
-  if (tx.status === "cancelled" || tx.status === "refunded")
-    return delay({
-      ok: false,
-      error: `Cannot mark a ${tx.status} payment as paid`,
-      status: 409,
-    });
-  if (tx.status === "paid") return delay({ ok: true, data: tx });
-
-  // Bước 1: Giả lập PayOS gọi webhook về BE → cập nhật tx.
-  const webhookRes = await payosWebhook({
-    data: { orderCode: tx.orderCode, status: "PAID" },
-  });
-  if (!webhookRes.ok) return delay({ ok: false, error: webhookRes.error });
-
-  // Bước 2: FE poll lại status từ "BE" → status lúc này là "paid".
-  const after = MOCK_PAYMENTS.get(paymentId);
-  return delay({ ok: true, data: after ?? tx });
+  return post<PaymentTransactionDto>(
+    `/api/payments/${encodeURIComponent(paymentId)}/sync`,
+  );
 }
 
 /**
  * POST /api/payments/{paymentId}/cancel
+ *
+ * Chỉ hủy được đơn Pending. Đơn đã Succeeded trả lỗi 400.
+ * Gọi lại với đơn đã kết thúc không gây lỗi (BE tự xử lý idempotent).
  */
 export async function cancelPayment(
   paymentId: string,
 ): Promise<ApiResult<PaymentTransactionDto>> {
-  const tx = MOCK_PAYMENTS.get(paymentId);
-  if (!tx) return delay({ ok: false, error: "Payment not found", status: 404 });
-  if (tx.status === "paid")
-    return delay({ ok: false, error: "Cannot cancel a paid payment", status: 409 });
-  tx.status = "cancelled";
-  MOCK_PAYMENTS.set(paymentId, tx);
-  return delay({ ok: true, data: tx });
-}
-
-/**
- * POST /api/payments/{paymentId}/refunds
- * (Swagger spec trả về PaymentRefund, KHÔNG phải PaymentTransaction.)
- */
-export async function refundPayment(
-  paymentId: string,
-  body: RefundRequest,
-): Promise<ApiResult<PaymentRefundDto>> {
-  const tx = MOCK_PAYMENTS.get(paymentId);
-  if (!tx) return delay({ ok: false, error: "Payment not found", status: 404 });
-  if (tx.status !== "paid")
-    return delay({
-      ok: false,
-      error: "Only paid payments can be refunded",
-      status: 409,
-    });
-  if (!body.reason?.trim())
-    return delay({ ok: false, error: "Reason is required" });
-
-  // Update tx sang "refunded" để listPaymentTransactions() đồng bộ.
-  tx.status = "refunded";
-  MOCK_PAYMENTS.set(paymentId, tx);
-
-  // Lưu refund riêng để tra cứu.
-  const refund: PaymentRefundDto = {
-    id: genId(),
-    paymentTransactionId: paymentId,
-    userId: tx.userId,
-    amount: tx.amount,
-    reason: body.reason,
-    source: "user",
-    status: "completed",
-    adminNote: null,
-    bankReference: null,
-    createdAt: new Date().toISOString(),
-    processedAt: new Date().toISOString(),
-  };
-  MOCK_REFUNDS.set(refund.id, refund);
-  return delay({ ok: true, data: refund });
-}
-
-/**
- * GET /api/payments/{paymentId}/refunds — danh sách refunds của 1 payment
- * (helper FE, không có trong Swagger nhưng tiện cho list lịch sử).
- */
-export async function listRefundsByPayment(
-  paymentId: string,
-): Promise<ApiResult<PaymentRefundDto[]>> {
-  const refunds = Array.from(MOCK_REFUNDS.values()).filter(
-    (r) => r.paymentTransactionId === paymentId,
+  if (!paymentId) {
+    return { ok: false, error: "paymentId is required", status: 400 };
+  }
+  return post<PaymentTransactionDto>(
+    `/api/payments/${encodeURIComponent(paymentId)}/cancel`,
   );
-  return delay({ ok: true, data: refunds });
-}
-
-/**
- * GET /api/payment-transactions (tất cả tx của user — dùng cho list payment history)
- */
-export async function listPaymentTransactions(): Promise<
-  ApiResult<PaymentTransactionDto[]>
-> {
-  return delay({ ok: true, data: Array.from(MOCK_PAYMENTS.values()) });
-}
-
-/**
- * GET /api/payment-transactions/{paymentId}
- */
-export async function getPaymentTransaction(
-  paymentId: string,
-): Promise<ApiResult<PaymentTransactionDto>> {
-  const tx = MOCK_PAYMENTS.get(paymentId);
-  if (!tx) return delay({ ok: false, error: "Payment not found", status: 404 });
-  return delay({ ok: true, data: tx });
 }
 
 /* ============================================================
- * Payment-transactions CRUD còn lại (POST/PUT/DELETE)
- * + PayOS webhook endpoints
+ * Lịch sử + hoá đơn + gói đang chờ
  * ============================================================ */
 
-/**
- * POST /api/payment-transactions
- * Tạo 1 transaction thủ công (admin / internal / import).
- */
-export async function createPaymentTransaction(
-  body: CreatePaymentTransactionRequest,
-): Promise<ApiResult<PaymentTransactionDto>> {
-  if (!body.userId)
-    return delay({ ok: false, error: "userId is required" });
-  if (!body.planId)
-    return delay({ ok: false, error: "planId is required" });
-  if (!body.gateway)
-    return delay({ ok: false, error: "gateway is required" });
-  if (typeof body.amount !== "number" || body.amount <= 0)
-    return delay({ ok: false, error: "amount must be > 0" });
-  if (!Number.isFinite(body.orderCode))
-    return delay({ ok: false, error: "orderCode is required" });
+/** GET /api/payment-transactions — người dùng chỉ thấy giao dịch của mình. */
+export async function listPaymentTransactions(): Promise<
+  ApiResult<PaymentTransactionDto[]>
+> {
+  return get<PaymentTransactionDto[]>("/api/payment-transactions");
+}
 
-  const now = new Date();
-  const tx: PaymentTransactionDto = {
-    id: genId(),
-    userId: body.userId,
-    planId: body.planId,
-    orderCode: body.orderCode,
-    gateway: body.gateway,
-    amount: body.amount,
-    status: body.status,
-    createdAt: now.toISOString(),
-    expiresAt: body.expiresAt ?? null,
-    paidAt: body.paidAt ?? null,
-    webhookReceivedAt: body.webhookReceivedAt ?? null,
-    qrCodeUrl: null,
-    qrData: null,
-    bankInfo: null,
-  };
-  MOCK_PAYMENTS.set(tx.id, tx);
-  return delay({ ok: true, data: tx });
+/** GET /api/invoices — danh sách hoá đơn của chính người dùng. */
+export async function listInvoices(): Promise<ApiResult<InvoiceDto[]>> {
+  return get<InvoiceDto[]>("/api/invoices");
+}
+
+/** GET /api/invoices/{invoiceId} — chi tiết 1 hoá đơn. */
+export async function getInvoice(
+  invoiceId: string,
+): Promise<ApiResult<InvoiceDto>> {
+  return get<InvoiceDto>(`/api/invoices/${encodeURIComponent(invoiceId)}`);
 }
 
 /**
- * PUT /api/payment-transactions/{paymentId}
- * Partial update — chỉ các field truyền vào mới được thay đổi.
- */
-export async function updatePaymentTransaction(
-  paymentId: string,
-  body: UpdatePaymentTransactionRequest,
-): Promise<ApiResult<PaymentTransactionDto>> {
-  const tx = MOCK_PAYMENTS.get(paymentId);
-  if (!tx) return delay({ ok: false, error: "Payment not found", status: 404 });
-
-  const next: PaymentTransactionDto = {
-    ...tx,
-    userId: body.userId ?? tx.userId,
-    planId: body.planId ?? tx.planId,
-    orderCode: body.orderCode ?? tx.orderCode,
-    gateway: body.gateway ?? tx.gateway,
-    amount: body.amount ?? tx.amount,
-    status: body.status ?? tx.status,
-    expiresAt:
-      body.expiresAt === undefined ? tx.expiresAt : body.expiresAt,
-    paidAt: body.paidAt === undefined ? tx.paidAt : body.paidAt,
-    webhookReceivedAt:
-      body.webhookReceivedAt === undefined
-        ? tx.webhookReceivedAt
-        : body.webhookReceivedAt,
-  };
-
-  MOCK_PAYMENTS.set(paymentId, next);
-  return delay({ ok: true, data: next });
-}
-
-/**
- * DELETE /api/payment-transactions/{paymentId}
- * Xóa tx khỏi store. Trả về 200 + message text.
- */
-export async function deletePaymentTransaction(
-  paymentId: string,
-): Promise<ApiResult<{ deleted: boolean; paymentId: string }>> {
-  const exists = MOCK_PAYMENTS.has(paymentId);
-  if (!exists)
-    return delay({
-      ok: false,
-      error: "Payment not found",
-      status: 404,
-    });
-  MOCK_PAYMENTS.delete(paymentId);
-  // cleanup refunds của payment này
-  for (const [rid, r] of MOCK_REFUNDS) {
-    if (r.paymentTransactionId === paymentId) MOCK_REFUNDS.delete(rid);
-  }
-  return delay({ ok: true, data: { deleted: true, paymentId } });
-}
-
-/**
- * POST /api/payos/webhook
- * PayOS gọi để báo trạng thái thanh toán thay đổi.
+ * GET /api/user-subscriptions
  *
- * PayOS docs: status string trong `data.status` là uppercase
- *   "PAID" | "PENDING" | "CANCELLED" | "PROCESSING" | "FAILED".
- *
- * Ở mock: parse body.orderCode → tìm tx → map về PaymentStatus (lowercase)
- * → cập nhật status + paidAt + webhookReceivedAt.
+ * Dùng để hiện gói "đang chờ" (status = "Scheduled") khi user mua gói
+ * mới trong khi gói cũ còn hạn — gói mới sẽ chạy sau khi gói cũ hết hạn.
  */
-export async function payosWebhook(
-  body: unknown,
-): Promise<ApiResult<{ received: true; updated?: string }>> {
-  // Lỏng tay: chấp nhận vài shape khác nhau từ PayOS docs.
-  const orderCode =
-    (body as { data?: { orderCode?: number }; orderCode?: number })?.data
-      ?.orderCode ??
-    (body as { orderCode?: number })?.orderCode;
-  const rawStatus =
-    (body as { data?: { status?: string }; status?: string })?.data?.status ??
-    (body as { status?: string })?.status ??
-    "PAID";
-
-  if (typeof orderCode !== "number") {
-    return delay({
-      ok: false,
-      error: "Missing orderCode in webhook payload",
-    });
-  }
-
-  // Map PayOS status (uppercase) → PaymentStatus (lowercase).
-  const mappedStatus = mapPayOSStatus(rawStatus);
-
-  // Tìm tx có orderCode khớp.
-  let foundId: string | null = null;
-  for (const [id, t] of MOCK_PAYMENTS) {
-    if (t.orderCode === orderCode) {
-      foundId = id;
-      const now = new Date().toISOString();
-      const next: PaymentTransactionDto = {
-        ...t,
-        status: mappedStatus,
-        webhookReceivedAt: now,
-        paidAt:
-          mappedStatus === "paid"
-            ? t.paidAt ?? now
-            : t.paidAt,
-      };
-      MOCK_PAYMENTS.set(id, next);
-      break;
-    }
-  }
-
-  return delay({
-    ok: true,
-    data: { received: true, updated: foundId ?? undefined },
-  });
-}
-
-/** Map PayOS status string → PaymentStatus enum. */
-function mapPayOSStatus(raw: string): PaymentStatus {
-  const s = raw.toUpperCase();
-  switch (s) {
-    case "PAID":
-      return "paid";
-    case "PENDING":
-    case "WAITING":
-      return "waiting";
-    case "PROCESSING":
-      return "processing";
-    case "CANCELLED":
-    case "CANCELED":
-      return "cancelled";
-    case "FAILED":
-      return "failed";
-    case "REFUNDED":
-      return "refunded";
-    default:
-      return "waiting";
-  }
+export async function listUserSubscriptions(): Promise<
+  ApiResult<UserSubscriptionDto[]>
+> {
+  return get<UserSubscriptionDto[]>("/api/user-subscriptions");
 }
 
 /**
- * POST /api/payos/confirm-webhook
- * PayOS gọi 1 lần khi đăng ký webhook URL — mock chỉ OK.
- * (Spec: trả về { success: true } hoặc tương tự; mình trả { confirmed: true }.)
- */
-export async function confirmPayosWebhook(): Promise<ApiResult<{ confirmed: true }>> {
-  return delay({ ok: true, data: { confirmed: true } });
-}
-
-/**
- * Helpers (FE-only) — không có trong Swagger, dùng cho admin UI / dashboard.
+ * Helpers (FE-only) — dùng cho admin UI / dashboard.
  * ----------------------------------------------------------------
  */
-
-/** Xoá tất cả mock payments + refunds (test teardown). */
-export function __resetMockPayments(): void {
-  MOCK_PAYMENTS.clear();
-  MOCK_REFUNDS.clear();
-}
-
-/** Lấy tất cả refunds (admin / debug). */
-export async function listAllRefunds(): Promise<ApiResult<PaymentRefundDto[]>> {
-  return delay({ ok: true, data: Array.from(MOCK_REFUNDS.values()) });
-}
 

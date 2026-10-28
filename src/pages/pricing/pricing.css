@@ -131,6 +131,182 @@
   border: 1px solid var(--pr-hairline);
 }
 
+/* Toggle bị disable (BE không có gói cho chu kỳ đó) */
+.pricing-toggle-btn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+.pricing-toggle-btn:disabled:hover {
+  color: var(--pr-mute);
+}
+
+/* ================= CURRENT PLAN BAR ================= */
+/* Banner nhỏ hiển thị gói user đang dùng (đọc từ GET /api/me) */
+.pricing-current-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 24px;
+  padding: 8px 16px;
+  border-radius: var(--pr-r-pill);
+  background: var(--pr-primary-wash);
+  border: 1px solid var(--pr-primary-glow);
+  font-size: 14px;
+  color: var(--pr-body);
+  animation: pricing-stagger-up 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.pricing-current-bar-icon {
+  font-size: 18px !important;
+  color: var(--pr-primary);
+}
+.pricing-current-bar-text strong {
+  color: var(--pr-primary);
+  font-weight: 600;
+}
+.pricing-current-bar-meta {
+  font-family: var(--pr-mono);
+  font-size: 12px;
+  color: var(--pr-mute);
+  padding-left: 10px;
+  border-left: 1px solid var(--pr-primary-glow);
+}
+
+/* ================= ERROR / EMPTY / SKELETON ================= */
+.pricing-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 24px;
+  padding: 12px 18px;
+  border-radius: var(--pr-r-sm);
+  background: rgba(255, 107, 107, 0.1);
+  border: 1px solid rgba(255, 107, 107, 0.4);
+  color: #ff8f8f;
+  font-size: 14px;
+  line-height: 20px;
+  text-align: left;
+  animation: pricing-stagger-up 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.pricing-error .material-symbols-outlined { font-size: 18px; flex-shrink: 0; }
+
+.pricing-error--block {
+  display: flex;
+  margin: 0 auto;
+  max-width: 32rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.pricing-retry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: var(--pr-r-sm);
+  background: var(--pr-canvas);
+  border: 1px solid var(--pr-hairline);
+  color: var(--pr-ink);
+  font-family: var(--pr-sans);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 180ms ease, color 180ms ease;
+}
+.pricing-retry-btn:hover { border-color: var(--pr-primary); color: var(--pr-primary); }
+.pricing-retry-btn .material-symbols-outlined { font-size: 16px; }
+
+.pricing-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 64px 24px;
+  border-radius: var(--pr-r-md);
+  background: var(--pr-canvas);
+  border: 1px solid var(--pr-hairline);
+  color: var(--pr-mute);
+  text-align: center;
+}
+.pricing-empty .material-symbols-outlined { font-size: 40px; color: var(--pr-hairline); }
+.pricing-empty p { margin: 0; font-size: 15px; }
+
+/* Shimmer skeleton — chờ GET /api/subscription-plans */
+.pricing-skeleton-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+}
+@media (min-width: 1024px) {
+  .pricing-skeleton-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+.pricing-skeleton-card {
+  height: 520px;
+  border-radius: var(--pr-r-md);
+  background: var(--pr-canvas);
+  border: 1px solid var(--pr-hairline);
+  position: relative;
+  overflow: hidden;
+}
+.pricing-skeleton-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(148, 163, 184, 0.07) 50%,
+    transparent 80%
+  );
+  animation: pricing-shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes pricing-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* ================= PLAN LIMIT ROWS ================= */
+/* Hạn mức định lượng (AI calls / storage / projects) đọc từ BE */
+.pricing-plan-limits {
+  list-style: none;
+  padding: 12px 14px;
+  margin: 0 0 24px;
+  border-radius: var(--pr-r-sm);
+  background: var(--pr-canvas);
+  border: 1px solid var(--pr-hairline);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pricing-plan-limit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--pr-body);
+}
+
+.pricing-plan-limit-icon {
+  font-size: 15px !important;
+  color: var(--pr-mute);
+  flex-shrink: 0;
+}
+
+.pricing-plan-limit-label { color: var(--pr-mute); }
+
+.pricing-plan-limit-value {
+  margin-left: auto;
+  font-family: var(--pr-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pr-ink);
+  text-align: right;
+}
+
 .pricing-toggle-btn {
   position: relative;
   display: inline-flex;
@@ -884,10 +1060,13 @@
   .pricing-price--dynamic,
   .pricing-tr,
   .pricing-faq,
-  .pricing-proof-card {
+  .pricing-proof-card,
+  .pricing-current-bar,
+  .pricing-error {
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;
   }
   .pricing-plan-cta:active { transform: none !important; }
+  .pricing-skeleton-card::after { animation: none !important; }
 }

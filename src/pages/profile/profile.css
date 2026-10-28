@@ -836,6 +836,98 @@
 .prof-icon-20 { font-size: 20px !important; }
 
 /* ===========================================================
+ * Subscription extras — gói đang chờ (Scheduled) + hoá đơn
+ * =========================================================== */
+
+.prof-scheduled,
+.prof-invoices {
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 8px;
+  background: var(--canvas-soft);
+  border: 1px solid var(--hairline);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.prof-scheduled__label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+.prof-scheduled__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.prof-scheduled__item .material-symbols-outlined {
+  color: var(--primary);
+}
+
+.prof-scheduled__name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prof-scheduled__date {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--mute);
+  white-space: nowrap;
+}
+
+.prof-scheduled__hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--mute);
+}
+
+.prof-invoice {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--ink);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--hairline);
+}
+.prof-invoice:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.prof-invoice__no {
+  font-size: 12px;
+  color: var(--primary);
+  white-space: nowrap;
+}
+
+.prof-invoice__plan {
+  color: var(--body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prof-invoice__amount {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ===========================================================
  * Buttons
  * =========================================================== */
 /* button-primary — electric green, 6px radius, 12/16 padding */

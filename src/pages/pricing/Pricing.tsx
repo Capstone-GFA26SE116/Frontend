@@ -1,139 +1,284 @@
-import { useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import {
-  getCurrentPlan,
-  setCurrentPlan,
-  type PlanKey,
+  createPaymentCheckout,
+  getMe,
+  listSubscriptionPlans,
+  type MeResponse,
+  type SubscriptionPlanDto,
 } from "../../lib/api-client";
 import { useStaggeredMount } from "../../hooks/useStaggeredMount";
+import { savePendingPayment } from "../payments/payment-storage";
+import {
+  durationLabel,
+  formatLimit,
+  formatVnd,
+  sortPlanViews,
+  toPlanView,
+  type PlanTier,
+  type PlanView,
+} from "./plan-catalog";
 import "./pricing.css";
 
-/* ----- Types ----- */
-type BillingCycle = "monthly" | "annual";
-type PlanId = PlanKey;
+/* ============================================================
+ * Trang Bảng giá & Lựa chọn gói — /pricing
+ * ----------------------------------------------------------
+ * Nguồn dữ liệu:
+ *   GET /api/subscription-plans → danh sách gói (giá, hạn mức, thời hạn…)
+ *   GET /api/me                → gói hiện tại của user
+ *
+ * Luồng mua:
+ *   bấm "Mua" → POST /api/payments/checkout → redirect checkoutUrl (PayOS)
+ *   PayOS quay lại /payment/success → POST /api/payments/{id}/sync
+ *
+ * Quy tắc BE:
+ *   - Chỉ gói isActive = true VÀ price > 0 mới mua được.
+ *   - Gói Miễn phí (price = 0) không có nút mua.
+ *
+ * UI giữ nguyên thiết kế cũ (3 card + bảng so sánh đặc quyền + FAQ +
+ * proof cards); chỉ thay dữ liệu hard-code bằng dữ liệu thật từ BE.
+ * ============================================================ */
 
-interface PlanPricing {
-  monthly: { price: string; period: string; total: string };
-  annual: {
-    price: string; // price per month when billed annually
-    period: string;
-    total: string; // full-year total
-    savings: string;
-  };
+/** Chu kỳ thanh toán — BE quyết định bằng `durationDays` của từng gói. */
+type BillingCycle = "monthly" | "annual";
+
+/** Tôn trạng hiện tại của 1 gói. */
+type PlanState = "current" | "available" | "inactive";
+
+/** Số tháng của 1 gói để lọc theo chu kỳ. */
+function isAnnualPlan(plan: PlanView): boolean {
+  return plan.months >= 12;
 }
 
-const PLAN_PRICING: Record<"pro" | "team", PlanPricing> = {
-  pro: {
-    monthly: {
-      price: "149.000đ",
-      period: "/ tháng",
-      total: "149.000đ",
-    },
-    annual: {
-      price: "119.000đ",
-      period: "/ tháng",
-      total: "1.428.000đ",
-      savings: "Tiết kiệm 360.000đ / năm",
-    },
-  },
-  team: {
-    monthly: {
-      price: "399.000đ",
-      period: "/ tháng",
-      total: "399.000đ",
-    },
-    annual: {
-      price: "319.000đ",
-      period: "/ tháng",
-      total: "3.828.000đ",
-      savings: "Tiết kiệm 960.000đ / năm",
-    },
-  },
-};
-
-/* ----- Trang Bảng giá & Lựa chọn gói -----
- * - Hero: title + subtitle + toggle monthly/annual.
- * - 3 plan cards: Starter (free), Pro (hero tier, nâng cấp -> /checkout),
- *   Team (chọn -> /checkout).
- * - Bảng so sánh tính năng (Feature Comparison Matrix).
- * - 2 FAQ ngắn.
- * - 3 proof cards: "Tiết kiệm 14h / tuần", "Tối ưu tải nhận thức", "Bảo toàn ngữ cảnh".
- *
- * KHÔNG có form thanh toán tại đây (đã tách sang /checkout).
- */
 export function PricingPage() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
+
+  /* ----- Dữ liệu gói từ BE ----- */
+  const [plans, setPlans] = useState<PlanView[]>([]);
+  const [plansLoading, setPlansLoading] = useState(true);
+  const [plansError, setPlansError] = useState<string | null>(null);
+
+  /* ----- Gói hiện tại của user (GET /api/me) ----- */
+  const [me, setMe] = useState<MeResponse | null>(null);
+
+  /* ----- Chu kỳ hiển thị ----- */
   const [billing, setBilling] = useState<BillingCycle>("annual");
 
-  /** Plan user đang dùng thật sự (chỉ meaningful khi đã login). */
-  const currentPlan: PlanId | null = isAuthenticated
-    ? getCurrentPlan()
-    : null;
+  /* ----- Load danh sách gói ----- */
+  const loadPlans = useCallback(async () => {
+    const res = await listSubscriptionPlans();
+    if (res.ok) {
+      const views = sortPlanViews(
+        (res.data ?? []).map((p: SubscriptionPlanDto) => toPlanView(p)),
+      );
+      setPlans(views);
+      setPlansError(null);
+    } else {
+      setPlansError(res.error ?? "Không tải được danh sách gói.");
+    }
+    setPlansLoading(false);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const res = await listSubscriptionPlans();
+      if (cancelled) return;
+      if (res.ok) {
+        setPlans(
+          sortPlanViews(
+            (res.data ?? []).map((p: SubscriptionPlanDto) => toPlanView(p)),
+          ),
+        );
+        setPlansError(null);
+      } else {
+        setPlansError(res.error ?? "Không tải được danh sách gói.");
+      }
+      setPlansLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /* ----- Load gói hiện tại (chỉ khi đã đăng nhập) ----- */
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let cancelled = false;
+    void (async () => {
+      const res = await getMe();
+      if (!cancelled && res.ok) setMe(res.data);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
+
+  /** Id gói user đang dùng (từ currentSubscription.planId). */
+  const currentPlanId = me?.currentSubscription?.planId ?? null;
 
   /**
-   * Auto-select default plan (chỉ khi user chưa login):
-   *  - Chưa login           → Pro (gợi ý nâng cấp)
-   *  - Đã login + chưa plan → Starter (Khởi đầu — gói user đang dùng)
-   *  - Đã login + có plan   → plan hiện tại của user (nhưng sẽ render disabled)
+   * Trạng thái của 1 gói so với gói user đang dùng.
+   * - "current"   : đang dùng → CTA disabled, badge "Đang dùng"
+   * - "inactive"  : isActive = false → không bán, CTA "Tạm dừng bán"
+   * - "available" : còn mua được
    */
-  const initialPlan: PlanId = (() => {
-    if (!isAuthenticated) return "pro";
-    return currentPlan ?? "starter";
-  })();
-
-  /* ----- Selected plan (click anywhere on card).
-     Khi user đã login + có plan → mặc định null, vì plan đó sẽ tự "current"
-     chứ không phải "selected". ---------- */
-  const [selectedPlan, setSelectedPlan] = useState<PlanId | null>(
-    currentPlan ? null : initialPlan,
+  const stateOf = useCallback(
+    (plan: PlanView): PlanState => {
+      if (currentPlanId && plan.id === currentPlanId) return "current";
+      if (!plan.isActive) return "inactive";
+      return "available";
+    },
+    [currentPlanId],
   );
-  /* Ripple position (px within card) for click feedback */
+
+  /**
+   * Lọc gói theo chu kỳ.
+   *
+   * BE mô tả mỗi gói bằng `durationDays`, nên "gói theo tháng" và "gói theo
+   * năm" là 2 record riêng (VD: Pro 30 ngày + Pro 365 ngày). Toggle chỉ
+   * lọc, không nhân giá.
+   *
+   * Nếu BE chỉ có 1 chu kỳ cho mọi tier → lọc ra rỗng → fallback hiện tất cả
+   * để trang không bị trống.
+   */
+  const visiblePlans = useMemo(() => {
+    if (plans.length === 0) return [];
+    const filtered = plans.filter((p) =>
+      billing === "annual" ? isAnnualPlan(p) : !isAnnualPlan(p),
+    );
+    return filtered.length > 0 ? filtered : plans;
+  }, [plans, billing]);
+
+  /** Chu kỳ nào thực sự có gói (để disable toggle). */
+  const hasCycle = useCallback(
+    (cycle: BillingCycle) => {
+      const any = plans.some((p) =>
+        cycle === "annual" ? isAnnualPlan(p) : !isAnnualPlan(p),
+      );
+      return any;
+    },
+    [plans],
+  );
+
+  /* ----- Ripple effect (click feedback trên card) ----- */
   const [ripple, setRipple] = useState<
-    | { variant: PlanId; x: number; y: number; key: number }
-    | null
+    { tier: PlanTier; x: number; y: number; key: number } | null
   >(null);
+  /** Bộ đếm tăng dần để remount animation ripple (tránh Date.now). */
+  const rippleSeq = useRef(0);
 
-  function selectPlan(variant: PlanId, e?: React.MouseEvent) {
-    // Card đang là plan hiện tại → block toggle, không ripple.
-    if (variant === currentPlan) return;
-
-    // ripple effect
+  function selectPlan(plan: PlanView, e?: React.MouseEvent) {
+    if (stateOf(plan) === "current") return;
     if (e && e.currentTarget instanceof HTMLElement) {
       const rect = e.currentTarget.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      setRipple({ variant, x, y, key: Date.now() });
-      // tự clear ripple sau khi animation chạy xong
-      window.setTimeout(
-        () => setRipple((r) => (r?.key === ripple?.key ? null : r)),
-        650,
-      );
+      const key = ++rippleSeq.current;
+      setRipple({
+        tier: plan.tier,
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+        key,
+      });
+      window.setTimeout(() => setRipple((r) => (r?.key === key ? null : r)), 650);
     }
-    setSelectedPlan((prev) => (prev === variant ? null : variant));
   }
 
-  /**
-   * Stagger groups — pattern giống Dashboard:
-   *  - Page: 5 sections fade-up ngay khi mount (subtle, không delay nhiều).
-   *  - Plans: 3 plan cards lệch nhau 110ms (Pro là hero -> giữa 0/1/2).
-   *  - Compare: 8 dòng bảng lệch nhau 50ms -> hiệu ứng "dòng chảy" khi load.
-   *  - FAQ + Proof: 2 + 3 cards fade-up nhẹ.
-   *  - Price block: re-animate khi user toggle billing (trigger = billing).
-   */
+  /* ----- Animation groups ----- */
   const pageAnim = useStaggeredMount(0, 30);
-  const plansAnim = useStaggeredMount(110, 160);
-  const compareAnim = useStaggeredMount(50, 240, "compare"); // trigger cố định, chỉ chạy 1 lần
+  const plansAnim = useStaggeredMount(110, 160, visiblePlans.length);
+  const compareAnim = useStaggeredMount(50, 240, "compare");
   const faqAnim = useStaggeredMount(80, 360);
   const proofAnim = useStaggeredMount(90, 460);
-  // Price block: trigger lại mỗi khi billing đổi -> user thấy giá "chảy" lại.
   const priceAnim = useStaggeredMount(0, 0, billing);
 
-  function goCheckout(plan: PlanId, cycle: BillingCycle) {
-    // Sau này nối backend sẽ truyền plan + cycle sang trang checkout.
-    navigate(`/checkout?plan=${plan}&cycle=${cycle}`);
+  /* ----- Mua gói: POST /api/payments/checkout ----- */
+  const [buyingPlanId, setBuyingPlanId] = useState<string | null>(null);
+  const [buyError, setBuyError] = useState<string | null>(null);
+
+  async function handleBuy(plan: PlanView) {
+    /* Gói Miễn phí: không có nút mua — chỉ mời đăng ký / về dashboard. */
+    if (plan.price === 0) {
+      navigate(isAuthenticated ? "/dashboard" : "/register");
+      return;
+    }
+    if (!isAuthenticated) {
+      navigate("/login", { state: { from: "/pricing" } });
+      return;
+    }
+    if (!plan.purchasable) {
+      setBuyError("Gói này hiện không khả dụng để mua.");
+      return;
+    }
+
+    setBuyingPlanId(plan.id);
+    setBuyError(null);
+    const res = await createPaymentCheckout(plan.id);
+    if (!res.ok) {
+      // 400 = gói không mua được · 503 = PayOS lỗi tạm thời · 401 = hết phiên.
+      setBuyError(
+        res.status === 503
+          ? "Cổng thanh toán đang bận. Vui lòng thử lại sau ít phút."
+          : res.error ?? "Không tạo được link thanh toán.",
+      );
+      setBuyingPlanId(null);
+      return;
+    }
+
+    const data = res.data;
+
+    /* Lưu paymentId để bước sync/cancel sau khi PayOS redirect về. */
+    savePendingPayment({
+      paymentId: data.paymentId,
+      planId: plan.id,
+      orderCode: data.orderCode,
+      amount: plan.price,
+      checkoutUrl: data.checkoutUrl ?? "",
+      qrCode: data.qrCode ?? "",
+      expiresAt: data.expiresAt,
+      createdAt: new Date().toISOString(),
+    });
+
+    /* Đã trả rồi → BE không trả link → sang tra cứu giao dịch để sync. */
+    if (!data.checkoutUrl) {
+      const s = (data.status ?? "").toLowerCase();
+      if (s === "succeeded" || s === "paid") {
+        navigate(`/payment/success?orderCode=${data.orderCode}`);
+      } else if (s === "cancelled" || s === "canceled") {
+        navigate(`/payment/cancel?orderCode=${data.orderCode}`);
+      } else {
+        navigate(`/payment/success?orderCode=${data.orderCode}`);
+      }
+      return;
+    }
+
+    /* Chuyển sang trang thanh toán hosted của PayOS. */
+    window.location.assign(data.checkoutUrl);
   }
+
+  /* ----- Các plan theo tier để dựng bảng so sánh ----- */
+  const byTier = useMemo(() => {
+    const map: Record<PlanTier, PlanView | undefined> = {
+      free: undefined,
+      pro: undefined,
+      team: undefined,
+    };
+    for (const p of plans) {
+      if (!map[p.tier]) map[p.tier] = p;
+    }
+    return map;
+  }, [plans]);
+
+  /* ----- Thông tin gói hiện tại ----- */
+  const currentSub = me?.currentSubscription ?? null;
+  const currentEndAt = currentSub?.endAt ?? null;
 
   return (
     <div className="pricing">
@@ -160,6 +305,27 @@ export function PricingPage() {
             qua VietQR, MoMo, VNPay và thẻ quốc tế.
           </p>
 
+          {/* Gói hiện tại — banner nhỏ (chỉ khi đã login) */}
+          {isAuthenticated && currentSub && (
+            <div className="pricing-current-bar">
+              <span className="material-symbols-outlined pricing-current-bar-icon">
+                workspace_premium
+              </span>
+              <span className="pricing-current-bar-text">
+                Gói hiện tại:{" "}
+                <strong>{currentSub.planName ?? "—"}</strong>
+              </span>
+              {currentEndAt ? (
+                <span className="pricing-current-bar-meta">
+                  Hết hạn{" "}
+                  {new Date(currentEndAt).toLocaleDateString("vi-VN")}
+                </span>
+              ) : (
+                <span className="pricing-current-bar-meta">Không giới hạn</span>
+              )}
+            </div>
+          )}
+
           {/* Billing toggle */}
           <div
             className="pricing-toggle"
@@ -170,6 +336,7 @@ export function PricingPage() {
               type="button"
               role="tab"
               aria-selected={billing === "monthly"}
+              disabled={!hasCycle("monthly")}
               onClick={() => setBilling("monthly")}
               className={
                 "pricing-toggle-btn" +
@@ -182,6 +349,7 @@ export function PricingPage() {
               type="button"
               role="tab"
               aria-selected={billing === "annual"}
+              disabled={!hasCycle("annual")}
               onClick={() => setBilling("annual")}
               className={
                 "pricing-toggle-btn" +
@@ -195,10 +363,17 @@ export function PricingPage() {
               </span>
             </button>
           </div>
+
+          {buyError && (
+            <div className="pricing-error" role="alert">
+              <span className="material-symbols-outlined">error</span>
+              <span>{buyError}</span>
+            </div>
+          )}
         </div>
       </section>
 
-      {/* 3 plan cards */}
+      {/* Plan cards */}
       <section
         className={
           "pricing-section pricing-plans" +
@@ -206,189 +381,57 @@ export function PricingPage() {
         }
       >
         <div className="pricing-container">
-          <div className="pricing-plan-grid">
-            <PlanCard
-              variant="starter"
-              eyebrow={isAuthenticated ? "Gói của bạn" : "Khởi đầu"}
-              icon="person"
-              title="Cá nhân khởi đầu"
-              desc="Phù hợp cho freelancer và cá nhân làm việc độc lập bước đầu thiết lập kỷ luật và quản lý lịch trình cơ bản."
-              price={currentPlan === "starter" ? "Đang dùng" : "0đ"}
-              priceSuffix={
-                currentPlan === "starter" ? "— miễn phí" : "/ trọn đời"
-              }
-              features={[
-                { ok: true, text: "Sắp xếp theo hạn chót & khung giờ rảnh" },
-                { ok: true, text: "Đồng bộ 1 Google Calendar" },
-                { ok: true, text: "Tối đa 50 nhiệm vụ / tháng" },
-                { ok: false, text: "Ma trận Eisenhower AI tự động" },
-                { ok: false, text: "Vector memory lưu trữ ngữ cảnh" },
-              ]}
-              cta={
-                isAuthenticated
-                  ? currentPlan === "starter"
-                    ? {
-                        // User đã login + đang ở Starter → disabled
-                        label: "Đang dùng gói này",
-                        onClick: () => navigate("/dashboard"),
-                        icon: "arrow_forward",
-                      }
-                    : currentPlan === "pro" || currentPlan === "team"
-                      ? {
-                          // User đã login + đang ở Pro/Team → downgrade về Starter
-                          label: "Chuyển về Khởi đầu",
-                          onClick: () => {
-                            setCurrentPlan("starter");
-                            navigate("/dashboard");
-                          },
-                          icon: "arrow_downward",
-                        }
-                      : {
-                          // User đã login + CHƯA có plan → đăng ký Starter (miễn phí)
-                          label: "Bắt đầu miễn phí",
-                          onClick: () => {
-                            setCurrentPlan("starter");
-                            navigate("/dashboard");
-                          },
-                          icon: "arrow_forward",
-                        }
-                  : {
-                      label: "Đăng ký miễn phí",
-                      onClick: () => navigate("/register"),
-                      icon: "arrow_forward",
-                    }
-              }
-              current={currentPlan === "starter"}
-              selected={selectedPlan === "starter"}
-              onSelect={(e) => selectPlan("starter", e)}
-              ripple={ripple && ripple.variant === "starter" ? ripple : null}
-              animation={{
-                mounted: plansAnim.mounted,
-                delayStyle: plansAnim.getDelay(0),
-              }}
-            />
-
-            <PlanCard
-              variant="pro"
-              eyebrow="Hiệu suất tối đa"
-              icon="psychology"
-              title="Chuyên nghiệp & Freelancer Pro"
-              desc="Tối ưu năng suất cho remote worker và freelancer: giữ trạng thái Deep Work, quản lý đa khách hàng và cân bằng nhịp sinh học."
-              billing={billing}
-              pricing={PLAN_PRICING.pro}
-              features={[
-                {
-                  ok: true,
-                  text: "Ma trận Eisenhower AI tự động phân loại mức độ ưu tiên",
-                  emphasize: true,
-                },
-                {
-                  ok: true,
-                  text: "Thuật toán K_bias tự tiến hóa theo nhịp sinh học",
-                },
-                {
-                  ok: true,
-                  text: "Đồng bộ tức thì SignalR qua đa thiết bị & lịch làm việc",
-                },
-                { ok: true, text: "Phân rã dự án & Macro Task không giới hạn" },
-                {
-                  ok: true,
-                  text: "Tích hợp pgvector lưu trữ ngữ cảnh khách hàng trọn đời",
-                },
-              ]}
-              cta={
-                isAuthenticated
-                  ? currentPlan === "pro"
-                    ? {
-                        // Đã login + đang ở Pro → disabled
-                        label: "Đang dùng gói này",
-                        onClick: () => navigate("/dashboard"),
-                        icon: "arrow_forward",
-                      }
-                    : {
-                        // Đã login + chưa ở Pro (starter/null/team) → nâng cấp lên Pro
-                        label: "Nâng cấp lên Pro",
-                        onClick: () => goCheckout("pro", billing),
-                        primary: true,
-                        icon: "arrow_forward",
-                      }
-                  : {
-                      label: "Nâng cấp gói Pro ngay",
-                      onClick: () => goCheckout("pro", billing),
-                      primary: true,
-                      icon: "arrow_forward",
-                    }
-              }
-              current={currentPlan === "pro"}
-              selected={selectedPlan === "pro"}
-              onSelect={(e) => selectPlan("pro", e)}
-              ripple={ripple && ripple.variant === "pro" ? ripple : null}
-              animation={{
-                mounted: plansAnim.mounted,
-                delayStyle: plansAnim.getDelay(1),
-              }}
-              priceAnimation={{
-                mounted: priceAnim.mounted,
-                bumpKey: priceAnim.bumpKey,
-              }}
-            />
-
-            <PlanCard
-              variant="team"
-              eyebrow="Hợp tác từ xa"
-              icon="groups"
-              title="Nhóm Chuyên gia & Studio"
-              desc="Dành cho nhóm làm việc từ xa 4 - 6 thành viên, phối hợp dự án linh hoạt, điều phối deadline chéo và cân bằng tải công việc."
-              billing={billing}
-              pricing={PLAN_PRICING.team}
-              features={[
-                { ok: true, text: "Bao gồm 4 - 6 thành viên team remote" },
-                { ok: true, text: "Phối hợp lịch biểu & cân bằng tải công việc nhóm" },
-                { ok: true, text: "Bảng tổng phổ năng lượng & Burnout cảnh báo sớm" },
-                {
-                  ok: true,
-                  text: "Xuất báo cáo tiến độ dự án & Timesheet 1-click (PDF/Notion/CSV)",
-                },
-                { ok: true, text: "Bộ nhớ ngữ cảnh dự án dùng chung (Shared Team Vector)" },
-              ]}
-              cta={
-                isAuthenticated
-                  ? currentPlan === "team"
-                    ? {
-                        // Đã login + đang ở Team → disabled
-                        label: "Đang dùng gói này",
-                        onClick: () => navigate("/dashboard"),
-                        accent: true,
-                        icon: "arrow_forward",
-                      }
-                    : {
-                        // Đã login + chưa ở Team (starter/null/pro) → nâng cấp lên Team
-                        label: "Chọn gói Studio",
-                        onClick: () => goCheckout("team", billing),
-                        accent: true,
-                        icon: "arrow_forward",
-                      }
-                  : {
-                      label: "Chọn gói Studio",
-                      onClick: () => goCheckout("team", billing),
-                      accent: true,
-                      icon: "arrow_forward",
-                    }
-              }
-              current={currentPlan === "team"}
-              selected={selectedPlan === "team"}
-              onSelect={(e) => selectPlan("team", e)}
-              ripple={ripple && ripple.variant === "team" ? ripple : null}
-              animation={{
-                mounted: plansAnim.mounted,
-                delayStyle: plansAnim.getDelay(2),
-              }}
-              priceAnimation={{
-                mounted: priceAnim.mounted,
-                bumpKey: priceAnim.bumpKey,
-              }}
-            />
-          </div>
+          {plansLoading ? (
+            <div className="pricing-skeleton-grid">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="pricing-skeleton-card" />
+              ))}
+            </div>
+          ) : plansError ? (
+            <div className="pricing-error pricing-error--block" role="alert">
+              <span className="material-symbols-outlined">cloud_off</span>
+              <span>{plansError}</span>
+              <button
+                type="button"
+                className="pricing-retry-btn"
+                onClick={() => void loadPlans()}
+              >
+                <span className="material-symbols-outlined">refresh</span>
+                Thử lại
+              </button>
+            </div>
+          ) : visiblePlans.length === 0 ? (
+            <div className="pricing-empty" role="status">
+              <span className="material-symbols-outlined">inventory_2</span>
+              <p>Hiện chưa có gói nào khả dụng.</p>
+            </div>
+          ) : (
+            <div className="pricing-plan-grid">
+              {visiblePlans.map((plan, index) => {
+                const state = stateOf(plan);
+                return (
+                  <PlanCard
+                    key={plan.id}
+                    plan={plan}
+                    state={state}
+                    billing={billing}
+                    buying={buyingPlanId === plan.id}
+                    onBuy={() => void handleBuy(plan)}
+                    onSelect={(e) => selectPlan(plan, e)}
+                    ripple={ripple && ripple.tier === plan.tier ? ripple : null}
+                    animation={{
+                      mounted: plansAnim.mounted,
+                      delayStyle: plansAnim.getDelay(index),
+                    }}
+                    priceAnimation={{
+                      mounted: priceAnim.mounted,
+                      bumpKey: priceAnim.bumpKey,
+                    }}
+                  />
+                );
+              })}
+            </div>
+          )}
         </div>
       </section>
 
@@ -418,11 +461,15 @@ export function PricingPage() {
               <thead>
                 <tr>
                   <th className="pricing-th-feature">Tính năng &amp; Năng lực AI</th>
-                  <th className="pricing-th-plan">Cá nhân khởi đầu</th>
-                  <th className="pricing-th-plan pricing-th-plan--hero">
-                    Chuyên nghiệp &amp; Freelancer
+                  <th className="pricing-th-plan">
+                    {byTier.free?.name ?? "Cá nhân khởi đầu"}
                   </th>
-                  <th className="pricing-th-plan">Nhóm Chuyên gia &amp; Studio</th>
+                  <th className="pricing-th-plan pricing-th-plan--hero">
+                    {byTier.pro?.name ?? "Chuyên nghiệp & Freelancer"}
+                  </th>
+                  <th className="pricing-th-plan">
+                    {byTier.team?.name ?? "Nhóm Chuyên gia & Studio"}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -433,9 +480,17 @@ export function PricingPage() {
                     delayStyle: compareAnim.getDelay(0),
                   }}
                   feature="Phân rã dự án (Macro → Sub-tasks)"
-                  starter="50 nhiệm vụ / tháng"
-                  pro={{ text: "Không giới hạn", tone: "primary", emphasis: true }}
-                  team={{ text: "Không giới hạn", tone: "secondary", emphasis: true }}
+                  starter={byTier.free?.limits.tasks ?? "50 nhiệm vụ / tháng"}
+                  pro={{
+                    text: byTier.pro?.limits.tasks ?? "Không giới hạn",
+                    tone: "primary",
+                    emphasis: true,
+                  }}
+                  team={{
+                    text: byTier.team?.limits.tasks ?? "Không giới hạn",
+                    tone: "secondary",
+                    emphasis: true,
+                  }}
                 />
                 <CompareRow
                   index={1}
@@ -444,9 +499,9 @@ export function PricingPage() {
                     delayStyle: compareAnim.getDelay(1),
                   }}
                   feature="Ma trận Eisenhower AI tự động"
-                  starter={false}
-                  pro
-                  team
+                  starter={byTier.free?.limits.ai === "Có"}
+                  pro={byTier.pro?.limits.ai === "Có"}
+                  team={byTier.team?.limits.ai === "Có"}
                 />
                 <CompareRow
                   index={2}
@@ -466,9 +521,17 @@ export function PricingPage() {
                     delayStyle: compareAnim.getDelay(3),
                   }}
                   feature="Bộ nhớ ngữ cảnh pgvector"
-                  starter="Lưu 7 ngày"
-                  pro={{ text: "Vĩnh viễn (Personal)", tone: "primary", emphasis: true }}
-                  team={{ text: "Vĩnh viễn (Shared Team)", tone: "secondary", emphasis: true }}
+                  starter={byTier.free?.limits.memory ?? "Lưu 7 ngày"}
+                  pro={{
+                    text: byTier.pro?.limits.memory ?? "Vĩnh viễn (Personal)",
+                    tone: "primary",
+                    emphasis: true,
+                  }}
+                  team={{
+                    text: byTier.team?.limits.memory ?? "Vĩnh viễn (Shared Team)",
+                    tone: "secondary",
+                    emphasis: true,
+                  }}
                 />
                 <CompareRow
                   index={4}
@@ -487,6 +550,62 @@ export function PricingPage() {
                     mounted: compareAnim.mounted,
                     delayStyle: compareAnim.getDelay(5),
                   }}
+                  feature="Hạn mức gọi AI"
+                  starter={formatLimit(byTier.free?.aiCallLimit ?? null, "lượt")}
+                  pro={{
+                    text: formatLimit(byTier.pro?.aiCallLimit ?? null, "lượt"),
+                    tone: "primary",
+                    emphasis: true,
+                  }}
+                  team={{
+                    text: formatLimit(byTier.team?.aiCallLimit ?? null, "lượt"),
+                    tone: "secondary",
+                    emphasis: true,
+                  }}
+                />
+                <CompareRow
+                  index={6}
+                  animation={{
+                    mounted: compareAnim.mounted,
+                    delayStyle: compareAnim.getDelay(6),
+                  }}
+                  feature="Dung lượng lưu trữ"
+                  starter={formatLimit(byTier.free?.storageLimitMb ?? null, "MB")}
+                  pro={{
+                    text: formatLimit(byTier.pro?.storageLimitMb ?? null, "MB"),
+                    tone: "plain",
+                  }}
+                  team={{
+                    text: formatLimit(byTier.team?.storageLimitMb ?? null, "MB"),
+                    tone: "secondary",
+                    emphasis: true,
+                  }}
+                />
+                <CompareRow
+                  index={7}
+                  animation={{
+                    mounted: compareAnim.mounted,
+                    delayStyle: compareAnim.getDelay(7),
+                  }}
+                  feature="Số dự án tối đa"
+                  starter={formatLimit(byTier.free?.projectLimit ?? null, "dự án")}
+                  pro={{
+                    text: formatLimit(byTier.pro?.projectLimit ?? null, "dự án"),
+                    tone: "primary",
+                    emphasis: true,
+                  }}
+                  team={{
+                    text: formatLimit(byTier.team?.projectLimit ?? null, "dự án"),
+                    tone: "secondary",
+                    emphasis: true,
+                  }}
+                />
+                <CompareRow
+                  index={8}
+                  animation={{
+                    mounted: compareAnim.mounted,
+                    delayStyle: compareAnim.getDelay(8),
+                  }}
                   feature="Cân bằng năng lượng & Cảnh báo quá tải"
                   starter={false}
                   pro={{ text: "Cá nhân", tone: "plain" }}
@@ -497,10 +616,10 @@ export function PricingPage() {
                   }}
                 />
                 <CompareRow
-                  index={6}
+                  index={9}
                   animation={{
                     mounted: compareAnim.mounted,
-                    delayStyle: compareAnim.getDelay(6),
+                    delayStyle: compareAnim.getDelay(9),
                   }}
                   feature="Báo cáo tiến độ dự án & Timesheet"
                   starter={false}
@@ -512,15 +631,23 @@ export function PricingPage() {
                   }}
                 />
                 <CompareRow
-                  index={7}
+                  index={10}
                   animation={{
                     mounted: compareAnim.mounted,
-                    delayStyle: compareAnim.getDelay(7),
+                    delayStyle: compareAnim.getDelay(10),
                   }}
                   feature="Hỗ trợ kỹ thuật"
-                  starter="Cộng đồng Discord"
-                  pro={{ text: "Ưu tiên < 2h", tone: "primary", emphasis: true }}
-                  team={{ text: "Kỹ sư AI hỗ trợ 1:1", tone: "secondary", emphasis: true }}
+                  starter={byTier.free?.limits.support ?? "Cộng đồng Discord"}
+                  pro={{
+                    text: byTier.pro?.limits.support ?? "Ưu tiên < 2h",
+                    tone: "primary",
+                    emphasis: true,
+                  }}
+                  team={{
+                    text: byTier.team?.limits.support ?? "Kỹ sư AI hỗ trợ 1:1",
+                    tone: "secondary",
+                    emphasis: true,
+                  }}
                 />
               </tbody>
             </table>
@@ -604,133 +731,85 @@ export function PricingPage() {
  * Sub-components
  * ========================================================= */
 
-interface FeatureItem {
-  ok: boolean;
-  text: string;
-  emphasize?: boolean;
-}
-
-type PlanVariant = "starter" | "pro" | "team";
-
 interface PlanCardProps {
-  variant: PlanVariant;
-  eyebrow: string;
-  icon: string;
-  title: string;
-  desc: string;
-  features: FeatureItem[];
-  cta: {
-    label: string;
-    onClick?: () => void;
-    disabled?: boolean;
-    /** Primary style (tím - cho Pro). */
-    primary?: boolean;
-    /** Accent style (emerald gradient - cho Team). */
-    accent?: boolean;
-    icon?: string;
-  };
-  /* Pricing: nếu là starter thì price cố định; pro/team thì đổi theo billing */
-  price?: string;
-  priceSuffix?: string;
-  billing?: BillingCycle;
-  pricing?: PlanPricing;
-  /** Animation cho cả card (mount stagger). */
+  plan: PlanView;
+  state: PlanState;
+  billing: BillingCycle;
+  buying: boolean;
+  onBuy: () => void;
+  onSelect: (e: React.MouseEvent) => void;
   animation: {
     mounted: boolean;
     delayStyle: { animationDelay: string };
   };
-  /** Animation riêng cho price block (re-run khi toggle billing). */
   priceAnimation?: {
     mounted: boolean;
     bumpKey: number;
   };
-  /** Plan đang được chọn (highlight + "Selected" badge). */
-  selected?: boolean;
-  /**
-   * Card này là plan user ĐANG dùng (chỉ khi đã login và có plan):
-   *  - disabled: bỏ ripple, click không toggle selected, CTA disabled.
-   *  - hiển thị badge "Đang dùng" thay "Đã chọn" / "Khuyên dùng".
-   *  - CSS: opacity nhẹ + grayscale + cursor not-allowed.
-   */
-  current?: boolean;
-  /** Click handler cho toàn bộ card (CTA vẫn hoạt động bình thường). */
-  onSelect?: (e: React.MouseEvent) => void;
-  /** Ripple effect: tọa độ trong card + key để remount animation. */
   ripple?: { x: number; y: number; key: number } | null;
 }
 
 function PlanCard(props: PlanCardProps) {
-  const isPro = props.variant === "pro";
-  const isStarter = props.variant === "starter";
+  const { plan, state } = props;
+  const isPro = plan.tier === "pro";
+  const isFree = plan.tier === "free";
 
-  // Lấy giá hiển thị
-  let displayPrice = props.price ?? "";
-  let displayPeriod = props.priceSuffix ?? "";
-  let originalPrice: string | null = null;
-  let savingsNote: string | null = null;
+  /** Chu kỳ hiển thị. Gói dài hạn hiện "/ tháng" + tổng tiền ở dòng dưới. */
+  const displayPeriod =
+    plan.price === 0 ? "— miễn phí" : `/ ${plan.months === 12 ? "tháng" : "kỳ"}`;
 
-  if (!isStarter && props.pricing && props.billing) {
-    const tier = props.billing === "annual" ? props.pricing.annual : props.pricing.monthly;
-    displayPrice = tier.price;
-    displayPeriod = tier.period;
-    if (props.billing === "annual") {
-      originalPrice = isPro ? "149.000đ" : "399.000đ";
-      savingsNote = isPro
-        ? "Thanh toán năm 1.428.000đ/năm (Tiết kiệm 360.000đ)"
-        : "Thanh toán năm 3.828.000đ/năm (Tiết kiệm 960.000đ)";
-    }
-  }
+  /** Giá quy đổi / tháng (chỉ hiện với gói > 1 tháng). */
+  const perMonth = plan.months > 0 ? plan.price / plan.months : plan.price;
+
+  /** Nhãn CTA theo trạng thái. */
+  const ctaLabel = (() => {
+    if (state === "current") return "Đang dùng gói này";
+    if (state === "inactive") return "Gói tạm dừng bán";
+    if (props.buying) return "Đang tạo link…";
+    if (isFree) return "Bắt đầu miễn phí";
+    return "Mua gói này";
+  })();
+
+  const ctaDisabled = state !== "available" || props.buying;
 
   return (
     <article
       className={
         "pricing-plan" +
         (isPro ? " pricing-plan--pro" : "") +
-        (isStarter ? " pricing-plan--starter" : "") +
+        (isFree ? " pricing-plan--starter" : "") +
         (props.animation.mounted ? " pricing-plan--in" : "") +
-        (props.selected ? " pricing-plan--selected" : "") +
-        (props.current ? " pricing-plan--current" : "")
+        (state === "current" ? " pricing-plan--current" : "")
       }
       style={props.animation.delayStyle}
-      onClick={props.current ? undefined : props.onSelect}
+      onClick={state === "current" ? undefined : props.onSelect}
       role="button"
-      tabIndex={props.cta.disabled || props.current ? -1 : 0}
-      aria-pressed={props.selected ?? false}
-      aria-current={props.current ? "true" : undefined}
+      tabIndex={state === "current" ? -1 : 0}
+      aria-pressed={state === "current" ? true : undefined}
+      aria-current={state === "current" ? "true" : undefined}
       onKeyDown={(e) => {
-        if (props.current || !props.onSelect) return;
+        if (state === "current") return;
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           props.onSelect(e as unknown as React.MouseEvent);
         }
       }}
     >
-      {/* Ripple effect khi click (bỏ qua nếu card là plan hiện tại) */}
-      {props.ripple && !props.current && (
+      {/* Ripple effect */}
+      {props.ripple && state !== "current" && (
         <span
           key={props.ripple.key}
           className="pricing-plan-ripple"
-          style={{
-            left: props.ripple.x,
-            top: props.ripple.y,
-          }}
+          style={{ left: props.ripple.x, top: props.ripple.y }}
           aria-hidden="true"
         />
       )}
 
-      {/* Badge logic:
-          - current: "Đang dùng ✓" (ưu tiên cao nhất)
-          - selected: "Đã chọn"
-          - pro mặc định: "Khuyên dùng" */}
-      {props.current ? (
+      {/* Badge */}
+      {state === "current" ? (
         <span className="pricing-plan-badge pricing-plan-badge--current">
           <span className="material-symbols-outlined">verified</span>
           Đang dùng
-        </span>
-      ) : props.selected ? (
-        <span className="pricing-plan-badge pricing-plan-badge--selected">
-          <span className="material-symbols-outlined">check_circle</span>
-          Đã chọn
         </span>
       ) : isPro ? (
         <span className="pricing-plan-badge">
@@ -747,7 +826,7 @@ function PlanCard(props: PlanCardProps) {
               (isPro ? " pricing-plan-eyebrow--pro" : "")
             }
           >
-            {props.eyebrow}
+            {plan.eyebrow}
           </span>
           <span
             className={
@@ -756,18 +835,17 @@ function PlanCard(props: PlanCardProps) {
             }
             aria-hidden="true"
           >
-            <span className="material-symbols-outlined">{props.icon}</span>
+            <span className="material-symbols-outlined">{plan.icon}</span>
           </span>
         </div>
 
-        <h3 className="pricing-plan-title">{props.title}</h3>
-        <p className="pricing-plan-desc">{props.desc}</p>
+        <h3 className="pricing-plan-title">{plan.name}</h3>
+        <p className="pricing-plan-desc">{plan.desc}</p>
 
-        {/* Giá — có key bumpKey để remount khi toggle billing -> animation
-            chạy lại mỗi lần chuyển monthly <-> annual. */}
-        {isStarter ? (
+        {/* Giá */}
+        {isFree ? (
           <div className="pricing-price pricing-price--static">
-            <span className="pricing-price-amount">{displayPrice}</span>
+            <span className="pricing-price-amount">{formatVnd(0)}</span>
             <span className="pricing-price-period">{displayPeriod}</span>
           </div>
         ) : (
@@ -775,36 +853,59 @@ function PlanCard(props: PlanCardProps) {
             key={props.priceAnimation?.bumpKey ?? 0}
             className={
               "pricing-price pricing-price--dynamic" +
-              (props.priceAnimation?.mounted
-                ? " pricing-price--in"
-                : "")
+              (props.priceAnimation?.mounted ? " pricing-price--in" : "")
             }
           >
             <div className="pricing-price-row">
               <div className="pricing-price-main">
-                <span className="pricing-price-amount">{displayPrice}</span>
+                <span className="pricing-price-amount">
+                  {formatVnd(plan.price)}
+                </span>
                 <span className="pricing-price-period">{displayPeriod}</span>
               </div>
-              {originalPrice && (
+              {plan.months === 12 && (
                 <div className="pricing-price-side">
-                  <span className="pricing-price-original">{originalPrice}</span>
-                  <span className="pricing-price-discount">-20%</span>
+                  <span className="pricing-price-discount">
+                    {durationLabel(plan.durationDays)}
+                  </span>
                 </div>
               )}
             </div>
-            {savingsNote && (
+            {plan.months > 1 && (
               <div className="pricing-price-savings">
                 <span className="material-symbols-outlined">verified</span>
-                <span>{savingsNote}</span>
+                <span>
+                  ≈ {formatVnd(Math.round(perMonth))} / tháng · Thanh toán{" "}
+                  {durationLabel(plan.durationDays)}
+                </span>
               </div>
             )}
           </div>
         )}
 
+        {/* Hạn mức định lượng (từ BE) */}
+        <ul className="pricing-plan-limits">
+          <LimitRow
+            icon="neurology"
+            label="Gọi AI"
+            value={formatLimit(plan.aiCallLimit, "lượt")}
+          />
+          <LimitRow
+            icon="storage"
+            label="Lưu trữ"
+            value={formatLimit(plan.storageLimitMb, "MB")}
+          />
+          <LimitRow
+            icon="space_dashboard"
+            label="Dự án"
+            value={formatLimit(plan.projectLimit, "dự án")}
+          />
+        </ul>
+
         <div className="pricing-plan-divider" />
 
         <ul className="pricing-plan-features">
-          {props.features.map((f, i) => (
+          {plan.features.map((f, i) => (
             <li
               key={i}
               className={
@@ -826,33 +927,48 @@ function PlanCard(props: PlanCardProps) {
         type="button"
         onClick={(e) => {
           e.stopPropagation();
-          props.cta.onClick?.();
+          if (!ctaDisabled) props.onBuy();
         }}
-        disabled={props.cta.disabled || props.current}
-        aria-disabled={props.cta.disabled || props.current || undefined}
+        disabled={ctaDisabled}
+        aria-disabled={ctaDisabled || undefined}
         className={
           "pricing-plan-cta" +
-          (props.cta.primary ? " pricing-plan-cta--primary" : "") +
-          (props.cta.accent && !props.cta.primary
-            ? " pricing-plan-cta--accent"
-            : "") +
-          (props.cta.disabled || props.current
-            ? " pricing-plan-cta--disabled"
-            : "")
+          (isPro ? " pricing-plan-cta--primary" : "") +
+          (plan.tier === "team" ? " pricing-plan-cta--accent" : "") +
+          (ctaDisabled ? " pricing-plan-cta--disabled" : "")
         }
       >
-        <span>
-          {props.current
-            ? props.variant === "starter"
-              ? "Đang dùng gói này"
-              : "Đang dùng gói này"
-            : props.cta.label}
-        </span>
+        <span>{ctaLabel}</span>
         <span className="material-symbols-outlined">
-          {props.current ? "verified" : props.cta.icon}
+          {state === "current"
+            ? "verified"
+            : props.buying
+              ? "progress_activity"
+              : "arrow_forward"}
         </span>
       </button>
     </article>
+  );
+}
+
+/** 1 dòng hạn mức (icon + label + value). */
+function LimitRow({
+  icon,
+  label,
+  value,
+}: {
+  icon: string;
+  label: string;
+  value: string;
+}) {
+  return (
+    <li className="pricing-plan-limit">
+      <span className="material-symbols-outlined pricing-plan-limit-icon">
+        {icon}
+      </span>
+      <span className="pricing-plan-limit-label">{label}</span>
+      <span className="pricing-plan-limit-value">{value}</span>
+    </li>
   );
 }
 
@@ -917,7 +1033,6 @@ function CellContent({ value }: { value: CompareValue }) {
       </span>
     );
   }
-  // string | CompareCell
   if (typeof value === "string") {
     return <span className="pricing-cell-text">{value}</span>;
   }

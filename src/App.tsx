@@ -14,7 +14,10 @@ import { PlanningPage } from "./pages/planning/Planning";
 import { MilestonesPage } from "./pages/milestones/Milestones";
 import { SchedulePage } from "./pages/schedule/Schedule";
 import { CopilotPage } from "./pages/copilot/Copilot";
-import { PaymentsPage } from "./pages/payments/Payments";
+import {
+  PaymentCancelPage,
+  PaymentSuccessPage,
+} from "./pages/payments/PaymentResult";
 import { ProfilePage } from "./pages/profile/Profile";
 import { GoogleCalendarCallbackPage } from "./pages/auth/GoogleCalendarCallback";
 import {
@@ -37,7 +40,8 @@ function guarded(label: string, node: ReactNode) {
  *
  *  /                  -> Landing (công khai)
  *  /pricing           -> Bảng giá & Lựa chọn gói (công khai, SiteLayout)
- *  /checkout          -> Trang thanh toán (public, SiteLayout) — nhận ?plan=pro&cycle=annual
+ *  /payment/success   -> Kết quả thanh toán thành công (PayOS ReturnUrl)
+ *  /payment/cancel    -> Đã hủy thanh toán (PayOS CancelUrl)
  *  /login             -> Trang đăng nhập (nếu đã login -> /dashboard)
  *  /register          -> Trang đăng ký (nếu đã login -> /dashboard)
  *  /onboarding        -> Cần đăng nhập; lần đầu sẽ được ProtectedRoute đẩy vào đây
@@ -70,7 +74,25 @@ function App() {
       {/* SiteLayout: header + footer chuẩn, cho trang marketing public. */}
       <Route element={<SiteLayout />}>
         <Route path="/pricing" element={guarded("Bảng giá", <PricingPage />)} />
-        <Route path="/checkout" element={guarded("Thanh toán", <PaymentsPage />)} />
+      </Route>
+
+      {/* Kết quả thanh toán — PayOS redirect về đây (ReturnUrl / CancelUrl).
+          Cần đăng nhập vì FE phải gọi sync + refetch /api/me. */}
+      <Route
+        element={
+          <ProtectedRoute>
+            <SiteLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route
+          path="/payment/success"
+          element={guarded("Thanh toán thành công", <PaymentSuccessPage />)}
+        />
+        <Route
+          path="/payment/cancel"
+          element={guarded("Đã hủy thanh toán", <PaymentCancelPage />)}
+        />
       </Route>
 
       {/* Dashboard + Onboarding: cần auth, vẫn dùng SiteLayout để có

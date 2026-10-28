@@ -4,8 +4,13 @@ import { useAuth } from "../../auth/AuthContext";
 import { useStaggeredMount } from "../../hooks/useStaggeredMount";
 import {
   getMe,
+  listInvoices,
+  listSubscriptionPlans,
+  listUserSubscriptions,
   updateProfile,
+  type InvoiceDto,
   type MeResponse,
+  type UserSubscriptionDto,
 } from "../../lib/api-client";
 import "./profile.css";
 
@@ -149,14 +154,18 @@ export function ProfilePage() {
     const raw =
       me?.currentSubscription?.planName || me?.currentPlanName || null;
     if (!raw) return null;
-    // BE trả planId kỹ thuật ("starter", "pro", "team") — map sang tên hiển thị.
+    // BE có thể trả tên tiếng Việt ("Gói Pro") hoặc mã kỹ thuật ("pro") —
+    // map mã kỹ thuật sang tên hiển thị, còn lại giữ nguyên tên BE trả về.
     const key = raw.trim().toLowerCase();
     const known: Record<string, string> = {
       starter: "Free plan",
       free: "Free plan",
+      "gói miễn phí": "Free plan",
       pro: "Professional",
       professional: "Professional",
+      "gói pro": "Professional",
       team: "Team",
+      "gói nhóm": "Team",
     };
     return known[key] ?? raw;
   }, [me]);
@@ -168,7 +177,49 @@ export function ProfilePage() {
     const raw =
       me?.currentSubscription?.planName || me?.currentPlanName || "";
     const key = raw.trim().toLowerCase();
-    return key === "" || key === "starter" || key === "free";
+    return (
+      key === "" ||
+      key === "starter" ||
+      key === "free" ||
+      key === "gói miễn phí"
+    );
+  }, [me]);
+
+  /* Gói đang chờ (Scheduled) + hoá đơn + lịch sử giao dịch. */
+  const [scheduled, setScheduled] = useState<UserSubscriptionDto[]>([]);
+  const [invoices, setInvoices] = useState<InvoiceDto[]>([]);
+  /** Tên gói theo planId — để hiện tên thay vì GUID thô. */
+  const [planNames, setPlanNames] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!me) return;
+    let cancelled = false;
+    void (async () => {
+      const [subRes, invRes, plansRes] = await Promise.all([
+        listUserSubscriptions(),
+        listInvoices(),
+        listSubscriptionPlans(),
+      ]);
+      if (cancelled) return;
+      if (subRes.ok) {
+        setScheduled(
+          subRes.data.filter(
+            (s) => (s.status ?? "").toLowerCase() === "scheduled",
+          ),
+        );
+      }
+      if (invRes.ok) setInvoices(invRes.data);
+      if (plansRes.ok) {
+        const map: Record<string, string> = {};
+        for (const p of plansRes.data) {
+          if (p.id && p.name) map[p.id] = p.name;
+        }
+        setPlanNames(map);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [me]);
 
   const gcal = useMemo(() => calendarBadge(me?.googleCalendarStatus), [me]);
@@ -556,6 +607,32 @@ export function ProfilePage() {
                 </dl>
               )}
 
+              {/* Gói đang chờ (Scheduled) — khi mua gói mới trong khi gói cũ còn hạn */}
+              {scheduled.length > 0 && (
+                <div className="prof-scheduled">
+                  <span className="prof-scheduled__label">
+                    Gói đang chờ kích hoạt
+                  </span>
+                  {scheduled.map((s) => (
+                    <div key={s.id} className="prof-scheduled__item">
+                      <span className="material-symbols-outlined prof-icon-16">
+                        event_repeat
+                      </span>
+                      <span className="prof-scheduled__name">
+                        {planNames[s.planId] ?? "Gói sắp tới"}
+                      </span>
+                      <span className="prof-mono prof-scheduled__date">
+                        {s.endAt ? fmtDate(s.endAt) : "—"}
+                      </span>
+                    </div>
+                  ))}
+                  <p className="prof-scheduled__hint">
+                    Gói mới sẽ tự chạy sau khi gói hiện tại hết hạn — không mất
+                    ngày đã trả.
+                  </p>
+                </div>
+              )}
+
               <Link
                 to="/pricing"
                 className={`prof-btn prof-btn--primary${
@@ -567,6 +644,26 @@ export function ProfilePage() {
                 </span>
                 {isFreePlan ? "Upgrade plan" : "Manage plan"}
               </Link>
+
+              {/* Hoá đơn gần nhất */}
+              {invoices.length > 0 && (
+                <div className="prof-invoices">
+                  <span className="prof-scheduled__label">Hoá đơn gần đây</span>
+                  {invoices.slice(0, 3).map((inv) => (
+                    <div key={inv.id} className="prof-invoice">
+                      <span className="prof-mono prof-invoice__no">
+                        {inv.invoiceNumber ?? "—"}
+                      </span>
+                      <span className="prof-invoice__plan">
+                        {inv.planName ?? "—"}
+                      </span>
+                      <span className="prof-mono prof-invoice__amount">
+                        {inv.amount.toLocaleString("vi-VN")}đ
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </article>
 
             {/* ============ Integrations ============ */}

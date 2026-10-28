@@ -51,6 +51,36 @@ export function readPendingPayment(): PendingPayment | null {
   }
 }
 
+/**
+ * Đọc giao dịch pending, nhưng chỉ trả về nếu khớp `orderCode` mà PayOS
+ * gửi kèm trong URL.
+ *
+ * ⚠️ Vì sao cần check này:
+ * - localStorage chỉ giữ **một** giao dịch pending. Nếu user bấm "Mua" gói B
+ *   khi gói A vẫn đang pending (hoặc gói A đã hết hạn nhưng chưa bị xoá),
+ *   bản ghi sẽ bị ghi đè bằng gói B.
+ * - PayOS luôn gửi `orderCode` trong query khi redirect về. Nếu ta dùng
+ *   `paymentId` trong localStorage mà **không** đối chiếu `orderCode`, FE có
+ *   thể sync nhầm giao dịch và báo "Thanh toán thành công" cho sai gói.
+ *
+ * @param orderCodeFromUrl `orderCode` lấy từ query URL (PayOS trả về).
+ *                           Bỏ qua (null) nếu URL không có.
+ */
+export function readPendingPaymentForOrder(
+  orderCodeFromUrl: number | null,
+): PendingPayment | null {
+  const pending = readPendingPayment();
+  if (!pending) return null;
+
+  // URL không có orderCode → không có cách nào đối chiếu → tin bản ghi local.
+  if (orderCodeFromUrl == null || !Number.isFinite(orderCodeFromUrl)) {
+    return pending;
+  }
+
+  // URL có orderCode → bắt buộc phải khớp, nếu lệch thì coi như mất.
+  return pending.orderCode === orderCodeFromUrl ? pending : null;
+}
+
 export function clearPendingPayment(): void {
   if (typeof window === "undefined") return;
   try {

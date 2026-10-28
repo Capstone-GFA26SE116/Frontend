@@ -36,9 +36,17 @@ export function ProtectedRoute({ children }: { children?: ReactNode }) {
 
   // Onboarding gate: nếu chưa hoàn tất -> đẩy sang /onboarding.
   // (tránh đệ quy bằng cách kiểm tra path hiện tại)
+  //
+  // ⚠️ Ngoại lệ: các trang kết quả thanh toán (/payment/*) KHÔNG bị gate.
+  // User có thể mua gói ngay khi đăng nhập Google lần đầu (chưa onboarding),
+  // rồi PayOS redirect về — nếu gate ở đây, họ sẽ bị đẩy sang /onboarding
+  // và không thấy kết quả thanh toán.
+  const isPaymentResult = location.pathname.startsWith("/payment/");
+
   if (
     !location.pathname.startsWith("/onboarding") &&
     !location.pathname.startsWith("/logout") &&
+    !isPaymentResult &&
     readOnboarding() === null
   ) {
     return <Navigate to="/onboarding" replace />;

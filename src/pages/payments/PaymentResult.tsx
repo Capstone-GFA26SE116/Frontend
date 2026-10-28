@@ -11,7 +11,10 @@ import {
   type MeResponse,
   type PaymentTransactionDto,
 } from "../../lib/api-client";
-import { clearPendingPayment, readPendingPayment } from "../payments/payment-storage";
+import {
+  clearPendingPayment,
+  readPendingPaymentForOrder,
+} from "../payments/payment-storage";
 import "./payment-result.css";
 
 /* ============================================================
@@ -42,6 +45,12 @@ type Outcome = "pending" | "success" | "cancelled" | "expired" | "failed";
 const MAX_SYNC_ATTEMPTS = 10;
 /** Khoảng cách giữa 2 lần sync (ms). */
 const SYNC_INTERVAL_MS = 3000;
+/**
+ * Sau khi hết lượt poll, chuyển sang nhắc user đợi thay vì báo thất bại.
+ * BE xác nhận `sync` hỏi thẳng PayOS (không phụ thuộc webhook) và worker
+ * đối soát quét mỗi 60s → tối đa khoảng 3 phút là có gói.
+ */
+const ADVICE_AFTER_ATTEMPTS = 10;
 
 export interface PaymentResultPageProps {
   /** "success" = PayOS trả về, "cancel" = user hủy. */
@@ -80,16 +89,17 @@ export function PaymentResultPage({ variant }: PaymentResultPageProps) {
 
   /* ---------- Tìm paymentId: localStorage → orderCode ---------- */
   const resolvePaymentId = useCallback(async (): Promise<string | null> => {
-    // 1. localStorage (đường happy path).
-    const pending = readPendingPayment();
+    // 1. localStorage (đường happy path) — chỉ dùng khi orderCode khớp.
+    const code = Number(orderCodeParam);
+    const hasCode = Number.isFinite(code) && code > 0;
+    const pending = readPendingPaymentForOrder(hasCode ? code : null);
     if (pending?.paymentId) {
       paymentIdRef.current = pending.paymentId;
       return pending.paymentId;
     }
 
-    // 2. Tìm theo orderCode trong lịch sử giao dịch.
-    const code = Number(orderCodeParam);
-    if (!Number.isFinite(code) || code <= 0) return null;
+    // 2. Tìm theo orderCode trong lịch sử giao dịch (fallback khi mất local).
+    if (!hasCode) return null;
 
     const res = await listPaymentTransactions();
     if (!res.ok) return null;
@@ -203,9 +213,23 @@ export function PaymentResultPage({ variant }: PaymentResultPageProps) {
     if (status !== "success") return;
     let cancelled = false;
     void (async () => {
-      const meRes = await getMe();
-      if (!cancelled && meRes.ok) setMe(meRes.data);
+      /* ---- 1. /api/me — có thể cần retry nhẹ ----
+       * BE cấp gói trong lúc xử lý `sync`, nhưng `/api/me` đọc từ bản ghi
+       * subscription nên đôi khi chưa kịp phản ánh. Thử lại vài lần trước
+       * khi chấp nhận kết quả để tránh hiện "gói cũ" một cách nhầm lẫn. */
+      let meData: MeResponse | null = null;
+      for (let i = 0; i < 3; i++) {
+        const meRes = await getMe();
+        if (meRes.ok) {
+          meData = meRes.data;
+          // Đã thấy gói khác gói trước → dừng, đã đúng.
+          if (meData.currentSubscription) break;
+        }
+        if (i < 2) await new Promise((r) => setTimeout(r, 1200));
+      }
+      if (!cancelled && meData) setMe(meData);
 
+      /* ---- 2. Hoá đơn ---- */
       const invRes = await listInvoices();
       if (!cancelled && invRes.ok && invRes.data.length > 0) {
         // Hoá đơn mới nhất.
@@ -216,7 +240,8 @@ export function PaymentResultPage({ variant }: PaymentResultPageProps) {
         setInvoice(sorted[0]);
       }
 
-      // Gói đang chờ (Scheduled) — khi user mua gói mới trong khi gói cũ còn hạn.
+      /* ---- 3. Gói đang chờ (Scheduled) ----
+       * Khi user mua gói mới trong khi gói cũ còn hạn, gói mới được xếp hàng. */
       const subRes = await listUserSubscriptions();
       if (!cancelled && subRes.ok) {
         setHasScheduled(
@@ -282,14 +307,20 @@ export function PaymentResultPage({ variant }: PaymentResultPageProps) {
           title: "Thanh toán thất bại",
           detail: error ?? "Có lỗi xảy ra khi xác nhận thanh toán.",
         };
-      default:
+      default: {
+        /* Hết lượt poll → nhắc user đợi thêm (không báo thất bại). */
+        const exhausted = attempt >= ADVICE_AFTER_ATTEMPTS;
         return {
           tone: "pending" as const,
           icon: "progress_activity",
-          title: "Đang xử lý thanh toán",
-          detail:
-            "Chúng tôi đang xác nhận với hệ thống thanh toán. Vui lòng không đóng trang này.",
+          title: exhausted
+            ? "Thanh toán đang được xác nhận"
+            : "Đang xử lý thanh toán",
+          detail: exhausted
+            ? "Hệ thống thanh toán đang xác nhận giao dịch của bạn. Gói sẽ được cấp tự động trong khoảng 1–3 phút nữa — bạn có thể để nguyên trang này mở, hoặc kiểm tra lại sau."
+            : "Chúng tôi đang xác nhận với hệ thống thanh toán. Vui lòng không đóng trang này.",
         };
+      }
     }
   })();
 
@@ -396,6 +427,18 @@ export function PaymentResultPage({ variant }: PaymentResultPageProps) {
                   width: `${Math.min(100, (attempt / MAX_SYNC_ATTEMPTS) * 100)}%`,
                 }}
               />
+            </div>
+          )}
+
+          {/* Hết lượt poll — nhắc user có thể kiểm tra lại sau */}
+          {status === "pending" && attempt >= ADVICE_AFTER_ATTEMPTS && (
+            <div className="prs-note">
+              <span className="material-symbols-outlined">schedule</span>
+              <span>
+                Đã kiểm tra {attempt} lần. Hệ thống đối soát của chúng tôi quét
+                mỗi 60 giây — gói sẽ tự được cấp, kể cả khi bạn đã đóng trang
+                này.
+              </span>
             </div>
           )}
 

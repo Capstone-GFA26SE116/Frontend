@@ -246,9 +246,11 @@ export function PricingPage() {
       createdAt: new Date().toISOString(),
     });
 
-    /* Đã trả rồi → BE không trả link → sang tra cứu giao dịch để sync. */
+    /* Đã trả rồi → BE không trả link (status = Succeeded, reused = true).
+     * Đi thẳng sang trang kết quả để sync và hiện gói mới. */
     if (!data.checkoutUrl) {
       const s = (data.status ?? "").toLowerCase();
+      setBuyingPlanId(null);
       if (s === "succeeded" || s === "paid") {
         navigate(`/payment/success?orderCode=${data.orderCode}`);
       } else if (s === "cancelled" || s === "canceled") {

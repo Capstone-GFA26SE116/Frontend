@@ -1564,10 +1564,11 @@
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  padding: 10px 14px;
+  padding: 10px 8px;
+  min-width: 0;
   border-radius: 6px;
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 20px;
   border: 1px solid transparent;
@@ -1576,6 +1577,12 @@
   transition: background-color 160ms ease, color 160ms ease,
     border-color 160ms ease;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.proj-action > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .proj-action:disabled {
   cursor: not-allowed;

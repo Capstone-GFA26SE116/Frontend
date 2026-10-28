@@ -2102,7 +2102,7 @@ function ProjectCard(p: ProjectCardProps) {
             </button>
             <button
               type="button"
-              className="proj-action proj-action--plain"
+              className="proj-action proj-action--plain proj-action--flex"
             >
               <span className="material-symbols-outlined proj-action-icon">
                 {prj.secondaryAction.icon}
@@ -2125,7 +2125,7 @@ function ProjectCard(p: ProjectCardProps) {
             </Link>
             <Link
               to={`/projects/${prj.id}/execution`}
-              className="proj-action proj-action--ai"
+              className="proj-action proj-action--ai proj-action--flex"
               title="AI auto-decompose + schedule (coming soon)"
               onClick={(e) => {
                 e.preventDefault();

@@ -78,7 +78,10 @@ export function readPendingPaymentForOrder(
   }
 
   // URL có orderCode → bắt buộc phải khớp, nếu lệch thì coi như mất.
-  return pending.orderCode === orderCodeFromUrl ? pending : null;
+  // Normalize cả 2 về number để không bị lệch do JSON/string.
+  const localCode = Number(pending.orderCode);
+  if (!Number.isFinite(localCode)) return null;
+  return localCode === orderCodeFromUrl ? pending : null;
 }
 
 export function clearPendingPayment(): void {

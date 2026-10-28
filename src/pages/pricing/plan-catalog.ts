@@ -169,18 +169,21 @@ const TIER_FALLBACK_NAME: Record<PlanTier, string> = {
 /**
  * Suy ra tier từ tên gói của BE.
  *
- * BE đặt tên tiếng Việt ("Gói Miễn Phí", "Gói Pro", "Gói Nhóm") hoặc
- * tiếng Anh ("Free", "Professional", "Team") — ta nhận diện theo từ khoá.
+ * BE hiện tại trả ("Miễn phí", "test", "Tiêu chuẩn"). Ngoài ra vẫn hỗ trợ
+ * tên cũ ("Gói Miễn Phí", "Gói Pro", "Gói Nhóm") và tiếng Anh
+ * ("Free", "Professional", "Team") — nhận diện theo từ khoá.
  */
 export function inferTier(name: string | null, price: number): PlanTier {
   const n = (name ?? "").trim().toLowerCase();
   if (/team|studio|nhóm|chuyên gia|organization|doanh nghiệp/.test(n)) {
     return "team";
   }
-  if (/pro|professional|chuyên nghiệp|freelancer/.test(n)) return "pro";
+  if (/pro|professional|chuyên nghiệp|freelancer|tiêu chuẩn|standard/.test(n)) {
+    return "pro";
+  }
   if (price === 0) return "free";
   if (/free|miễn phí|khởi đầu|starter|basic|cá nhân/.test(n)) return "free";
-  // Gói trả phí không nhận diện được -> coi như pro (gói trung gian).
+  // Gói trả phí không nhận diện được (VD: "test") -> coi như pro.
   return "pro";
 }
 

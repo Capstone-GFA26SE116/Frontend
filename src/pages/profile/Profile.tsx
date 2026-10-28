@@ -154,20 +154,21 @@ export function ProfilePage() {
     const raw =
       me?.currentSubscription?.planName || me?.currentPlanName || null;
     if (!raw) return null;
-    // BE có thể trả tên tiếng Việt ("Gói Pro") hoặc mã kỹ thuật ("pro") —
-    // map mã kỹ thuật sang tên hiển thị, còn lại giữ nguyên tên BE trả về.
+    // Ưu tiên tên BE trả về ("Miễn phí", "Tiêu chuẩn", "test").
+    // Chỉ map mã kỹ thuật cũ ("starter", "pro", "team") sang tên hiển thị.
     const key = raw.trim().toLowerCase();
     const known: Record<string, string> = {
-      starter: "Free plan",
-      free: "Free plan",
-      "gói miễn phí": "Free plan",
-      pro: "Professional",
-      professional: "Professional",
-      "gói pro": "Professional",
-      team: "Team",
-      "gói nhóm": "Team",
+      starter: "Miễn phí",
+      free: "Miễn phí",
+      "gói miễn phí": "Miễn phí",
+      "miễn phí": "Miễn phí",
+      pro: "Tiêu chuẩn",
+      professional: "Tiêu chuẩn",
+      "gói pro": "Tiêu chuẩn",
+      team: "Nhóm Chuyên gia",
+      "gói nhóm": "Nhóm Chuyên gia",
     };
-    return known[key] ?? raw;
+    return known[key] ?? raw.trim();
   }, [me]);
 
   const planEndAt = me?.currentSubscription?.endAt ?? null;
@@ -181,6 +182,7 @@ export function ProfilePage() {
       key === "" ||
       key === "starter" ||
       key === "free" ||
+      key === "miễn phí" ||
       key === "gói miễn phí"
     );
   }, [me]);
@@ -190,6 +192,19 @@ export function ProfilePage() {
   const [invoices, setInvoices] = useState<InvoiceDto[]>([]);
   /** Tên gói theo planId — để hiện tên thay vì GUID thô. */
   const [planNames, setPlanNames] = useState<Record<string, string>>({});
+
+  /**
+   * Tên gói để hiển thị, ưu tiên theo thứ tự:
+   *   1. `planNames[planId]` — từ GET /api/subscription-plans (tên chuẩn của BE)
+   *   2. `currentSubscription.planName` — BE gửi kèm trong /api/me
+   *   3. `currentPlanName` — BE deploy cũ
+   * Dùng để thay cho GUID thô ở mọi chỗ hiện `planId`.
+   */
+  const currentPlanTitle = useMemo(() => {
+    const sub = me?.currentSubscription;
+    if (!sub) return planName ?? "Free plan";
+    return planNames[sub.planId] || sub.planName || planName || "Free plan";
+  }, [me, planName, planNames]);
 
   useEffect(() => {
     if (!me) return;
@@ -488,7 +503,7 @@ export function ProfilePage() {
 
             {/* ============ Work rhythm ============ */}
             <article
-              className={`prof-card prof-anim${mounted ? " is-in" : ""}`}
+              className={`prof-card prof-card--work prof-anim${mounted ? " is-in" : ""}`}
               style={cardDelay(1)}
             >
               <div className="prof-card__head">
@@ -564,7 +579,7 @@ export function ProfilePage() {
 
             {/* ============ Subscription ============ */}
             <article
-              className={`prof-card prof-anim${mounted ? " is-in" : ""}`}
+              className={`prof-card prof-card--billing prof-anim${mounted ? " is-in" : ""}`}
               style={cardDelay(2)}
             >
               <div className="prof-card__head">
@@ -582,12 +597,12 @@ export function ProfilePage() {
                 </div>
                 <div className="prof-plan__body">
                   <h3 className="prof-card__title">
-                    {planName ?? "Free plan"}
+                    {currentPlanTitle}
                   </h3>
                   <p className="prof-card__hint">
                     {isFreePlan
                       ? "Upgrade to unlock deeper planning and unlimited AI blocks."
-                      : `Your workspace runs on the ${planName} plan.`}
+                      : `Your workspace runs on the ${currentPlanTitle} plan.`}
                   </p>
                 </div>
               </div>
@@ -595,9 +610,12 @@ export function ProfilePage() {
               {me?.currentSubscription && (
                 <dl className="prof-fields prof-fields--2">
                   <div className="prof-field">
-                    <dt>Plan ID</dt>
-                    <dd className="prof-mono">
-                      {me.currentSubscription.planId}
+                    <dt>Plan</dt>
+                    <dd className="prof-plan-chip">
+                      <span className="material-symbols-outlined prof-icon-16">
+                        {isFreePlan ? "bolt" : "workspace_premium"}
+                      </span>
+                      <span>{currentPlanTitle}</span>
                     </dd>
                   </div>
                   <div className="prof-field">
@@ -620,8 +638,7 @@ export function ProfilePage() {
                       </span>
                       <span className="prof-scheduled__name">
                         {planNames[s.planId] ?? "Gói sắp tới"}
-                      </span>
-                      <span className="prof-mono prof-scheduled__date">
+                      </span>                      <span className="prof-mono prof-scheduled__date">
                         {s.endAt ? fmtDate(s.endAt) : "—"}
                       </span>
                     </div>
@@ -668,7 +685,7 @@ export function ProfilePage() {
 
             {/* ============ Integrations ============ */}
             <article
-              className={`prof-card prof-anim${mounted ? " is-in" : ""}`}
+              className={`prof-card prof-card--gcal prof-anim${mounted ? " is-in" : ""}`}
               style={cardDelay(3)}
             >
               <div className="prof-card__head">

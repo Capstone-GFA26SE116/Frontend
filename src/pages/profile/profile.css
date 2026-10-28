@@ -208,9 +208,26 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1.5rem;
   align-items: start;
+  /* Cột trái: Work rhythm + Integrations dính sát nhau.
+     Cột phải: Subscription (card dài) ôm trọn 2 hàng. */
+  grid-template-areas:
+    "identity identity"
+    "work billing"
+    "gcal billing";
 }
+.prof-card--identity { grid-area: identity; }
+.prof-card--work { grid-area: work; }
+.prof-card--billing { grid-area: billing; }
+.prof-card--gcal { grid-area: gcal; }
 @media (max-width: 1023px) {
-  .prof-grid { grid-template-columns: 1fr; }
+  .prof-grid {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "identity"
+      "work"
+      "billing"
+      "gcal";
+  }
 }
 
 /* ===========================================================
@@ -763,6 +780,41 @@
   flex-direction: column;
   gap: 4px;
   min-width: 0;
+}
+
+/* Chip tên gói — thay cho GUID thô, có icon + nền accent nhẹ */
+.prof-plan-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  max-width: 100%;
+  min-width: 0;
+  padding: 6px 12px 6px 10px;
+  border-radius: 9999px;
+  background: rgba(0, 217, 146, 0.08);
+  border: 1px solid rgba(0, 217, 146, 0.22);
+  color: var(--primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  letter-spacing: 0;
+}
+.prof-plan-chip > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prof-plan-chip .prof-icon-16 {
+  flex-shrink: 0;
+  color: var(--primary);
+}
+.prof-plan-chip:hover {
+  background: rgba(0, 217, 146, 0.14);
+  border-color: rgba(0, 217, 146, 0.4);
+  box-shadow: 0 0 16px rgba(0, 217, 146, 0.18);
 }
 
 /* ===========================================================

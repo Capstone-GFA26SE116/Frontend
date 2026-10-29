@@ -19,12 +19,14 @@ import {
   PaymentSuccessPage,
 } from "./pages/payments/PaymentResult";
 import { ProfilePage } from "./pages/profile/Profile";
+import { NotificationsPage } from "./pages/notifications/Notifications";
 import { GoogleCalendarCallbackPage } from "./pages/auth/GoogleCalendarCallback";
 import {
   ProtectedRoute,
   RedirectIfAuthenticated,
 } from "./router/ProtectedRoute";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { NotificationsProvider } from "./components/focus/notifications-context";
 import type { ReactNode } from "react";
 
 /**
@@ -52,13 +54,27 @@ function guarded(label: string, node: ReactNode) {
  *  /schedule          -> Cần đăng nhập + đã hoàn tất onboarding (Lịch Tuần & Tháng)
  *  /copilot           -> Cần đăng nhập + đã hoàn tất onboarding (AI Schedule Coordinator)
  *  /profile           -> Cần đăng nhập + đã hoàn tất onboarding (Hồ sơ người dùng)
+ *  /notifications     -> Cần đăng nhập + đã hoàn tất onboarding (Hộp thư thông báo)
  *
  * Mọi route khác đều fallback về Landing.
  */
 function App() {
   return (
-    <Routes>
-      <Route path="/" element={guarded("Trang chủ", <LandingPage />)} />
+    /*
+     * `NotificationsProvider` bọc TOÀN BỘ app (không chỉ route đã đăng nhập)
+     * vì:
+     *  1. `SiteLayout` dùng chung cho trang public (`/pricing`) và trang đã
+     *     đăng nhập → nếu provider chỉ bọc route protected, trang public sẽ
+     *     crash khi `useNotificationsContext()` không tìm thấy provider.
+     *  2. Chỉ có 1 SignalR connection cho toàn app → không nhận trùng thông
+     *     báo, badge luôn khớp server.
+     *
+     * Provider tự biết user đã đăng nhập chưa (qua `useAuth`) nên ở trang
+     * public nó không gọi API nào.
+     */
+    <NotificationsProvider>
+      <Routes>
+        <Route path="/" element={guarded("Trang chủ", <LandingPage />)} />
 
       <Route
         element={
@@ -127,6 +143,10 @@ function App() {
         <Route path="/schedule" element={guarded("Lịch tuần & tháng", <SchedulePage />)} />
         <Route path="/copilot" element={guarded("AI Copilot", <CopilotPage />)} />
         <Route path="/profile" element={guarded("Hồ sơ", <ProfilePage />)} />
+        <Route
+          path="/notifications"
+          element={guarded("Thông báo", <NotificationsPage />)}
+        />
         {/* Google Calendar OAuth callback — BE redirect về đây kèm ?calendar=... */}
         <Route
           path="/auth/google/callback"
@@ -135,7 +155,8 @@ function App() {
       </Route>
 
       <Route path="*" element={guarded("Trang chủ", <LandingPage />)} />
-    </Routes>
+      </Routes>
+    </NotificationsProvider>
   );
 }
 

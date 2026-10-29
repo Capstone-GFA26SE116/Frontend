@@ -74,7 +74,19 @@ export function isRefreshExpired(expiresAt: string): boolean {
 /* ---------- typed response wrapper ---------- */
 
 export type ApiOk<T> = { ok: true; data: T };
-export type ApiErr = { ok: false; error: string; status?: number };
+export type ApiErr = {
+  ok: false;
+  error: string;
+  status?: number;
+  /**
+   * Payload phụ của lỗi (BE hay gửi kèm `details`).
+   *
+   * Quan trọng với Focus Session: 409 của `POST /api/focus/start` trả
+   * `details` chính là phiên đang chạy — FE cần đọc nó để chuyển sang
+   * màn hình phiên đó thay vì báo lỗi đỏ.
+   */
+  details?: unknown;
+};
 export type ApiResult<T> = ApiOk<T> | ApiErr;
 
 /* ---------- error message extraction ---------- */
@@ -151,6 +163,34 @@ function friendlyStatusMessage(status: number): string {
 
 /* ---------- core fetch ---------- */
 
+/**
+ * Đọc body JSON một cách "an toàn".
+ *
+ * Một số API của BE trả **204 No Content** (không có thân), ví dụ:
+ *   - `GET /api/focus/current` khi không có phiên nào đang chạy
+ *   - `POST /api/notifications/{id}/read`
+ *
+ * `res.json()` sẽ ném lỗi `Unexpected end of JSON input` với các response
+ * đó → `apiFetch` rơi vào catch → trả về lỗi mạng giả, khiến UI hiển thị
+ * "Không kết nối được máy chủ" thay vì "không có phiên đang chạy".
+ * Hàm này trả `null` cho body rỗng / 204, và ném lỗi cho JSON hỏng.
+ */
+async function readJson(res: Response): Promise<unknown> {
+  // 204 / 205 không có body theo chuẩn HTTP.
+  if (res.status === 204 || res.status === 205) return null;
+
+  const text = await res.text();
+  if (!text) return null; // body rỗng → coi như "không có dữ liệu"
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Body không phải JSON (vd: HTML error page từ proxy) → trả text thô,
+    // để `extractMessage` không lỗi.
+    return text;
+  }
+}
+
 async function apiFetch<T>(
   path: string,
   options: RequestInit = {},
@@ -182,20 +222,23 @@ async function apiFetch<T>(
           if (!retry.ok) {
             const body = await retry.text().catch(() => "");
             let msg = friendlyStatusMessage(retry.status);
+            let details: unknown;
             if (body) {
               try {
-                msg = extractMessage(JSON.parse(body)) ?? msg;
+                const parsed = JSON.parse(body);
+                msg = extractMessage(parsed) ?? msg;
+                if (parsed && typeof parsed === "object" && "details" in parsed) {
+                  details = (parsed as { details?: unknown }).details;
+                }
               } catch {
                 msg = body.slice(0, 200) || msg;
               }
             }
-            return {
-              ok: false,
-              error: msg,
-              status: retry.status,
-            };
+            return details !== undefined
+              ? { ok: false, error: msg, status: retry.status, details }
+              : { ok: false, error: msg, status: retry.status };
           }
-          const data = await retry.json();
+          const data = await readJson(res);
           return { ok: true, data: data as T };
         }
       }
@@ -207,16 +250,32 @@ async function apiFetch<T>(
 
     if (!res.ok) {
       let msg = friendlyStatusMessage(res.status);
+      let details: unknown;
       try {
         const body = await res.json();
         msg = extractMessage(body) ?? msg;
+        // Giữ lại `details` để caller xử lý lỗi có ngữ cảnh
+        // (vd: 409 của focus/start trả về phiên đang chạy).
+        if (body && typeof body === "object") {
+          const rec = body as Record<string, unknown>;
+          if ("details" in rec) {
+            details = rec.details;
+          } else if ("detail" in rec && rec.detail && typeof rec.detail === "object") {
+            // ASP.NET `ProblemDetails` dùng `detail` (số ít) — có thể chứa
+            // object `details` bên trong.
+            const inner = rec.detail as Record<string, unknown>;
+            if ("details" in inner) details = inner.details;
+          }
+        }
       } catch {
         // Body không phải JSON (vd: HTML error page từ proxy) → giữ msg mặc định.
       }
-      return { ok: false, error: msg, status: res.status };
+      return details !== undefined
+        ? { ok: false, error: msg, status: res.status, details }
+        : { ok: false, error: msg, status: res.status };
     }
 
-    const data = await res.json();
+    const data = await readJson(res);
     return { ok: true, data: data as T };
   } catch (err) {
     // Network error hoặc JSON parse lỗi. `err.message` luôn là string nên an toàn,
@@ -2088,4 +2147,399 @@ export async function listUserSubscriptions(): Promise<
  * Helpers (FE-only) — dùng cho admin UI / dashboard.
  * ----------------------------------------------------------------
  */
+
+/* ============================================================
+ * FOCUS SESSION — bấm giờ làm việc (Start / Stop)
+ * ----------------------------------------------------------
+ * Theo spec BE (FOCUS_SESSION_FE.md) + swagger live:
+ *
+ *   POST /api/focus/start                  → bắt đầu phiên (201)
+ *   GET  /api/focus/current                → phiên đang chạy (200) | 204
+ *   POST /api/focus/{sessionId}/stop       → dừng phiên
+ *   GET  /api/focus/pending-confirmation   → phiên bị hệ thống tự ngắt
+ *   POST /api/focus/{sessionId}/confirm    → xác nhận / sửa / loại bỏ
+ *   POST /api/focus/self-report            → khai báo giờ làm việc
+ *   GET  /api/focus/{slotId}/time-summary  → tổng kết 1 slot
+ *
+ * (Đường cũ `/api/FocusSession/...` vẫn chạy, nhưng ta dùng đường mới.)
+ *
+ * ⚠️ Nguyên tắc quan trọng:
+ *  - Đồng hồ lấy từ SERVER (`elapsedSeconds`), KHÔNG tính bằng
+ *    `Date.now() - startedAt` vì user có thể đổi giờ máy.
+ *  - FE không tự gửi giờ ở bất kỳ API nào, trừ `self-report`.
+ *  - 409 khi start = đã có phiên đang chạy → KHÔNG báo lỗi đỏ, mà
+ *    chuyển sang hiển thị phiên đó (trường hợp mở 2 tab).
+ * ============================================================ */
+
+/** Cách ghi nhận thời gian của 1 phiên. */
+export type CaptureMethod = "Timer" | "SelfReported" | "AutoTimeout";
+
+/** Lý do dừng phiên. */
+export type FocusStopReason =
+  | "Completed"
+  | "Interrupted"
+  | "Blocked"
+  | "Other";
+
+/**
+ * Trạng thái của 1 schedule slot (mở rộng so với bản cũ của FE).
+ *
+ * BE hiện trả `status` kiểu string tự do nên ta dùng union lỏng
+ * (`| (string & {})`) để vẫn autocomplete mà không ép chặt.
+ */
+export type FocusSlotStatus =
+  | "Proposed"
+  | "Approved"
+  | "Due"
+  | "InProgress"
+  | "Overrun"
+  | "Done"
+  | "Missed"
+  | "Skipped"
+  | "Cancelled"
+  | "Postponed"
+  | (string & {});
+
+/** Body của `POST /api/focus/start`. */
+export interface FocusStartRequest {
+  /** Bắt buộc. */
+  taskId: string;
+  /** null = làm việc ngoài lịch. */
+  scheduleSlotId?: string | null;
+  subTaskId?: string | null;
+  focusTrackId?: string | null;
+}
+
+/** Response 201 của `POST /api/focus/start`. */
+export interface FocusStartResponse {
+  sessionId: string;
+  startedAt: string;
+  captureMethod: CaptureMethod;
+  /** 0 = làm việc ngoài lịch (không gắn slot). */
+  plannedMinutes: number;
+  expectedEndAt: string;
+  /** Số phút bắt đầu sớm hơn slot (0 = đúng giờ). */
+  startedEarlyMinutes: number;
+  /**
+   * "STARTED_VERY_EARLY" = bắt đầu sớm hơn 2 giờ so với giờ slot.
+   * Phiên ĐÃ được tạo — FE cần hỏi lại user rồi mới quyết định giữ hay Stop.
+   */
+  warning: string | null;
+}
+
+/** Response 200 của `GET /api/focus/current`. */
+export interface FocusCurrentResponse {
+  sessionId: string;
+  taskId: string;
+  taskTitle: string | null;
+  scheduleSlotId: string | null;
+  startedAt: string;
+  /** Giây đã làm — do SERVER tính, đây là nguồn sự thật cho đồng hồ. */
+  elapsedSeconds: number;
+  /** Giờ của server tại lúc response (để FE đồng bộ lệch). */
+  serverTime: string;
+  isOverrun: boolean;
+}
+
+/** Body của `POST /api/focus/{sessionId}/stop`. */
+export interface FocusStopRequest {
+  stopReason: FocusStopReason;
+  note?: string | null;
+}
+
+/** Response của `POST /api/focus/{sessionId}/stop`. */
+export interface FocusStopResponse {
+  sessionId: string;
+  endedAt: string;
+  /** Phút của phiên vừa dừng. */
+  sessionMinutes: number;
+  /** Tổng phút của mọi phiên thuộc task đó. */
+  taskTotalMinutes: number;
+  /**
+   * true (với Completed/Other) → nên hỏi "bạn thấy thế nào / xong chưa?".
+   * false (Interrupted/Blocked) → user sẽ quay lại, không cần hỏi.
+   */
+  checkInRequired: boolean;
+}
+
+/** 1 phần tử của `GET /api/focus/pending-confirmation`. */
+export interface FocusPendingConfirmationItem {
+  sessionId: string;
+  taskId: string;
+  taskTitle: string | null;
+  scheduleSlotId: string | null;
+  startedAt: string;
+  endedAt: string;
+  /** Số phút hệ thống tự tính — mặc định điền vào ô nhập. */
+  systemMinutes: number;
+}
+
+/** Body của `POST /api/focus/{sessionId}/confirm`. */
+export interface FocusConfirmRequest {
+  confirmed: boolean;
+  /** Sửa lại số phút (1..1440). null = giữ nguyên systemMinutes. */
+  correctedMinutes?: number | null;
+}
+
+/** Body của `POST /api/focus/self-report` — chỗ DUY NHẤT FE gửi giờ. */
+export interface FocusSelfReportRequest {
+  taskId: string;
+  scheduleSlotId?: string | null;
+  startedAt: string;
+  endedAt: string;
+  stopReason: FocusStopReason;
+  note?: string | null;
+}
+
+/** 1 phiên trong `GET /api/focus/{slotId}/time-summary`. */
+export interface FocusSessionSummaryItem {
+  sessionId: string;
+  startedAt: string;
+  endedAt: string | null;
+  minutes: number;
+  captureMethod: CaptureMethod;
+  stopReason: FocusStopReason;
+}
+
+/** Response của `GET /api/focus/{slotId}/time-summary`. */
+export interface FocusTimeSummaryResponse {
+  plannedMinutes: number;
+  /** Chỉ cộng các phiên đáng tin (không tính phiên AutoTimeout chưa xác nhận). */
+  actualMinutes: number;
+  sessionCount: number;
+  sessions: FocusSessionSummaryItem[] | null;
+}
+
+/**
+ * POST /api/focus/start — bắt đầu phiên làm việc.
+ *
+ * Xử lý 409 đặc biệt: `details` trong body lỗi chính là phiên đang chạy
+ * (cùng shape với `GET /current`). FE cần bắt được case này để chuyển sang
+ * màn hình phiên đang chạy thay vì báo lỗi.
+ */
+export async function startFocusSession(
+  body: FocusStartRequest,
+): Promise<ApiResult<FocusStartResponse>> {
+  if (!body.taskId) {
+    return { ok: false, error: "taskId is required", status: 400 };
+  }
+  return post<FocusStartResponse>("/api/focus/start", {
+    taskId: body.taskId,
+    scheduleSlotId: body.scheduleSlotId ?? null,
+    subTaskId: body.subTaskId ?? null,
+    focusTrackId: body.focusTrackId ?? null,
+  });
+}
+
+/**
+ * GET /api/focus/current — phiên đang chạy.
+ *
+ * 204 = không có phiên nào → `ApiResult` vẫn là `ok: true` với `data`
+ * = null, để phân biệt với lỗi mạng.
+ */
+export async function getCurrentFocusSession(): Promise<
+  ApiResult<FocusCurrentResponse | null>
+> {
+  const res = await apiFetch<FocusCurrentResponse | null>(
+    "/api/focus/current",
+    { method: "GET" },
+  );
+  if (!res.ok) return res;
+  return { ok: true, data: res.data ?? null };
+}
+
+/** POST /api/focus/{sessionId}/stop — dừng phiên. */
+export async function stopFocusSession(
+  sessionId: string,
+  body: FocusStopRequest,
+): Promise<ApiResult<FocusStopResponse>> {
+  if (!sessionId) {
+    return { ok: false, error: "sessionId is required", status: 400 };
+  }
+  return post<FocusStopResponse>(
+    `/api/focus/${encodeURIComponent(sessionId)}/stop`,
+    { stopReason: body.stopReason, note: body.note ?? null },
+  );
+}
+
+/**
+ * GET /api/focus/pending-confirmation — các phiên bị hệ thống tự ngắt
+ * (quá 2x thời lượng dự kiến) và chưa được xác nhận.
+ */
+export async function listPendingFocusConfirmations(): Promise<
+  ApiResult<FocusPendingConfirmationItem[]>
+> {
+  const res = await apiFetch<FocusPendingConfirmationItem[] | null>(
+    "/api/focus/pending-confirmation",
+    { method: "GET" },
+  );
+  if (!res.ok) return res;
+  return { ok: true, data: res.data ?? [] };
+}
+
+/** POST /api/focus/{sessionId}/confirm — xác nhận / sửa / loại bỏ phiên. */
+export async function confirmFocusSession(
+  sessionId: string,
+  body: FocusConfirmRequest,
+): Promise<ApiResult<{ message?: string }>> {
+  if (!sessionId) {
+    return { ok: false, error: "sessionId is required", status: 400 };
+  }
+  return post<{ message?: string }>(
+    `/api/focus/${encodeURIComponent(sessionId)}/confirm`,
+    {
+      confirmed: body.confirmed,
+      correctedMinutes: body.correctedMinutes ?? null,
+    },
+  );
+}
+
+/**
+ * POST /api/focus/self-report — khai báo thời gian đã làm việc.
+ *
+ * ⚠️ Đây là API DUY NHẤT FE được gửi giờ. `startedAt`/`endedAt` phải là
+ * quá khứ, `endedAt > startedAt`, và dài tối đa 24 giờ.
+ */
+export async function selfReportFocusSession(
+  body: FocusSelfReportRequest,
+): Promise<ApiResult<{ sessionId?: string }>> {
+  if (!body.taskId) {
+    return { ok: false, error: "taskId is required", status: 400 };
+  }
+  return post<{ sessionId?: string }>("/api/focus/self-report", {
+    taskId: body.taskId,
+    scheduleSlotId: body.scheduleSlotId ?? null,
+    startedAt: body.startedAt,
+    endedAt: body.endedAt,
+    stopReason: body.stopReason,
+    note: body.note ?? null,
+  });
+}
+
+/** GET /api/focus/{slotId}/time-summary — tổng kết thời gian của 1 slot. */
+export async function getFocusTimeSummary(
+  slotId: string,
+): Promise<ApiResult<FocusTimeSummaryResponse>> {
+  if (!slotId) {
+    return { ok: false, error: "slotId is required", status: 400 };
+  }
+  return get<FocusTimeSummaryResponse>(
+    `/api/focus/${encodeURIComponent(slotId)}/time-summary`,
+  );
+}
+
+/* ============================================================
+ * NOTIFICATIONS — hộp thư + Web Push + SignalR
+ * ----------------------------------------------------------
+ *   GET  /api/notifications?unreadOnly&take  → danh sách (mới nhất trước)
+ *   POST /api/notifications/{id}/read         → đánh dấu đã đọc (204)
+ *   POST /api/notifications/read-all          → đánh dấu hết ({ updated })
+ *   GET  /api/notifications/vapid-public-key  → { publicKey } cho Web Push
+ *   POST /api/notifications/subscribe         → lưu subscription của thiết bị
+ *   POST /api/notifications/unsubscribe       → gỡ subscription
+ *
+ * ⚠️ `type` trong hộp thư chỉ là nhóm lớn ("SlotReminder" | "MissedSlot").
+ * Loại chi tiết (`actionType`) chỉ có ở SignalR và Web Push — nên muốn biết
+ * chính xác loại gì thì dựa vào `title` + `scheduleSlotId` + trạng thái slot.
+ * ============================================================ */
+
+/** Loại thông báo (nhóm lớn — BE giới hạn ở 2 giá trị này). */
+export type NotificationType = "SlotReminder" | "MissedSlot" | (string & {});
+
+/**
+ * Loại hành động chi tiết — chỉ xuất hiện qua SignalR / Web Push.
+ */
+export type NotificationActionType =
+  | "PRE_START_REMINDER"
+  | "START_PROMPT"
+  | "NOT_STARTED"
+  | "NEAR_END"
+  | "OVERRUN"
+  | "AUTO_TIMEOUT"
+  | "CHECK_IN"
+  | "MISSED_SLOT"
+  | (string & {});
+
+/** 1 thông báo trong hộp thư. */
+export interface NotificationDto {
+  id: string;
+  type: NotificationType | null;
+  title: string | null;
+  message: string | null;
+  scheduleSlotId: string | null;
+  sentAt: string | null;
+  isRead: boolean;
+  readAt: string | null;
+}
+
+/** GET /api/notifications — danh sách thông báo (mới nhất trước, tối đa 100). */
+export async function listNotifications(params?: {
+  unreadOnly?: boolean;
+  take?: number;
+}): Promise<ApiResult<NotificationDto[]>> {
+  const qs = new URLSearchParams();
+  qs.set("unreadOnly", String(params?.unreadOnly ?? false));
+  qs.set("take", String(params?.take ?? 50));
+  return get<NotificationDto[]>(`/api/notifications?${qs.toString()}`);
+}
+
+/** POST /api/notifications/{notificationId}/read — đánh dấu 1 thông báo đã đọc. */
+export async function markNotificationRead(
+  notificationId: string,
+): Promise<ApiResult<void>> {
+  if (!notificationId) {
+    return { ok: false, error: "notificationId is required", status: 400 };
+  }
+  return post<void>(
+    `/api/notifications/${encodeURIComponent(notificationId)}/read`,
+  );
+}
+
+/** POST /api/notifications/read-all — đánh dấu toàn bộ đã đọc. */
+export async function markAllNotificationsRead(): Promise<
+  ApiResult<{ updated: number }>
+> {
+  return post<{ updated: number }>("/api/notifications/read-all");
+}
+
+/** GET /api/notifications/vapid-public-key — khoá công khai cho Web Push. */
+export async function getVapidPublicKey(): Promise<
+  ApiResult<{ publicKey: string }>
+> {
+  const res = await apiFetch<{ publicKey?: string } | null>(
+    "/api/notifications/vapid-public-key",
+    { method: "GET" },
+  );
+  if (!res.ok) return res;
+  return { ok: true, data: { publicKey: res.data?.publicKey ?? "" } };
+}
+
+/** Body đăng ký / gỡ Web Push subscription. */
+export interface PushSubscriptionDto {
+  endpoint: string;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+}
+
+/** POST /api/notifications/subscribe — lưu subscription của thiết bị này. */
+export async function subscribePushNotifications(
+  sub: PushSubscriptionDto,
+): Promise<ApiResult<void>> {
+  return post<void>("/api/notifications/subscribe", {
+    endpoint: sub.endpoint,
+    keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth },
+  });
+}
+
+/** POST /api/notifications/unsubscribe — gỡ subscription của thiết bị này. */
+export async function unsubscribePushNotifications(
+  sub: PushSubscriptionDto,
+): Promise<ApiResult<void>> {
+  return post<void>("/api/notifications/unsubscribe", {
+    endpoint: sub.endpoint,
+    keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth },
+  });
+}
 

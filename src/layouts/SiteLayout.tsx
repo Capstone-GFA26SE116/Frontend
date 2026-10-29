@@ -3,6 +3,10 @@ import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { MetanoiaLogo } from "../components/MetanoiaLogo";
 import { useGoogleCalendar } from "../hooks/useGoogleCalendar";
+import { listProjects, listTasks } from "../lib/api-client";
+import { FocusManager } from "../components/focus/FocusManager";
+import { NotificationToaster } from "../components/focus/NotificationToaster";
+import { useNotificationsContext } from "../components/focus/notifications-context-state";
 import "./site-layout.css";
 
 /**
@@ -27,6 +31,48 @@ export function SiteLayout() {
    * /login khi user đang ở trang public (landing/pricing).
    */
   const gcal = useGoogleCalendar(isAuthenticated);
+
+  /**
+   * Thông báo: badge số chưa đọc + SignalR realtime.
+   *
+   * Dùng CHUNG instance từ `NotificationsProvider` (bọc ở App.tsx) để chỉ
+   * có 1 hub connection cho toàn app.
+   */
+  const notif = useNotificationsContext();
+
+  /**
+   * Danh sách task cho hộp thoại "ghi nhận giờ đã làm việc" (self-report).
+   *
+   * API `POST /api/focus/self-report` bắt buộc có `taskId`, nên cần danh sách
+   * task để user chọn. Ta nạp 1 lần khi vào app (rẻ, và danh sách task
+   * thay đổi không thường xuyên trong 1 phiên làm việc).
+   */
+  const [focusTasks, setFocusTasks] = useState<
+    Array<{ id: string; title: string }>
+  >([]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let cancelled = false;
+    void (async () => {
+      const projRes = await listProjects();
+      if (cancelled) return;
+      if (!projRes.ok) return;
+      const results = await Promise.all(
+        projRes.data.map((p) => listTasks(p.id)),
+      );
+      if (cancelled) return;
+      const flat = results
+        .filter((r) => r.ok)
+        .flatMap((r) => r.data)
+        .filter((t) => t.status !== "Done" && t.status !== "Cancelled")
+        .map((t) => ({ id: t.id, title: t.title }));
+      setFocusTasks(flat);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
 
   // Đóng menu khi click ra ngoài hoặc nhấn Escape
   useEffect(() => {
@@ -140,14 +186,23 @@ export function SiteLayout() {
 
             {isAuthenticated ? (
               <>
-                <button
-                  type="button"
-                  aria-label="Thông báo"
-                  className="site-icon-btn"
+                <Link
+                  to="/notifications"
+                  aria-label={
+                    notif.unreadCount > 0
+                      ? `Thông báo (${notif.unreadCount} chưa đọc)`
+                      : "Thông báo"
+                  }
+                  className="site-icon-btn site-icon-btn--link"
+                  title="Thông báo"
                 >
                   <span className="material-symbols-outlined">notifications</span>
-                  <span className="site-icon-btn-dot" aria-hidden="true" />
-                </button>
+                  {notif.unreadCount > 0 && (
+                    <span className="site-icon-btn-count" aria-hidden="true">
+                      {notif.unreadCount > 99 ? "99+" : notif.unreadCount}
+                    </span>
+                  )}
+                </Link>
                 <span
                   className="site-header-divider"
                   aria-hidden="true"
@@ -294,9 +349,23 @@ export function SiteLayout() {
         </div>
       </header>
 
-      <main className="site-main">
-        <Outlet />
-      </main>
+      {/*
+        Focus Session — thanh đồng hồ + hộp thoại, ở cấp layout để sống
+        xuyên suốt các trang (đồng hồ phải chạy cả khi đổi route).
+
+        `<Outlet />` được đặt BÊN TRONG `FocusManager` để
+        `<FocusActionsProvider>` bao quanh trang con — nút Start/Stop ở
+        trang `/schedule` cần đọc context này. Vì vậy không render
+        `<Outlet />` ở `<main>` nữa. */}
+      <FocusManager enabled={isAuthenticated} selfReportTasks={focusTasks}>
+        <main className="site-main">
+          <Outlet />
+        </main>
+      </FocusManager>
+
+      {/* Toast realtime từ SignalR — dùng CHUNG hook notif với header để chỉ
+          có 1 hub connection. */}
+      <NotificationToaster />
 
       <footer className="site-footer">
         <div className="site-footer-inner">

@@ -6,6 +6,9 @@ import {
 } from "../../components/ScheduleProposal";
 import { useScheduleProposal } from "../../components/schedule-proposal-logic";
 import { CenterToasts, useCenterToast } from "../../components/Toast";
+import { SlotFocusPanel } from "../../components/focus/SlotFocusPanel";
+import { SlotFocusActions } from "../../components/focus/SlotFocusActions";
+import { useFocusActions } from "../../components/focus/focus-context";
 import { useStaggeredMount } from "../../hooks/useStaggeredMount";
 import { useGoogleCalendar } from "../../hooks/useGoogleCalendar";
 import {
@@ -72,6 +75,24 @@ interface CalEvent {
   taskId: string | null;
   subTaskId: string | null;
   projectId: string | null;
+  /**
+   * Id của schedule slot gắn với event (null = không gắn).
+   *
+   * Cần cho Focus Session: `POST /api/focus/start` nhận `scheduleSlotId`.
+   * Với Calendar API, `CalendarItemDto.id` chính là slot id khi `source = "slot"`
+   * — nên ta gán luôn ở đây, không phụ thuộc fallback path.
+   */
+  scheduleSlotId?: string | null;
+  /** Phút dự kiến của slot (dùng làm mốc cho đồng hồ). */
+  slotPlannedMinutes?: number | null;
+  /**
+   * Status của SLOT gốc (khác với `status` của task).
+   *
+   * Cần vì khi lịch gộp nhiều slot của 1 task thành 1 event, `status` là của
+   * task — nhưng quy tắc Start/Stop theo spec lại dựa trên status của SLOT
+   * (`Proposed` không Start được, `InProgress` hiện nút Stop...).
+   */
+  slotStatus?: string | null;
   /** Item gốc: TaskDto | SubtaskDto | ScheduleSlotDto | null (khi là Google event). */
   task?: TaskDto;
   subtask?: SubtaskDto;
@@ -633,6 +654,50 @@ export function SchedulePage() {
   }, [loadData]);
 
   /* ===========================================================
+   * Focus Session — nối trang lịch với phiên làm việc toàn cục
+   * =========================================================== */
+
+  const { currentSlotId, seedPlannedMinutes, onSlotChanged } = useFocusActions();
+
+  /**
+   * Khi slot đổi trạng thái (start/stop/confirm) → nạp lại lịch.
+   *
+   * Cần cho cả trường hợp user bấm Stop ở thanh đồng hồ global (đang ở
+   * trang khác) rồi quay lại /schedule, hoặc đang ở /schedule thì trạng
+   * thái slot phải đổi ngay (InProgress → Due/Done).
+   */
+  useEffect(() => {
+    return onSlotChanged(() => {
+      void loadData();
+    });
+  }, [onSlotChanged, loadData]);
+
+  /**
+   * `GET /api/focus/current` KHÔNG trả `plannedMinutes` — chỉ response của
+   * `POST /api/focus/start` có. Sau khi reload trang, ta lấy lại mốc thời
+   * gian từ `proposedMinutes` của slot đang chạy (nếu slot nằm trong data
+   * đã tải — với data từ Calendar API thì `calendarItems` giữ thông tin này).
+   */
+  useEffect(() => {
+    if (!currentSlotId) return;
+    const fromSlots = scheduleSlots.find((s) => s.id === currentSlotId);
+    if (fromSlots?.proposedMinutes) {
+      seedPlannedMinutes(fromSlots.proposedMinutes);
+      return;
+    }
+    const fromCalendar = calendarItems.find(
+      (i) => i.id === currentSlotId,
+    );
+    const mins = fromCalendar?.proposedMinutes;
+    if (mins) seedPlannedMinutes(mins);
+  }, [
+    currentSlotId,
+    scheduleSlots,
+    calendarItems,
+    seedPlannedMinutes,
+  ]);
+
+  /* ===========================================================
    * Kết quả OAuth Google Calendar (BE redirect về FE)
    *
    * BE có thể redirect về:
@@ -790,6 +855,17 @@ export function SchedulePage() {
         taskId: item.taskId ?? null,
         subTaskId: item.subTaskId ?? null,
         projectId: item.projectId ?? null,
+        // Khi source = "slot", id của calendar item CHÍNH LÀ schedule slot id
+        // → Focus Session dùng được để gọi start/time-summary.
+        scheduleSlotId:
+          (item.source?.toLowerCase() ?? "") === "slot" ? item.id : null,
+        slotPlannedMinutes: item.proposedMinutes ?? null,
+        // Với item `source = "slot"`, `status` là status của SLOT → dùng
+        // cho quy tắc Start/Stop.
+        slotStatus:
+          (item.source?.toLowerCase() ?? "") === "slot"
+            ? (item.status ?? "")
+            : null,
         task: item.taskId ? tasksById[item.taskId] : undefined,
         subtask: item.subTaskId
           ? subtasks.find((x) => x.id === item.subTaskId)
@@ -898,6 +974,9 @@ export function SchedulePage() {
           taskId: slot.taskId,
           subTaskId: slot.subTaskId,
           projectId: parentTask?.projectId ?? null,
+          scheduleSlotId: slot.id,
+          slotPlannedMinutes: slot.proposedMinutes ?? null,
+          slotStatus: slot.status,
           scheduleSlot: slot,
           task: parentTask,
           subtask: parentSubtask,
@@ -961,6 +1040,20 @@ export function SchedulePage() {
         subTaskId: null,
         projectId: parentTask?.projectId ?? evs[0].projectId,
         task: parentTask,
+        /*
+         * Focus Session: aggregate gộp nhiều slot của 1 task. Ta gắn slot
+         * ĐẦU TIÊN (theo thứ tự thời gian) để:
+         *  - Nút Start/Stop trên chip lịch dùng được `scheduleSlotId`.
+         *  - Modal chi tiết mở đúng slot đang chạy.
+         *
+         * ⚠️ `status` của aggregate lấy từ TASK (không phải slot) → không
+         * dùng để quyết định Start/Stop. Ta để `status` của task như hiện tại
+         * (để hiển thị badge), còn `SlotFocusActions` sẽ tự dùng status của
+         * slot gốc khi được truyền `slotStatus`.
+         */
+        scheduleSlotId: evs[0].scheduleSlotId ?? null,
+        slotPlannedMinutes: evs[0].slotPlannedMinutes ?? null,
+        slotStatus: evs[0].status,
         // Gắn event gốc đầu tiên (slot hoặc subtask) + toàn bộ danh sách con
         scheduleSlot: evs[0].scheduleSlot,
         subtask: evs[0].subtask,
@@ -1681,6 +1774,7 @@ export function SchedulePage() {
           subtasks={subtasks}
           onClose={() => setSelected(null)}
           onDelete={handleDeleteScheduleSlot}
+          onSlotChanged={() => void loadData()}
         />
       )}
 
@@ -2156,7 +2250,14 @@ function EventChip({
     const s = (ev.status ?? "").toLowerCase();
     return s === "done" || s === "completed";
   })();
-  return (
+
+  /**
+   * Chỉ slot (`source === "slot"`) mới có nút Start/Stop.
+   * Item từ Google Calendar chỉ để xem — không gắn phiên làm việc.
+   */
+  const isSlot = ev.source === "slot" && !!ev.scheduleSlotId && !!ev.taskId;
+
+  const chip = (
     <button
       type="button"
       className={`sch-chip-event${compact ? " sch-chip-event--compact" : ""}${isDone ? " sch-chip-event--done" : ""}`}
@@ -2176,6 +2277,27 @@ function EventChip({
         <span className="sch-chip-event__time">{fmtTime(ev.start)}</span>
       )}
     </button>
+  );
+
+  if (!isSlot) return chip;
+
+  /*
+   * Không lồng `<button>` trong `<button>` (HTML không hợp lệ, và click vào
+   * nút con sẽ kích hoạt cả nút cha → mở modal thay vì Start).
+   * Ta bọc chip trong 1 `<div>` rồi đặt nút Start/Stop cạnh bên.
+   */
+  return (
+    <div className="sch-chip-wrap">
+      {chip}
+      <SlotFocusActions
+        slotId={ev.scheduleSlotId ?? null}
+        taskId={ev.taskId ?? null}
+        subTaskId={ev.subTaskId ?? null}
+        status={ev.slotStatus ?? ev.status}
+        plannedMinutes={ev.slotPlannedMinutes ?? undefined}
+        compact
+      />
+    </div>
   );
 }
 
@@ -2514,6 +2636,17 @@ function CellPopover({
                           {sl.explanation && (
                             <em className="sch-cell-popover__task-parent">{sl.explanation}</em>
                           )}
+                          {/* Nút Start / Stop cho slot này */}
+                          <div className="sch-cell-popover__focus">
+                            <SlotFocusActions
+                              slotId={sl.id}
+                              taskId={sl.taskId}
+                              subTaskId={sl.subTaskId}
+                              status={sl.status}
+                              plannedMinutes={sl.proposedMinutes}
+                              compact
+                            />
+                          </div>
                         </li>
                       ))}
                     </ul>
@@ -2584,12 +2717,14 @@ function NowBadge({ start, end }: { start: Date; end: Date }) {
 }
 
 function EventDetailModal({
-  event, subtasks, onClose, onDelete,
+  event, subtasks, onClose, onDelete, onSlotChanged,
 }: {
   event: CalEvent;
   subtasks: SubtaskDto[];
   onClose: () => void;
   onDelete?: (slotId: string) => void;
+  /** Refetch lịch sau khi slot đổi trạng thái (Start/Stop). */
+  onSlotChanged?: () => void;
 }) {
   const task = event.task;
   const subtask = event.subtask;
@@ -2759,6 +2894,18 @@ function EventDetailModal({
                 </div>
               )}
             </div>
+
+            {/* Khối Focus Session: nút Start/Stop + tổng kết thời gian */}
+            <SlotFocusPanel
+              slotId={slot?.id ?? event.scheduleSlotId ?? null}
+              taskId={event.taskId}
+              subTaskId={event.subTaskId}
+              status={slot?.status ?? event.status}
+              plannedMinutes={
+                slot?.proposedMinutes ?? event.slotPlannedMinutes ?? undefined
+              }
+              onChanged={onSlotChanged}
+            />
           </div>
 
           {/* Cột phải: Subtasks list (task aggregate HOẶC task có subtask) */}
@@ -2895,8 +3042,7 @@ function EventDetailModal({
               Open in Planning
             </Link>
           )}
-        </div>
-      </div>
+        </div>      </div>
     </div>
   );
 }

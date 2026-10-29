@@ -1,0 +1,1007 @@
+/* ===========================================================
+ * Focus Session — thanh đồng hồ + hộp thoại
+ * ===========================================================
+ *
+ * Theo DESIGN.md (Voltagent):
+ *   • Canvas #101010 / surface #1a1a1a / hairline #3d3a39.
+ *   • Accent duy nhất #00d992 (soft #2fd6a1, deep #10b981).
+ *   • Số đếm / đồng hồ dùng font mono.
+ *   • Level 1 = hairline border; Level 2 = glow nhẹ khi hover.
+ *   • Không dùng soft drop shadow (trừ panel nổi trên overlay).
+ *
+ * Class prefix: `.fc-*`
+ * =========================================================== */
+
+/*
+ * Biến CSS của Focus Session đặt ở `:root` (phạm vi toàn cục) thay vì
+ * `.fc-root`.
+ *
+ * Vì sao: nút Start/Stop của slot nằm ở trang `/schedule` — NGOÀI
+ * `<FocusManager>`. Nếu biến chỉ nằm trong `.fc-root` thì các nút đó sẽ mất
+ * style (`var(--fc-primary)` → không resolve → nền trong suốt).
+ * Đặt ở `:root` để mọi nơi dùng được, còn `.fc-root` chỉ còn là wrapper.
+ */
+:root {
+  --fc-bg: #101010;
+  --fc-low: #1a1a1a;
+  --fc-high: #212121;
+
+  --fc-text: #f2f2f2;
+  --fc-text-2: #bdbdbd;
+  --fc-text-3: #8b949e;
+
+  --fc-line: #3d3a39;
+
+  --fc-primary: #00d992;
+  --fc-primary-soft: rgba(0, 217, 146, 0.1);
+  --fc-primary-deep: #10b981;
+
+  --fc-danger: #ff6b6b;
+  --fc-danger-soft: rgba(255, 107, 107, 0.1);
+  --fc-warn: #f0b429;
+
+  --fc-r-sm: 6px;
+  --fc-r-md: 8px;
+  --fc-r-lg: 12px;
+
+  --fc-mono: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace,
+    SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/*
+ * Wrapper gốc của UI Focus Session.
+ *
+ * ⚠️ KHÔNG đặt `color` / `font-family` ở đây nếu wrapper này bao cả trang
+ * con (Outlet) — sẽ ghi đè style của toàn bộ app. Wrapper này chỉ chứa
+ * thanh đồng hồ + hộp thoại.
+ */
+.fc-root {
+  color: var(--fc-text-2);
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* ===========================================================
+ * 1. Thanh đồng hồ (fixed đáy màn hình)
+ * =========================================================== */
+
+.fc-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 12px 20px;
+  background: rgba(16, 16, 16, 0.96);
+  border-top: 1px solid var(--fc-line);
+  backdrop-filter: blur(10px);
+  animation: fc-slide-up 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes fc-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fc-bar {
+    animation: none;
+  }
+}
+
+/* Khi quá giờ → viền cảnh báo (đỏ). */
+.fc-bar--overrun {
+  border-top-color: rgba(255, 107, 107, 0.45);
+}
+
+/* Thu gọn: ẩn phần mô tả, chỉ giữ đồng hồ + nút. */
+.fc-bar--collapsed .fc-bar__leadtext,
+.fc-bar--collapsed .fc-bar__sep,
+.fc-bar--collapsed .fc-bar__remaining,
+.fc-bar--collapsed .fc-bar__track {
+  display: none;
+}
+
+/* ---------- Vùng trái ---------- */
+
+.fc-bar__lead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.fc-bar__pulse {
+  position: relative;
+  width: 9px;
+  height: 9px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: var(--fc-primary);
+  box-shadow: 0 0 0 0 rgba(0, 217, 146, 0.55);
+  animation: fc-pulse 2s ease-out infinite;
+}
+.fc-bar__pulse[data-overrun="true"] {
+  background: var(--fc-danger);
+  box-shadow: 0 0 0 0 rgba(255, 107, 107, 0.55);
+}
+
+@keyframes fc-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(0, 217, 146, 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 9px rgba(0, 217, 146, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(0, 217, 146, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fc-bar__pulse {
+    animation: none;
+  }
+}
+
+.fc-bar__leadtext {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.fc-bar__eyebrow {
+  font-family: var(--fc-mono);
+  font-size: 11px;
+  line-height: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fc-primary);
+}
+.fc-bar--overrun .fc-bar__eyebrow {
+  color: var(--fc-danger);
+}
+
+.fc-bar__task {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fc-text);
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  text-align: left;
+}
+button.fc-bar__task {
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+button.fc-bar__task:hover {
+  color: var(--fc-primary);
+}
+
+/* ---------- Vùng giữa: đồng hồ ---------- */
+
+.fc-bar__clock {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.fc-bar__elapsed {
+  font-family: var(--fc-mono);
+  font-size: 26px;
+  line-height: 30px;
+  font-weight: 550;
+  letter-spacing: -0.5px;
+  color: var(--fc-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.fc-bar__sep {
+  color: var(--fc-line);
+  font-size: 18px;
+}
+
+.fc-bar__remaining {
+  font-family: var(--fc-mono);
+  font-size: 15px;
+  line-height: 20px;
+  color: var(--fc-text-3);
+  font-variant-numeric: tabular-nums;
+}
+.fc-bar__remaining--over {
+  color: var(--fc-danger);
+  font-weight: 600;
+}
+.fc-bar__remaining--free {
+  font-style: italic;
+}
+
+/* ---------- Vùng phải ---------- */
+
+.fc-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.fc-bar__track {
+  width: 120px;
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--fc-line);
+  overflow: hidden;
+}
+
+.fc-bar__fill {
+  display: block;
+  height: 100%;
+  border-radius: 9999px;
+  background: linear-gradient(
+    90deg,
+    var(--fc-primary-deep) 0%,
+    var(--fc-primary) 100%
+  );
+  transition: width 520ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.fc-bar--overrun .fc-bar__fill {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 107, 107, 0.7) 0%,
+    var(--fc-danger) 100%
+  );
+}
+
+.fc-bar__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: var(--fc-r-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fc-text-2);
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+.fc-bar__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.fc-bar__btn span {
+  font-size: 18px;
+}
+
+.fc-bar__btn--stop {
+  background: var(--fc-danger-soft);
+  border-color: rgba(255, 107, 107, 0.32);
+  color: var(--fc-danger);
+}
+.fc-bar__btn--stop:hover:not(:disabled) {
+  background: rgba(255, 107, 107, 0.18);
+  border-color: rgba(255, 107, 107, 0.55);
+}
+
+.fc-bar__btn--ghost {
+  border-color: var(--fc-line);
+  color: var(--fc-text-3);
+}
+.fc-bar__btn--ghost:hover:not(:disabled) {
+  border-color: var(--fc-primary);
+  color: var(--fc-primary);
+}
+
+.fc-bar__btn--icon {
+  padding: 8px;
+}
+
+/* ===========================================================
+ * 2. Hộp thoại
+ * =========================================================== */
+
+.fc-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: rgba(0, 0, 0, 0.68);
+  backdrop-filter: blur(3px);
+  animation: fc-fade 0.16s ease-out;
+}
+
+@keyframes fc-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.fc-dialog {
+  width: 100%;
+  max-width: 480px;
+  max-height: min(88vh, 720px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--fc-bg);
+  border: 1px solid var(--fc-line);
+  border-radius: var(--fc-r-lg);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+  animation: fc-rise 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes fc-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fc-overlay,
+  .fc-dialog {
+    animation: none;
+  }
+}
+
+/* ---------- Head ---------- */
+
+.fc-dialog__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--fc-line);
+}
+
+.fc-dialog__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: var(--fc-r-sm);
+  background: var(--fc-primary-soft);
+  border: 1px solid rgba(0, 217, 146, 0.28);
+  color: var(--fc-primary);
+}
+.fc-dialog__icon span {
+  font-size: 19px;
+}
+.fc-dialog--warn .fc-dialog__icon {
+  background: rgba(240, 180, 41, 0.1);
+  border-color: rgba(240, 180, 41, 0.3);
+  color: var(--fc-warn);
+}
+.fc-dialog--danger .fc-dialog__icon {
+  background: var(--fc-danger-soft);
+  border-color: rgba(255, 107, 107, 0.3);
+  color: var(--fc-danger);
+}
+
+.fc-dialog__headtext {
+  flex: 1;
+  min-width: 0;
+}
+
+.fc-dialog__eyebrow {
+  display: block;
+  font-family: var(--fc-mono);
+  font-size: 11px;
+  line-height: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fc-primary);
+}
+.fc-dialog--warn .fc-dialog__eyebrow {
+  color: var(--fc-warn);
+}
+
+.fc-dialog__title {
+  margin: 4px 0 0;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  color: var(--fc-text);
+}
+
+.fc-dialog__close {
+  flex-shrink: 0;
+  padding: 6px;
+  border-radius: var(--fc-r-sm);
+  border: 1px solid var(--fc-line);
+  background: var(--fc-low);
+  color: var(--fc-text-3);
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    color 160ms ease;
+}
+.fc-dialog__close:hover {
+  border-color: var(--fc-primary);
+  color: var(--fc-primary);
+}
+.fc-dialog__close span {
+  font-size: 18px;
+}
+
+/* ---------- Body ---------- */
+
+.fc-dialog__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fc-dialog__text {
+  margin: 0;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--fc-text-2);
+}
+.fc-dialog__text strong {
+  color: var(--fc-text);
+  font-weight: 600;
+}
+
+.fc-dialog__hint {
+  margin: 0;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--fc-text-3);
+}
+.fc-dialog__hint strong {
+  color: var(--fc-text-2);
+  font-weight: 600;
+}
+
+.fc-dialog__error {
+  margin: -4px 0 0;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--fc-danger);
+}
+
+.fc-dialog__label {
+  display: block;
+  margin: 4px 0 0;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--fc-text);
+}
+
+.fc-dialog__optional {
+  font-weight: 400;
+  color: var(--fc-text-3);
+}
+
+/* Card nhỏ hiển thị phiên trong hộp thoại stop. */
+.fc-dialog__session {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--fc-r-md);
+  background: var(--fc-low);
+  border: 1px solid var(--fc-line);
+}
+.fc-dialog__session-title {
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--fc-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fc-dialog__session-time {
+  font-family: var(--fc-mono);
+  font-size: 18px;
+  line-height: 22px;
+  font-weight: 550;
+  color: var(--fc-primary);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+/* ---------- Lý do dừng ---------- */
+
+.fc-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fc-reason {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 12px;
+  border-radius: var(--fc-r-md);
+  border: 1px solid var(--fc-line);
+  background: var(--fc-low);
+  color: var(--fc-text-2);
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+.fc-reason:hover:not(:disabled) {
+  border-color: var(--fc-primary-deep);
+}
+.fc-reason:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.fc-reason--active {
+  border-color: var(--fc-primary);
+  background: var(--fc-primary-soft);
+}
+
+.fc-reason__dot {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  margin-top: 3px;
+  border-radius: 9999px;
+  border: 1px solid var(--fc-line);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+.fc-reason--active .fc-reason__dot {
+  border-color: var(--fc-primary);
+  box-shadow: inset 0 0 0 3px var(--fc-primary);
+}
+
+.fc-reason__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fc-reason__label {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--fc-text);
+}
+
+.fc-reason__hint {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--fc-text-3);
+}
+
+/* ---------- Chips check-in ---------- */
+
+.fc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fc-chip {
+  padding: 7px 13px;
+  border-radius: 9999px;
+  border: 1px solid var(--fc-line);
+  background: var(--fc-low);
+  color: var(--fc-text-2);
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 550;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    color 160ms ease,
+    background-color 160ms ease;
+}
+.fc-chip:hover {
+  border-color: var(--fc-primary-deep);
+  color: var(--fc-primary);
+}
+.fc-chip--active {
+  border-color: var(--fc-primary);
+  color: var(--fc-primary);
+  background: var(--fc-primary-soft);
+}
+
+/* ---------- Input ---------- */
+
+.fc-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--fc-r-sm);
+  border: 1px solid var(--fc-line);
+  background: var(--fc-low);
+  color: var(--fc-text);
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+  outline: none;
+  transition: border-color 160ms ease;
+}
+.fc-input::placeholder {
+  color: var(--fc-text-3);
+}
+.fc-input:focus {
+  border-color: var(--fc-primary);
+}
+.fc-input:disabled {
+  opacity: 0.55;
+}
+
+/* ---------- Foot ---------- */
+
+.fc-dialog__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--fc-line);
+  background: var(--fc-low);
+}
+
+.fc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 10px 16px;
+  border-radius: var(--fc-r-sm);
+  border: 1px solid transparent;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+.fc-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.fc-btn--primary {
+  background: var(--fc-primary);
+  color: var(--fc-bg);
+}
+.fc-btn--primary:hover:not(:disabled) {
+  background: var(--fc-primary-soft);
+  border-color: var(--fc-primary);
+  color: var(--fc-primary);
+}
+
+.fc-btn--ghost {
+  background: transparent;
+  border-color: var(--fc-line);
+  color: var(--fc-text-2);
+}
+.fc-btn--ghost:hover:not(:disabled) {
+  border-color: var(--fc-primary);
+  color: var(--fc-primary);
+}
+
+.fc-btn--danger-ghost {
+  background: transparent;
+  border-color: rgba(255, 107, 107, 0.35);
+  color: var(--fc-danger);
+}
+.fc-btn--danger-ghost:hover:not(:disabled) {
+  background: var(--fc-danger-soft);
+  border-color: rgba(255, 107, 107, 0.6);
+}
+
+/* ===========================================================
+ * 3. Nút Start / Stop trên slot (trang lịch)
+ * =========================================================== */
+
+.fc-slot-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 13px;
+  border-radius: var(--fc-r-sm);
+  border: 1px solid var(--fc-line);
+  background: var(--fc-low);
+  color: var(--fc-text-2);
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+.fc-slot-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.fc-slot-btn span.material-symbols-outlined {
+  font-size: 17px;
+}
+
+.fc-slot-btn--start {
+  border-color: rgba(0, 217, 146, 0.4);
+  background: var(--fc-primary-soft);
+  color: var(--fc-primary);
+}
+.fc-slot-btn--start:hover:not(:disabled) {
+  background: rgba(0, 217, 146, 0.18);
+  border-color: var(--fc-primary);
+}
+
+.fc-slot-btn--stop {
+  border-color: rgba(255, 107, 107, 0.4);
+  background: var(--fc-danger-soft);
+  color: var(--fc-danger);
+}
+.fc-slot-btn--stop:hover:not(:disabled) {
+  background: rgba(255, 107, 107, 0.18);
+  border-color: rgba(255, 107, 107, 0.65);
+}
+
+.fc-slot-btn--compact {
+  padding: 5px 10px;
+  font-size: 12px;
+  line-height: 16px;
+}
+.fc-slot-btn--compact span.material-symbols-outlined {
+  font-size: 15px;
+}
+
+.fc-slot-btn__status {
+  font-family: var(--fc-mono);
+  font-size: 10px;
+  line-height: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.65;
+  padding-left: 6px;
+  margin-left: 2px;
+  border-left: 1px solid currentColor;
+}
+
+.fc-slot-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 11px;
+  border-radius: var(--fc-r-sm);
+  border: 1px solid var(--fc-line);
+  background: var(--fc-low);
+  color: var(--fc-text-3);
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 550;
+}
+.fc-slot-note span.material-symbols-outlined {
+  font-size: 15px;
+}
+.fc-slot-note--compact {
+  padding: 5px 9px;
+  font-size: 11px;
+}
+
+/* ===========================================================
+ * 4. Panel "Phiên làm việc" trong modal chi tiết slot
+ * =========================================================== */
+
+.fc-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--fc-r-md);
+  border: 1px solid var(--fc-line);
+  background: var(--fc-low);
+}
+
+.fc-panel__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--fc-primary);
+}
+.fc-panel__head span.material-symbols-outlined {
+  font-size: 18px;
+}
+
+.fc-panel__title {
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--fc-text);
+}
+
+.fc-panel__hint {
+  margin: 0;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--fc-text-3);
+}
+
+.fc-panel__stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.fc-panel__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 10px;
+  border-radius: var(--fc-r-sm);
+  background: var(--fc-bg);
+  border: 1px solid var(--fc-line);
+}
+
+.fc-panel__stat-label {
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fc-text-3);
+}
+
+.fc-panel__stat-value {
+  font-family: var(--fc-mono);
+  font-size: 16px;
+  line-height: 20px;
+  font-weight: 550;
+  color: var(--fc-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.fc-panel__stat-value--accent {
+  color: var(--fc-primary);
+}
+
+.fc-panel__sessions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fc-panel__session {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: var(--fc-r-sm);
+  background: var(--fc-bg);
+  border: 1px solid var(--fc-line);
+}
+
+.fc-panel__session-time {
+  font-family: var(--fc-mono);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--fc-text-3);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.fc-panel__session-min {
+  font-family: var(--fc-mono);
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--fc-primary);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  min-width: 68px;
+}
+
+.fc-panel__session-reason {
+  flex: 1;
+  text-align: right;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--fc-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ===========================================================
+ * 5. Responsive
+ * =========================================================== */
+@media (max-width: 720px) {
+  .fc-bar {
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    padding: 10px 14px;
+  }
+  .fc-bar__lead {
+    order: 1;
+    flex: 1 1 100%;
+  }
+  .fc-bar__clock {
+    order: 2;
+  }
+  .fc-bar__actions {
+    order: 3;
+    margin-left: auto;
+  }
+  .fc-bar__track {
+    display: none;
+  }
+  .fc-bar__elapsed {
+    font-size: 22px;
+    line-height: 26px;
+  }
+}

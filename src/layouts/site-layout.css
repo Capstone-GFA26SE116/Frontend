@@ -201,6 +201,50 @@
   background-color: var(--primary);
 }
 
+/* Link (dùng cho nút thông báo → /notifications) */
+.site-icon-btn--link {
+  text-decoration: none;
+}
+
+/* Badge số thông báo chưa đọc */
+.site-icon-btn-count {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background-color: var(--primary);
+  color: var(--on-primary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 600;
+  border: 2px solid var(--canvas);
+  box-sizing: content-box;
+  animation: site-badge-pop 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes site-badge-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .site-icon-btn-count {
+    animation: none;
+  }
+}
+
 /* Vertical divider — hairline */
 .site-header-divider {
   display: none;
@@ -449,6 +493,19 @@
   /* bù cho header cố định */
   padding-top: 73px;
   background-color: var(--canvas);
+}
+
+/*
+ * Khi thanh đồng hồ Focus Session đang hiện (class `has-focus-bar` do
+ * `<FocusManager>` gắn lên `<body>`), thanh đó là `position: fixed` ở đáy
+ * → che nội dung trang. Thêm padding-bottom để nội dung không bị khuất.
+ *
+ * `--fc-bar-h` do `<FocusTimerBar>` đo bằng `ResizeObserver` rồi set lên
+ * `<html>` → luôn khớp với chiều cao thật (quan trọng khi thanh wrap thành
+ * 2 dòng ở màn hình hẹp <=720px). Fallback 92px nếu biến chưa có.
+ */
+body.has-focus-bar .site-main {
+  padding-bottom: calc(var(--fc-bar-h, 92px) + 24px);
 }
 
 /* ================= FOOTER ================= */

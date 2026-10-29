@@ -983,6 +983,28 @@
   text-decoration: line-through;
   text-decoration-color: var(--sch-text-3);
 }
+
+/*
+ * Wrapper của chip + nút Start/Stop.
+ *
+ * HTML không cho lồng `<button>` trong `<button>`, nên ta tách chip ra khỏi
+ * wrapper và đặt nút focus action cạnh bên.
+ */
+.sch-chip-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+}
+.sch-chip-wrap > .sch-chip-event {
+  flex: 1;
+  min-width: 0;
+}
+/* Nút Start/Stop không được làm chip giãn ra quá mức. */
+.sch-chip-wrap > .fc-slot-btn {
+  flex-shrink: 0;
+}
 .sch-chip-event__dot {
   width: 6px;
   height: 6px;
@@ -2117,6 +2139,11 @@
   color: var(--sch-text-3);
   font-style: normal;
   font-size: 11.5px;
+}
+/* Nút Start / Stop của Focus Session trong popover ngày */
+.sch-cell-popover__focus {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 .sch-cell-popover__task-est {
   font-family: var(--sch-mono);

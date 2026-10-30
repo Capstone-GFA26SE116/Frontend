@@ -194,6 +194,25 @@ button.fc-bar__task:hover {
   color: var(--fc-primary);
 }
 
+/* Tên subtask đang làm — nhỏ hơn task, dùng accent phụ. */
+.fc-bar__subtask {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fc-muted);
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 12px;
+  line-height: 16px;
+}
+.fc-bar__subtask span.material-symbols-outlined {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
 /* ---------- Vùng giữa: đồng hồ ---------- */
 
 .fc-bar__clock {
@@ -790,6 +809,19 @@ button.fc-bar__task:hover {
 .fc-slot-btn--start:hover:not(:disabled) {
   background: rgba(0, 217, 146, 0.18);
   border-color: var(--fc-primary);
+}
+
+/*
+ * Slot `Postponed` (đã bị dời): làm mờ để user biết nó không còn là khung
+ * giờ chính, NHƯNG vẫn cho bấm Start (spec mục 4: Start được khi slot ở
+ * Approved, Due, InProgress, Overrun, Missed, Postponed).
+ */
+.fc-slot-btn--faded {
+  opacity: 0.55;
+  border-style: dashed;
+}
+.fc-slot-btn--faded:hover:not(:disabled) {
+  opacity: 1;
 }
 
 .fc-slot-btn--stop {

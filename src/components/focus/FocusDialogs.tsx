@@ -495,7 +495,6 @@ export function SelfReportDialog({
 /* ===========================================================
  * 5. Check-in sau khi dừng
  * =========================================================== */
-
 export function CheckInDialog({
   taskTitle,
   sessionMinutes,
@@ -543,6 +542,97 @@ export function CheckInDialog({
           </button>
         ))}
       </div>
+    </Dialog>
+  );
+}
+
+/* ===========================================================
+ * 6. Đánh dấu xong sau khi Stop `Completed`
+ * ===========================================================
+ *
+ * ⚠️ BẮT BUỘC theo spec mục 1 + mục E:
+ *
+ *   "Điểm FE hay hiểu sai nhất: **Stop `Completed` chỉ làm slot thành
+ *    `Done`**, không đánh dấu task hay subtask xong."
+ *
+ *   "Sau khi Stop `Completed` trên subtask, hỏi 'Đánh dấu subtask này là
+ *    xong?' rồi gọi `PUT` subtask; nếu mọi subtask đã `Done` thì hỏi tiếp
+ *    'Đánh dấu cả task là xong?'."
+ *
+ * Đây là hộp thoại hỏi **1 câu**, không phải hành động tự động — user
+ * quyết định.
+ * =========================================================== */
+
+export function MarkDoneDialog({
+  kind,
+  title,
+  progress,
+  onConfirm,
+  onSkip,
+  busy,
+}: {
+  /** true = hỏi về subtask, false = hỏi về task. */
+  kind: "subtask" | "task";
+  /** Tên subtask / task. */
+  title: string | null;
+  /**
+   * Số subtask đã `Done` / tổng (chỉ dùng cho `kind = "task"`).
+   * null = không có thông tin.
+   */
+  progress?: { done: number; total: number } | null;
+  onConfirm: () => void;
+  onSkip: () => void;
+  busy: boolean;
+}) {
+  const isSubtask = kind === "subtask";
+  return (
+    <Dialog
+      eyebrow="Đánh dấu hoàn thành"
+      title={
+        isSubtask
+          ? "Đánh dấu subtask này là xong?"
+          : "Đánh dấu cả task là xong?"
+      }
+      icon="task_alt"
+      onClose={onSkip}
+      footer={
+        <>
+          <button
+            type="button"
+            className="fc-btn fc-btn--ghost"
+            onClick={onSkip}
+            disabled={busy}
+          >
+            Không, để sau
+          </button>
+          <button
+            type="button"
+            className="fc-btn fc-btn--primary"
+            onClick={onConfirm}
+            disabled={busy}
+          >
+            {busy ? "Đang lưu…" : "Đánh dấu xong"}
+          </button>
+        </>
+      }
+    >
+      <p className="fc-dialog__text">
+        <strong>{title || (isSubtask ? "Subtask" : "Task")}</strong> — bạn vừa
+        dừng phiên làm việc với lý do <em>Đã xong</em>.
+      </p>
+      <p className="fc-dialog__hint">
+        Lưu ý: dừng phiên <strong>không tự</strong> đánh dấu{" "}
+        {isSubtask ? "subtask" : "task"} là xong — slot trên lịch mới được
+        chuyển sang <em>Hoàn thành</em>.
+      </p>
+      {!isSubtask && progress && progress.total > 0 && (
+        <p className="fc-dialog__hint">
+          Các subtask đã xong: <strong>{progress.done}/{progress.total}</strong>
+          {progress.done === progress.total
+            ? " — tất cả đã xong."
+            : " — vẫn còn subtask chưa hoàn thành."}
+        </p>
+      )}
     </Dialog>
   );
 }

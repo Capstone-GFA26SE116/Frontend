@@ -576,8 +576,64 @@ export async function createProject(
   return post<ProjectDto>("/api/projects", body);
 }
 
-export async function listProjects(): Promise<ApiResult<ProjectDto[]>> {
-  return get<ProjectDto[]>("/api/projects");
+/**
+ * Trạng thái project — enum THẬT của backend.
+ *
+ * ⚠️ Code cũ trong FE giả định `"active" | "pending" | "completed"`, nhưng
+ * `pending` **không tồn tại** → mọi project có status lạ (kể cả `Archived`)
+ * rơi vào nhánh `else` và bị hiển thị như "Active".
+ *
+ * Nguồn: enum `ProjectStatus` của backend — `Active`, `OnHold`, `Completed`,
+ * `Archived`. Bản `OnHold` = tạm dừng (vẫn chat/Apply được, xem FR-08b-1 #28).
+ */
+export const PROJECT_STATUSES = [
+  "Active",
+  "OnHold",
+  "Completed",
+  "Archived",
+] as const;
+
+export type ProjectStatusValue = (typeof PROJECT_STATUSES)[number];
+
+/** Chuẩn hoá status của project về dạng chuẩn (fallback `Active`). */
+export function normalizeProjectStatus(
+  raw: string | null | undefined,
+): ProjectStatusValue {
+  const v = (raw ?? "").trim().toLowerCase();
+  if (v === "onhold" || v === "on_hold" || v === "on-hold") return "OnHold";
+  if (v === "completed" || v === "complete" || v === "done") return "Completed";
+  if (v === "archived" || v === "archive") return "Archived";
+  return "Active";
+}
+
+/**
+ * Project đã bị archive (xoá mềm) không được hiển thị ở bất kỳ danh sách
+ * chọn nào — task/milestone của nó cũng không nên xuất hiện trên lịch.
+ */
+export function isProjectArchived(
+  p: Pick<ProjectDto, "status">,
+): boolean {
+  return normalizeProjectStatus(p.status) === "Archived";
+}
+
+export async function listProjects(
+  params: { includeArchived?: boolean } = {},
+): Promise<ApiResult<ProjectDto[]>> {
+  const qs =
+    params.includeArchived === true ? "?includeArchived=true" : "";
+  const res = await get<ProjectDto[]>(`/api/projects${qs}`);
+  if (!res.ok) return res;
+  /*
+   * Lọc thêm ở FE (defense in depth).
+   *
+   * Backend có param `includeArchived` — nhưng ta không muốn phụ thuộc vào
+   * default của server (đã từng xảy ra: dự án đã archive vẫn hiện lại).
+   * Lọc ở FE đảm bảo dự án đã archive KHÔNG BAO GIỜ xuất hiện.
+   */
+  return {
+    ...res,
+    data: res.data.filter((p) => !isProjectArchived(p)),
+  };
 }
 
 /**
@@ -636,6 +692,10 @@ export interface ProjectFilter {
  *
  * Build query string từ params (chỉ những field non-empty).
  * Endpoint này trả về ProjectDto[] cho user hiện tại (đã filter ở BE).
+ *
+ * ⚠️ Dự án đã `Archived` bị loại khỏi kết quả (xem `listProjects`).
+ *   Nếu user **cố tình** lọc theo `status=Archived` (để xem dự án đã lưu
+ *   trữ) thì ta vẫn trả về — chỉ lọc khi `status` KHÔNG được chỉ định.
  */
 export async function filterProjects(
   params: ProjectFilter = {},
@@ -649,7 +709,14 @@ export async function filterProjects(
   const path = qs
     ? `/api/projects/filter?${qs}`
     : `/api/projects/filter`;
-  return get<ProjectDto[]>(path);
+  const res = await get<ProjectDto[]>(path);
+  if (!res.ok) return res;
+  // Chỉ lọc Archived khi user không lọc theo status cụ thể.
+  if (params.status?.trim().toLowerCase() === "archived") return res;
+  return {
+    ...res,
+    data: res.data.filter((p) => !isProjectArchived(p)),
+  };
 }
 
 /* ---------- project actions ---------- */
@@ -965,6 +1032,77 @@ export async function deleteSubtask(
   subtaskId: string,
 ): Promise<ApiResult<void>> {
   return del<void>(`/api/subtasks/${encodeURIComponent(subtaskId)}`);
+}
+
+/* ================================================================
+ * Đánh dấu Task / Subtask là XONG
+ * ----------------------------------------------------------
+ * ⚠️ QUY TẮC QUAN TRỌNG (spec FOCUS_SESSION_FE (1).md mục 6.3):
+ *
+ *   1. `PUT /api/tasks/{id}` và `PUT /api/subtasks/{id}` **THAY THẾ TOÀN BỘ**
+ *      → phải gửi **đủ** các trường, không chỉ `status`. Gửi thiếu →
+ *      BE có thể xoá field (VD: mất `estimatedMinutes`, mất `domainId`).
+ *
+ *   2. **Stop KHÔNG đánh dấu xong.** Spec mục 1:
+ *      "Stop `Completed` chỉ làm slot thành `Done`, không đánh dấu task hay
+ *       subtask xong." Việc này phải gọi API riêng.
+ *
+ *   3. Khi task chuyển `Done`, backend báo dịch vụ AI để học từ thời gian
+ *      thực tế (lỗi AI chỉ ghi log, không làm hỏng việc cập nhật).
+ *
+ *   4. Task `Done` KHÔNG làm subtask tự `Done` (và ngược lại) → FE tự
+ *      quyết định có hỏi "Đánh dấu cả các subtask còn lại là xong?" không.
+ * ============================================================ */
+
+/**
+ * Đánh dấu 1 SUBTASK là `Done`.
+ *
+ * Gửi **đủ** `title`, `estimatedMinutes`, `orderIndex`, `status` — đúng như
+ * mẫu trong spec mục 6.3.
+ *
+ * @param sub  Subtask đầy đủ (lấy từ `GET /api/tasks/{id}/subtasks`).
+ */
+export async function markSubtaskDone(
+  sub: Pick<
+    SubtaskDto,
+    "id" | "title" | "estimatedMinutes" | "orderIndex"
+  > & { description?: string | null },
+): Promise<ApiResult<SubtaskDto>> {
+  return updateSubtask(sub.id, {
+    title: sub.title,
+    description: sub.description ?? "",
+    estimatedMinutes: sub.estimatedMinutes,
+    orderIndex: sub.orderIndex,
+    status: "Done",
+  });
+}
+
+/**
+ * Đánh dấu 1 TASK là `Done`.
+ *
+ * Gửi **đủ** mọi trường theo spec mục 6.3:
+ * `title`, `description`, `taskType`, `domainId`, `milestoneId`, `deadline`,
+ * `estimatedMinutes`, `aiEstimatedMinutes`, `fixedStart`, `fixedEnd` — chỉ
+ * đổi `status` thành `Done`.
+ *
+ * @param task Task đầy đủ (lấy từ `GET /api/tasks/{id}`).
+ */
+export async function markTaskDone(
+  task: TaskDto,
+): Promise<ApiResult<TaskDto>> {
+  return updateTask(task.id, {
+    title: task.title,
+    description: task.description,
+    taskType: task.taskType,
+    domainId: task.domainId,
+    milestoneId: task.milestoneId,
+    deadline: task.deadline,
+    estimatedMinutes: task.estimatedMinutes,
+    aiEstimatedMinutes: task.aiEstimatedMinutes,
+    fixedStart: task.fixedStart,
+    fixedEnd: task.fixedEnd,
+    status: "Done",
+  });
 }
 
 /* ================================================================
@@ -1618,7 +1756,7 @@ const AI_BASE_URL =
 
 /* ---------- low-level aiFetch (riêng AI service) ---------- */
 
-async function aiFetch<T>(
+async function aiFetchRaw<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<ApiResult<T>> {
@@ -1692,6 +1830,38 @@ async function aiFetch<T>(
       error: `Không kết nối được dịch vụ AI. Vui lòng kiểm tra mạng và thử lại. (${raw})`,
     };
   }
+}
+
+/**
+ * Gọi AI service, tự refresh token khi gặp 401.
+ *
+ * AI service dùng **cùng** access token của METANOIA BE (BE xác thực rồi
+ * proxy sang AI). Nên khi access token hết hạn, AI cũng trả 401 y hệt BE.
+ *
+ * `apiFetch` (BE) đã tự refresh + retry; `aiFetch` trước đây thì không →
+ * các màn hình AI (Copilot, Project AI Chat, Briefing) sẽ chết khi token
+ * hết hạn. Hàm này bổ sung cùng hành vi cho AI.
+ *
+ * Retry **tối đa 1 lần**: 401 sau khi refresh = token vẫn không hợp lệ →
+ * trả lỗi, không refresh nữa (tránh loop vô hạn).
+ */
+async function aiFetch<T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<ApiResult<T>> {
+  const first = await aiFetchRaw<T>(path, options);
+  if (first.ok || first.status !== 401) return first;
+
+  const refreshed = await tryRefresh();
+  if (!refreshed.ok) return first;
+
+  const retry = await aiFetchRaw<T>(path, options);
+  if (retry.ok || retry.status !== 401) return retry;
+
+  // Refresh xong vẫn 401 → token không hợp lệ → đăng xuất như BE.
+  clearTokens();
+  window.location.href = "/login";
+  return { ok: false, error: "session_expired", status: 401 };
 }
 
 /* ---------- types (xem openapi.json của AI service) ---------- */
@@ -1896,6 +2066,332 @@ export async function applyTaskChat(
     `/chat/tasks/${encodeURIComponent(taskId)}/apply`,
     { method: "POST", body: JSON.stringify(body) },
   );
+}
+
+/* ============================================================
+ * PROJECT CHAT — FR-08b-1 (AI chat mức dự án)
+ * ----------------------------------------------------------
+ * Chat AI theo *project* (không phải task): user dán brief của khách,
+ * AI hỏi lại nếu thiếu thông tin, rồi đưa bản nháp milestone + task
+ * Flexible. User bấm Apply → BE tạo Milestone + Task thật.
+ *
+ * Tất cả endpoint thuộc **AI service** (VITE_AI_API_URL) → dùng `aiFetch`.
+ *
+ *   POST /chat/projects/{project_id}/conversations   → mở cuộc chat mới
+ *   GET  /chat/projects/{project_id}/conversations   → danh sách cuộc chat
+ *   GET  /chat/conversations/{id}                    → lịch sử + draft
+ *   POST /chat/conversations/{id}/messages           → gửi tin (tốn 1 lượt AI)
+ *   POST /chat/conversations/{id}/apply              → ghi milestone + task
+ *
+ * Quy tắc quan trọng:
+ *   - Mỗi cuộc chat chỉ Apply được **1 lần** (BE trả 409 `already_applied`).
+ *   - `message_id` của apply phải là **bản nháp mới nhất** (409 `not_latest_draft`).
+ *   - Chỉ endpoint `messages` mới tốn lượt AI.
+ * ============================================================ */
+
+export type ProjectConversationStatus = "open" | "applied" | "closed";
+export type ProjectReplyKind = "question" | "draft";
+export type ProjectEstimateSource = "user" | "ai";
+/** Lý do 1 task bị bỏ qua khi Apply (trùng việc đã có / trùng trong bản nháp). */
+export type ProjectSkipReason = "existing_task" | "in_draft";
+
+export interface ProjectConversationDto {
+  conversation_id: string;
+  title: string;
+  status: ProjectConversationStatus;
+  created_at: string;
+}
+
+export interface ProjectDomainDto {
+  id: string;
+  name: string;
+}
+
+export interface ProjectDraftTaskDto {
+  key: string | null;
+  title: string;
+  domain: ProjectDomainDto;
+  estimated_minutes: number;
+  reason: string | null;
+}
+
+export interface ProjectDraftMilestoneDto {
+  key: string | null;
+  title: string;
+  deadline: string; // ISO date YYYY-MM-DD
+  tasks: ProjectDraftTaskDto[];
+}
+
+export interface ProjectDomainNumbersDto {
+  domain: string;
+  estimated_minutes: number;
+  adjusted_minutes: number;
+}
+
+export interface ProjectNumbersDto {
+  by_domain: ProjectDomainNumbersDto[];
+  total_estimated_minutes: number;
+  total_adjusted_minutes: number;
+  days_left: number | null;
+  adjusted_is_hint: boolean;
+}
+
+export interface ProjectDraftDto {
+  message_id: string;
+  milestones: ProjectDraftMilestoneDto[];
+  reminders: string[];
+  numbers: ProjectNumbersDto;
+  warnings: string[];
+}
+
+export interface ProjectChatMessageDto {
+  id: string;
+  role: ChatRole;
+  kind: ProjectReplyKind | null;
+  content: string;
+  created_at: string;
+  draft: ProjectDraftDto | null;
+}
+
+export interface ProjectChatDto {
+  conversation_id: string;
+  project_id: string;
+  status: ProjectConversationStatus;
+  messages: ProjectChatMessageDto[];
+  latest_draft: ProjectDraftDto | null;
+  applied: boolean;
+}
+
+export interface ProjectChatTurnDto {
+  conversation_id: string;
+  user_message: ProjectChatMessageDto;
+  ai_message: ProjectChatMessageDto;
+}
+
+export interface AppliedProjectTaskDto {
+  id: string;
+  title: string;
+  estimated_minutes: number;
+  estimate_source: ProjectEstimateSource;
+}
+
+export interface AppliedProjectMilestoneDto {
+  id: string;
+  title: string;
+  deadline: string;
+  tasks: AppliedProjectTaskDto[];
+}
+
+export interface SkippedProjectTaskDto {
+  title: string;
+  reason: ProjectSkipReason;
+}
+
+export interface AppliedProjectBreakdownDto {
+  milestones: AppliedProjectMilestoneDto[];
+  skipped: SkippedProjectTaskDto[];
+}
+
+/** Task sửa tay lúc Apply — cùng shape với `EditedMilestone` của AI service. */
+export interface EditedProjectTask {
+  key?: string | null;
+  title: string;
+  domain_id: string;
+  estimated_minutes: number;
+}
+
+export interface EditedProjectMilestone {
+  key?: string | null;
+  title: string;
+  deadline?: string | null;
+  tasks: EditedProjectTask[];
+}
+
+/**
+ * POST /chat/projects/{project_id}/conversations
+ * Mở cuộc chat mới cho 1 project. Không tốn lượt AI.
+ *
+ * 409 → project đã đóng (`Completed` / `Archived`).
+ */
+export async function startProjectConversation(
+  projectId: string,
+): Promise<ApiResult<ProjectConversationDto>> {
+  if (!projectId) return { ok: false, error: "project_id is required" };
+  return aiFetch<ProjectConversationDto>(
+    `/chat/projects/${encodeURIComponent(projectId)}/conversations`,
+    { method: "POST" },
+  );
+}
+
+/**
+ * GET /chat/projects/{project_id}/conversations
+ * Danh sách cuộc chat của project (mới nhất trước).
+ */
+export async function listProjectConversations(
+  projectId: string,
+): Promise<ApiResult<ProjectConversationDto[]>> {
+  if (!projectId) return { ok: false, error: "project_id is required" };
+  return aiFetch<ProjectConversationDto[]>(
+    `/chat/projects/${encodeURIComponent(projectId)}/conversations`,
+    { method: "GET" },
+  );
+}
+
+/**
+ * GET /chat/conversations/{conversation_id}
+ * Lấy lịch sử tin nhắn + bản nháp mới nhất của cuộc chat. Không gọi AI.
+ */
+export async function getProjectChat(
+  conversationId: string,
+): Promise<ApiResult<ProjectChatDto>> {
+  if (!conversationId) return { ok: false, error: "conversation_id is required" };
+  return aiFetch<ProjectChatDto>(
+    `/chat/conversations/${encodeURIComponent(conversationId)}`,
+    { method: "GET" },
+  );
+}
+
+/**
+ * POST /chat/conversations/{conversation_id}/messages
+ * Gửi 1 tin nhắn (brief của khách) — **tốn 1 lượt AI** khi AI trả lời.
+ *
+ * Retry tự động khi gặp **409**: BE trả 409 khi cuộc chat đã Apply, project đã
+ * đóng, hoặc chưa có gói `Active`. 3 trường hợp này đều là lỗi vĩnh viễn →
+ * retry sẽ chỉ tốn thêm lượt AI. Vì vậy **không** retry 409 ở đây (khác với
+ * `sendTaskMessage` của FR-08a, nơi 409 là lỗi tạm thời).
+ */
+export async function sendProjectChatMessage(
+  conversationId: string,
+  message: string,
+): Promise<ApiResult<ProjectChatTurnDto>> {
+  if (!conversationId) return { ok: false, error: "conversation_id is required" };
+  const trimmed = message.trim();
+  if (!trimmed) return { ok: false, error: "message is empty" };
+  if (trimmed.length > 8000) {
+    return {
+      ok: false,
+      error: "Tin nhắn vượt quá 8.000 ký tự. Vui lòng dán phần chính của brief.",
+    };
+  }
+  return aiFetch<ProjectChatTurnDto>(
+    `/chat/conversations/${encodeURIComponent(conversationId)}/messages`,
+    { method: "POST", body: JSON.stringify({ message: trimmed }) },
+  );
+}
+
+/**
+ * POST /chat/conversations/{conversation_id}/apply
+ * Ghi bản nháp thành Milestone + Task thật. Không tốn lượt AI.
+ *
+ * `milestones` = null → dùng nguyên bản nháp. Truyền mảng → sửa tay
+ * (đổi title / phút / domain / deadline, thêm / bỏ task / milestone).
+ *
+ * 409 → `not_latest_draft` | `already_applied` | `project_closed`.
+ */
+export async function applyProjectBreakdown(
+  conversationId: string,
+  messageId: string,
+  milestones?: EditedProjectMilestone[] | null,
+): Promise<ApiResult<AppliedProjectBreakdownDto>> {
+  if (!conversationId) return { ok: false, error: "conversation_id is required" };
+  if (!messageId) return { ok: false, error: "message_id is required" };
+  const body: { message_id: string; milestones: EditedProjectMilestone[] | null } = {
+    message_id: messageId,
+    milestones: milestones ?? null,
+  };
+  return aiFetch<AppliedProjectBreakdownDto>(
+    `/chat/conversations/${encodeURIComponent(conversationId)}/apply`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+/* ============================================================
+ * BRIEFING — bản tóm tắt hôm nay (AI service)
+ * ----------------------------------------------------------
+ * GET /briefing/today?language=vi|en
+ *
+ * Endpoint READ-ONLY của AI service: gộp sẵn task + slot + lịch Google
+ * + hồ sơ năng suất của user thành 1 payload duy nhất. **Không tốn
+ * quota AI, không gọi LLM.**
+ *
+ * ⚠️ `language` chỉ nhận `vi` | `en` — giá trị khác → BE trả 422.
+ * Wrapper dưới đây tự chuẩn hoá nên FE không bao giờ gửi giá trị lạ.
+ *
+ * Phạm vi dùng: trang /briefing (mới). KHÔNG dùng `schedule[]` để thay
+ * thế `GET /api/calendar` của BE — calendar BE giàu thông tin hơn
+ * (subTaskId, googleEventId, syncFailed, isManualOverride) và cần cho các
+ * hành động tương tác (bấm slot để bắt đầu focus).
+ * ============================================================ */
+
+export type BriefingLanguage = "vi" | "en";
+
+/** Nguồn của 1 dòng trong lịch hôm nay. */
+export type BriefingScheduleKind = "slot" | "fixed" | "google";
+
+/** Vì sao task nằm trong danh sách "nên làm hôm nay". */
+export type BriefingReasonCode =
+  | "overdue"
+  | "at_risk"
+  | "in_progress"
+  | "deadline_soon"
+  | "bias";
+
+export interface BriefingScheduleItem {
+  kind: BriefingScheduleKind;
+  start: string;
+  end: string;
+  title: string;
+  task_id: string | null;
+  status: "Approved" | "Done" | null;
+}
+
+export interface BriefingTopTask {
+  task_id: string;
+  title: string;
+  project_name: string;
+  deadline: string;
+  remaining_minutes: number;
+  reasons: { code: BriefingReasonCode; text: string }[];
+  similar_warning: { text: string } | null;
+}
+
+export interface BriefingAtRisk {
+  task_id: string;
+  title: string;
+  deadline: string;
+  missing_minutes: number;
+}
+
+export interface BriefingProductiveHint {
+  ranges: { start: string; end: string }[];
+  text: string;
+}
+
+export interface BriefingResponse {
+  date: string;
+  time_zone: string;
+  calendar_connected: boolean;
+  has_pending_proposal: boolean;
+  schedule: BriefingScheduleItem[];
+  all_day: { title: string }[];
+  top_tasks: BriefingTopTask[];
+  at_risk: BriefingAtRisk[];
+  productive_hint: BriefingProductiveHint | null;
+}
+
+/**
+ * GET /briefing/today?language=vi|en
+ *
+ * @param language Ngôn ngữ của phần text AI viết (`vi` | `en`).
+ *   Mọi giá trị khác bị ép về `vi` — BE trả 422 nếu gửi giá trị lạ.
+ */
+export async function getTodayBriefing(
+  language: BriefingLanguage = "vi",
+): Promise<ApiResult<BriefingResponse>> {
+  const lang: BriefingLanguage = language === "en" ? "en" : "vi";
+  return aiFetch<BriefingResponse>(`/briefing/today?language=${lang}`, {
+    method: "GET",
+  });
 }
 
 /* ============================================================
@@ -2204,8 +2700,20 @@ export type FocusSlotStatus =
 export interface FocusStartRequest {
   /** Bắt buộc. */
   taskId: string;
-  /** null = làm việc ngoài lịch. */
+  /**
+   * null = làm việc ngoài lịch.
+   *
+   * Theo spec mục 5.1, khi làm ngoài lịch thì `plannedMinutes = 0` và
+   * `expectedEndAt = startedAt`. Ta vẫn gửi `null` (BE chấp nhận null) —
+   * nhưng **không** gửi `subTaskId` khi không có (xem `buildFocusStartBody`).
+   */
   scheduleSlotId?: string | null;
+  /**
+   * Subtask của phiên — **phải lấy từ slot** (spec mục 6.1).
+   *
+   * Backend KHÔNG tự suy ra `subTaskId` từ slot: nếu slot gắn subtask mà
+   * ta không gửi `subTaskId`, phiên sẽ **không** có nhãn subtask.
+   */
   subTaskId?: string | null;
   focusTrackId?: string | null;
 }

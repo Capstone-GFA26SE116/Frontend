@@ -1,4 +1,4 @@
-# METANOIA — Workflow, Demo Scenarios & Test Plan (Defense 1.1)
+﻿# METANOIA — Workflow, Demo Scenarios & Test Plan (Defense 1.1)
 
 > Preparation document for **Defense 1.1** (Review 2). Content follows the current implementation in `src/`.
 > Part A is the formal deliverable mapped to the instructor's criteria. Part B is the technical reference used while demoing.
@@ -29,6 +29,7 @@ Every workflow has **exactly one owner**; every member owns **at least one workf
 | **MW-08** | Focus session execution | End user | Click "Bắt đầu" (Start) on a slot, or self-report time already worked | Quantified real working time per task → training data for K_bias | `ScheduleSlot`: `Due → InProgress → Overrun → Done`; `FocusSession`: `— → Running → Stopped/AutoTimeout/PendingConfirm` |
 | **MW-09** | Notification delivery & reminders | End user (reactive) | BE pushes an event over SignalR / Web Push | Realtime toast + persisted inbox + unread badge | `Notification`: `— → Unread → Read` |
 | **MW-10** | Plan upgrade & PayOS checkout | End user (Free tier) | Click "Mua gói này" (Buy this plan) on `/pricing` | Subscription upgraded, invoice issued | `Payment`: `Pending → Succeeded`; `Subscription`: `— → Active` |
+| **MW-11** | Daily briefing (AI summary of today) | End user (reactive) | Click "Briefing hôm nay" (Daily briefing) on `/dashboard` | One screen telling the user what to work on today, which tasks are short of time, and when they focus best | `Task`: `Open → AtRisk` *(derived, not persisted)*; `ScheduleSlot`: unchanged — the briefing is read-only |
 
 ### A.1.2. Activity Diagram specification (for cross-checking against the SDD)
 
@@ -118,6 +119,7 @@ Each MW below is an **activity step list** — it is the source for drawing the 
 14. Click "Dừng" (Stop) → 15. Dialog to pick a reason (`Completed`/`Interrupted`/`Blocked`/`Other`) → 16. `POST /api/focus/{sessionId}/stop`
 17. [decision] HTTP 409 (already stopped)? → treat as **success**, do not raise an error
 18. [decision] `stopReason = Completed`? → slot → `Done`; otherwise → slot → `Due` → 19. `checkInRequired`? → check-in dialog
+19b. [decision] `stopReason = Completed` **and the session had a `subTaskId`?** → dialog "Đánh dấu subtask này là xong?" → `PUT /api/subtasks/{id}` (send **all** fields — the PUT replaces the whole entity) → if all subtasks of the task are `Done` → dialog "Đánh dấu cả task là xong?" → `PUT /api/tasks/{id}` (send **all** fields)
 20. `GET /api/focus/{slotId}/time-summary` → 21. Render Planned / Actual / Session count
 22. [alternate branch] Forgot to press Start → `POST /api/focus/self-report` (validates `endedAt > startedAt`, neither in the future, ≤ 24h)
 23. [alternate branch] System auto-timeout → `GET /api/focus/pending-confirmation` → `POST /api/focus/{sessionId}/confirm { confirmed, correctedMinutes }`
@@ -141,6 +143,19 @@ Each MW below is an **activity step list** — it is the source for drawing the 
    - `Cancelled`/`Expired`/`Failed` → 14. Show the matching message + a "create again" button
    - `503` → keep "Processing" → retry
 
+**MW-11 — Daily briefing (AI summary of today)**
+1. Open `/dashboard` → click "Briefing hôm nay" → 2. Route to `/briefing` → 3. `GET /briefing/today?language=vi` (AI service, **read-only**: no quota, no LLM)
+4. Render the hero: `productive_hint.text` + `productive_hint.ranges` as chips; `null` → the "chưa có dữ liệu" hint
+5. Render the flags: `calendar_connected` (chip on/off), `has_pending_proposal` (link → `/copilot`)
+6. Render "Task nên làm hôm nay": `top_tasks[]` with `reasons[]` mapped to the reason chips (`overdue` / `at_risk` / `in_progress` / `deadline_soon` / `bias`) and `similar_warning.text`
+7. [decision] `at_risk[]` non-empty? → Yes → 8. Render "Task thiếu thời gian" with `missing_minutes`; No → 9. **Hide** the card entirely
+9. Render "Lịch hôm nay": `schedule[]` (sorted by `start`) + `all_day[]` (first), each tagged with its source (`slot` / `fixed` / `google`)
+10. [exception branch] `401` → refresh the access token → retry once → if still `401` → sign out
+11. [exception branch] `422` / `429` / service unreachable → show the retry panel with a "Thử lại" button; the rest of the app stays usable
+12. Click "Làm mới" → refetch the same endpoint → re-render (no duplicate panels, no flicker of the error state)
+
+> ⚠ The briefing is **read-only**. It never writes to the Backend, and it does **not** replace `GET /api/calendar` — the interactive calendar (starting a focus session from a slot) still uses the Backend endpoint, which carries the richer fields (`subTaskId`, `googleEventId`, `syncFailed`, `isManualOverride`).
+
 ### A.1.3. Owner assignment
 
 > Replace `M1..M5` with the real team member names. Everyone owns at least one workflow.
@@ -151,9 +166,9 @@ Each MW below is an **activity step list** — it is the source for drawing the 
 | **M2** | MW-02, MW-03 | 2 | Clients → projects → milestones |
 | **M3** | MW-04, MW-05 | 2 | Manual decomposition → AI decomposition |
 | **M4** | MW-06, MW-07 | 2 | AI scheduling → calendar & Google Calendar |
-| **M5** | MW-08, MW-10 | 2 | Focus session → billing |
+| **M5** | MW-08, MW-10, MW-11 | 3 | Focus session → billing → daily briefing |
 
-*(For a team of N members: redistribute the table so every member owns ≥ 1 workflow and the total stays 10.)*
+*(For a team of N members: redistribute the table so every member owns ≥ 1 workflow and the total stays 11.)*
 
 ### A.1.4. Cross-check against the SDD
 
@@ -169,6 +184,7 @@ Each MW below is an **activity step list** — it is the source for drawing the 
 | MW-08 | AD-08 Focus session | §4.8 | `[TO DRAW]` |
 | MW-09 | AD-09 Notifications | §4.9 | `[TO DRAW]` |
 | MW-10 | AD-10 PayOS checkout | §4.10 | `[TO DRAW]` |
+| MW-11 | AD-11 Daily briefing | §4.11 | `[TO DRAW]` |
 
 **Rule "every workflow has a matching Activity Diagram in the SDD"**: use the **same IDs** (MW-0x ↔ AD-0x) so the instructor can compare them 1-1.
 
@@ -217,11 +233,13 @@ scripts/
 | Slots | 1 `Approved` slot tomorrow (to demo "start early") | MW-08 exception |
 | Slots | 1 `Proposed` slot (to demo the hidden Start button) | MW-08 exception |
 | Slots | 1 slot of 3 minutes (to demo auto-timeout) | MW-08 exception |
+| Briefing | 1 task due today + 1 task already overdue (so `top_tasks` shows the `overdue` reason and `at_risk` shows a non-zero `missing_minutes`) | MW-11 |
+| Briefing | ≥ 3 completed focus sessions (so `productive_hint.ranges` is non-empty) | MW-11 |
 
 ### A.2.3. Demo scenario list
 
 > Every scenario specifies: **Preconditions & sample data → Steps → Expected result → Presenter**.
-> Total: 10 Main Scenarios + 20 Exception Scenarios = **30 scenarios**.
+> Total: 11 Main Scenarios + 21 Exception Scenarios = **32 scenarios**.
 
 ---
 
@@ -451,6 +469,20 @@ scripts/
 - *Expected result:* `PUT /api/me/profile` is currently **mocked** in `api-client.ts` (the BE is not stable yet) → the name change takes effect for the session through an overlay. **This must be stated explicitly during the demo.**
 - *Presenter:* M5.
 
+#### **MW-11 — Daily briefing (AI summary of today)** · Owner: M5
+
+**MS-11 (Main)** — Open the briefing and read what matters today
+- *Preconditions:* signed in, onboarding complete; ≥ 1 Flexible task is due today, 1 task is already overdue, Google Calendar is connected, ≥ 3 focus sessions recorded.
+- *Steps:* 1) Open `/dashboard` → 2) Click "Briefing hôm nay" (Daily briefing) → 3) Read the AI hint and the productive ranges → 4) Read "Task nên làm hôm nay" (Tasks to do today) → 5) Read "Task thiếu thời gian" (Tasks short of time) → 6) Read "Lịch hôm nay" (Today's schedule) → 7) Click "Làm mới" (Refresh).
+- *Expected result:* `GET /briefing/today?language=vi` returns 200 in **one** call; the hero shows the AI-written hint and the productive ranges as chips; each top task shows its reason chips (`overdue` / `at_risk` / `bias`); the at-risk card shows `missing_minutes`; the schedule merges `slot` + `fixed` + `google` sorted by start time with the all-day items first; "Làm mới" re-fetches and the content stays stable.
+- *Presenter:* M5.
+
+**ES-21 (Exception)** — The briefing cannot be loaded
+- *Preconditions:* signed in; the AI service is stopped or the plan's quota is exhausted.
+- *Steps:* 1) Open `/briefing` with the AI service unreachable → 2) Click "Thử lại" (Try again) after restoring it → 3) Then request the briefing with an unsupported `language` value.
+- *Expected result:* the service unreachable → the retry panel with a "Thử lại" button instead of a blank screen, and the rest of the app stays usable; a `429` shows the "quota exhausted" message; the FE **never** sends an unsupported `language` (the wrapper normalises to `vi`/`en`), so the BE never answers `422`.
+- *Presenter:* M5.
+
 ---
 
 ## A.3. Determining the number of test cases to commit to
@@ -461,7 +493,7 @@ scripts/
 Total committed TC = TC(Mandatory Feature) + TC(E2E Main Workflow) + TC(state transitions) + TC(NFR)
 ```
 
-### A.3.2. Mandatory Features (12) — at least 3 test cases each
+### A.3.2. Mandatory Features (13) — at least 3 test cases each
 
 | # | Mandatory Feature | Related workflow | Minimum TC | Notes |
 |---|---|---|---|---|
@@ -477,8 +509,9 @@ Total committed TC = TC(Mandatory Feature) + TC(E2E Main Workflow) + TC(state tr
 | MF-10 | Focus session (start/stop/timer/self-report/auto-timeout) | MW-08 | 3 | full lifecycle, 409, slot state transitions |
 | MF-11 | Realtime notifications (SignalR / Web Push / inbox) | MW-09 | 3 | receive, connection loss, mark as read |
 | MF-12 | PayOS billing + profile/invoices | MW-10 | 3 | successful payment, cancel/error, invoice view |
+| MF-13 | Daily briefing (AI summary of today) | MW-11 | 3 | render all sections, `language` validation, service unreachable |
 
-→ **36 test cases**.
+→ **40 test cases**.
 
 ### A.3.3. End-to-end tests for the Main Workflows (10)
 
@@ -494,8 +527,9 @@ Total committed TC = TC(Mandatory Feature) + TC(E2E Main Workflow) + TC(state tr
 | E2E-08 | Receive a SignalR toast → open the inbox → mark as read → the badge returns to 0 | MW-09 | MS-09 |
 | E2E-09 | Buy a plan → PayOS → success → the plan shows in the profile with an invoice | MW-10 | MS-10 |
 | E2E-10 | End-to-end essence: manual task + AI task + AI slot → Focus → RAG updates K_bias | MW-04..MW-08 | MS-04→MS-05→MS-06→MS-08 |
+| E2E-11 | Open the daily briefing → read the hint, the top tasks and the at-risk list → refresh | MW-11 | MS-11 |
 
-→ **10 test cases**.
+→ **11 test cases**.
 
 ### A.3.4. Tests for the state transitions of the primary entities
 
@@ -504,7 +538,7 @@ Total committed TC = TC(Mandatory Feature) + TC(E2E Main Workflow) + TC(state tr
 | **ScheduleSlot** | Proposed, Approved, Due, InProgress, Overrun, Done, Missed, Skipped, Cancelled, Postponed | Proposed→Approved; Approved→Due; Due→InProgress; InProgress→Overrun; InProgress→Done; Approved→Done; Due→Missed; Approved→Skipped; Due→Cancelled; InProgress→Postponed | Proposed→InProgress (Start before approval); Done→InProgress; Cancelled→InProgress; Missed→Overrun | **14** |
 | **Task** | ToDo, InProgress, Done, Skipped | ToDo→InProgress; InProgress→Done; ToDo→Skipped; Done→ToDo (reopen) | ToDo→Done without a focus session (blocked when the rule is on); Done→InProgress | **6** |
 | **Subtask** | ToDo, InProgress, Done, Skipped | ToDo→InProgress; InProgress→Done; ToDo→Skipped | Done→InProgress | **4** |
-| **Project** | Draft, Active, Pending, Completed | Draft→Active; Active→Completed; Completed→Active (restore) | Active→Draft; Completed→Draft | **5** |
+| **Project** | Active, OnHold, Completed, Archived | Active→OnHold; Active→Completed; Active→Archived (soft delete); Completed→Active (restore); Archived→Active (restore) | Archived→Completed without restoring first | **5** |
 | **Milestone** | Open, InProgress, Completed | Open→InProgress; InProgress→Completed; Completed→Open | Open→Completed without passing through InProgress | **4** |
 | **Client** | Active, Deleted | Active→Deleted | Deleted→Active (deletion is a hard delete) | **3** |
 | **FocusSession** | Running, Stopped, AutoTimeout, PendingConfirm | Running→Stopped (Completed); Running→Stopped (Interrupted); Running→AutoTimeout; AutoTimeout→PendingConfirm→Stopped | Stopped→Running (resume — unsupported, must be rejected); PendingConfirm→Running | **6** |
@@ -532,14 +566,13 @@ Total committed TC = TC(Mandatory Feature) + TC(E2E Main Workflow) + TC(state tr
 
 | Group | Count |
 |---|---|
-| Mandatory Feature (12 × 3) | 36 |
-| E2E Main Workflow | 10 |
-| State transitions of the primary entities | 52 |
+| Mandatory Feature (13 × 3, +1 extra) | 40 |
+| E2E Main Workflow | 11 |
+| State transitions of the primary entities | 53 |
 | Measurable NFR | 8 |
-| **TOTAL COMMITTED** | **106** |
+| **TOTAL COMMITTED** | **112** |
 
-**Commitment: 106 test cases.**
-
+**Commitment: 112 test cases.**
 ### A.3.7. Automation ratio (≥ 50% in CI)
 
 | Test layer | Tool | TC | Automated? |
@@ -548,13 +581,13 @@ Total committed TC = TC(Mandatory Feature) + TC(E2E Main Workflow) + TC(state tr
 | Component — forms/modals/slot panel | Vitest + Testing Library | 12 | ✅ |
 | API contract — smoke tests against staging (auth, project, task, slot, focus) | Vitest + supertest/msw | 14 | ✅ |
 | Integration — AI flow: propose → apply → schedule (mocked AI service) | Vitest + msw | 8 | ✅ |
-| E2E — Playwright: 10 Main Scenarios | Playwright | 10 | ✅ |
+| E2E — Playwright: 11 Main Scenarios | Playwright | 11 | ✅ |
 | E2E — Playwright: 6 key exception scenarios (ES-01, ES-03, ES-05, ES-09, ES-12, ES-15) | Playwright | 6 | ✅ |
-| **Automated in CI** | | **68** | **64.2%** ✅ |
+| **Automated in CI** | | **73** | **65.2%** ✅ |
 | Manual — the 14 remaining exception scenarios + 8 manual NFR checks | | 38 | ❌ (manual) |
-| **TOTAL** | | **106** | |
+| **TOTAL** | | **112** | |
 
-**Commitment: 68/106 = 64.2% of test cases run automatically in CI** (above the 50% threshold).
+**Commitment: 73/112 = 65.2% of test cases run automatically in CI** (above the 50% threshold).
 
 > ⚠ Current repository state: `package.json` has **no** `vitest`, `@playwright/test`, `msw`, `axe-core` or `k6`. These must be added — see A.5.
 
@@ -564,22 +597,22 @@ Total committed TC = TC(Mandatory Feature) + TC(E2E Main Workflow) + TC(state tr
 
 | # | Proposed criterion (to be placed in **Appendix A of BM01**) | How it is measured | Current status |
 |---|---|---|---|
-| **T1** | 100% of Main Workflows run end-to-end on staging | 10/10 E2E pass | ☐ Not measured |
-| **T2** | 100% of Main Scenarios pass | 10/10 | ☐ Not measured |
-| **T3** | ≥ 80% of Exception Scenarios pass | ≥ 16/20 | ☐ Not measured |
-| **T4** | Actual test case count ≥ the committed count | ≥ 106 | ☐ Not measured |
-| **T5** | Pass rate ≥ 90% | ≥ 95/106 pass | ☐ Not measured |
-| **T6** | 100% of the main-path tests for Mandatory Features pass | 36/36 pass | ☐ Not measured |
-| **T7** | ≥ 50% of test cases automated and executed in CI | 68/106 = 64.2% | ☐ No CI yet |
+| **T1** | 100% of Main Workflows run end-to-end on staging | 11/11 E2E pass | ☐ Not measured |
+| **T2** | 100% of Main Scenarios pass | 11/11 | ☐ Not measured |
+| **T3** | ≥ 80% of Exception Scenarios pass | ≥ 17/21 | ☐ Not measured |
+| **T4** | Actual test case count ≥ the committed count | ≥ 112 | ☐ Not measured |
+| **T5** | Pass rate ≥ 90% | ≥ 101/112 pass | ☐ Not measured |
+| **T6** | 100% of the main-path tests for Mandatory Features pass | 40/40 pass | ☐ Not measured |
+| **T7** | ≥ 50% of test cases automated and executed in CI | 73/112 = 65.2% | ☐ No CI yet |
 | **T8** | No open Critical/High defects | 0 | ☐ Not measured |
 | **T9** | Every member can demo the workflow they own | 5/5 members rehearse | ☐ Not measured |
 | **T10** | Every owner can explain the code, the entity states and the exception handling | 1-1 review checklist | ☐ Not measured |
-| **T11** | Every Main Workflow has a matching Activity Diagram in the SDD (MW-0x ↔ AD-0x) | 10/10 | ☐ `[TO DRAW]` |
+| **T11** | Every Main Workflow has a matching Activity Diagram in the SDD (MW-0x ↔ AD-0x) | 11/11 | ☐ `[TO DRAW]` |
 | **T12** | The sample-data seed script is idempotent and re-runnable | `npm run seed:demo` | ☐ `[TO BUILD]` |
 
 **Proposed adjustments / additions** (to be agreed with the instructor at Review 2):
-1. **T4** — committing to **106 TC**; this number may be adjusted once the instructor confirms the official Mandatory Feature list. Proposal: fix MF = 12 as listed above.
-2. **T7** — committing to **64.2%** (68/106); proposal: keep the threshold at ≥ 60% to retain a buffer.
+1. **T4** — committing to **112 TC**; this number may be adjusted once the instructor confirms the official Mandatory Feature list. Proposal: fix MF = 13 as listed above.
+2. **T7** — committing to **65.2%** (73/112); proposal: keep the threshold at ≥ 60% to retain a buffer.
 3. **T3** — proposal: split "exceptions the system handles correctly" (must be 100%) from "environment-caused exceptions" (80% allowed).
 4. **T8** — define the Critical/High levels explicitly: blocks a main flow / causes data loss / leaks data.
 
@@ -596,8 +629,8 @@ Total committed TC = TC(Mandatory Feature) + TC(E2E Main Workflow) + TC(state tr
 | 3 | Seed script runs successfully and produces the dataset in A.2.2 | ☐ `[TO BUILD]` |
 | 4 | Demo Google account pre-signed-in (avoids the OAuth wall mid-presentation) | ☐ |
 | 5 | PayOS test merchant working, ReturnUrl/CancelUrl pointing at staging | ☐ |
-| 6 | Dry-run of the 10 Main Scenarios, results recorded | ☐ |
-| 7 | Dry-run of the 20 Exception Scenarios, results recorded | ☐ |
+| 6 | Dry-run of the 11 Main Scenarios, results recorded | ☐ |
+| 7 | Dry-run of the 21 Exception Scenarios, results recorded | ☐ |
 | 8 | Actual result vs expected result compared (table A.5.3) | ☐ |
 | 9 | Defects recorded: description, severity, owner, resolution status | ☐ |
 | 10 | Every owner rehearses ≥ 2 times and can explain the code, the states and the exceptions | ☐ |
@@ -626,7 +659,7 @@ tests/
   component/   form modal, slot panel, focus bar
   contract/    staging API smoke (auth, project, task, slot, focus)
   integration/ AI propose → apply → schedule (mocked AI)
-  e2e/         10 main scenarios + 6 exception scenarios (Playwright)
+  e2e/         11 main scenarios + 6 exception scenarios (Playwright)
 
 scripts/
   seed-demo.ts, seed-history.ts, reset-demo.ts, trigger-notification.ts
@@ -651,8 +684,8 @@ scripts/
 | 1 | Main Workflow list + owners | A.1.1, A.1.3 | ✅ done (fill in the real names M1..M5) |
 | 2 | Matching Activity Diagrams in the SDD | A.1.2, A.1.4 | ☐ `[TO DRAW]` — the step lists are ready |
 | 3 | Main + exception scenario list | A.2.3 (10 + 20) | ✅ done |
-| 4 | Test case list + total committed count | A.3 (106 TC) | ✅ done |
-| 5 | Automation ratio | A.3.7 (64.2%) | ✅ done (CI still to be installed) |
+| 4 | Test case list + total committed count | A.3 (112 TC) | ✅ done |
+| 5 | Automation ratio | A.3.7 (65.2%) | ✅ done (CI still to be installed) |
 | 6 | Proposed Defense 1.1 criteria | A.4 (12 criteria) | ✅ done |
 | 7 | Evidence of the dry run: demo results, test report, CI status | A.5.3 + CI artifacts | ☐ `[TO BUILD]` |
 | 8 | Sample-data loading script in the repository | A.5.2 | ☐ `[TO BUILD]` |
@@ -726,6 +759,7 @@ Focus     POST /api/focus/start → GET /api/focus/current → POST /api/focus/{
 Notify    SignalR /hubs/notifications → GET /api/notifications
 Billing   GET /api/subscription-plans → POST /api/payments/checkout → POST /api/payments/{id}/sync
           → GET /api/invoices
+Briefing  GET /briefing/today?language=vi        ← AI service, read-only (1 call cho cả trang)
 ```
 
 ## B.4. Business rules & edge cases to state explicitly during the demo
@@ -734,9 +768,14 @@ Billing   GET /api/subscription-plans → POST /api/payments/checkout → POST /
 |---|---|
 | `PUT /api/me/profile` | **Currently mocked** in the FE because the BE is not stable yet (`api-client.ts`) |
 | Quick capture on the Dashboard | Only an in-memory scratch pad — the BE has no "inbox" API yet |
-| The "AI decompose" button on the project card | Currently a simulated toast; the real AI flow lives in `/copilot` |
-| The route `/projects/:id/execution` | Does not exist — the "AI auto-decompose" button in Project Detail calls `preventDefault` |
+| The "AI decompose" button on the project card | Links to `/projects/:id/execution` — the FR-08b-1 project-level AI chat (brief → milestone + task). The task-level flow lives in `/copilot` |
+| The route `/projects/:id/execution` | **Exists** — the FR-08b-1 project AI chat. The user pastes the client brief, the AI asks back when information is missing, then proposes a milestone + task draft that the user edits before applying |
 | Check-in after Stop | The BE has no API to store it → the FE only shows the dialog and discards it |
+| Stop `Completed` does **not** mark the task/subtask `Done` | **By design** (spec mục 1). Stop only moves the slot to `Done`. The FE asks "Đánh dấu subtask này là xong?" and then calls `PUT /api/subtasks/{id}` — and that PUT **replaces the whole entity**, so every field must be sent |
+| `GET /api/focus/current` has no `subTaskId` | **By design** (spec mục 8.1). The FE remembers the `subTaskId` it sent at Start (in `sessionStorage`) and looks the title up itself. On another device the FE cannot know it |
+| The FE never sends a mismatched `subTaskId` | The backend does **not** cross-check the slot against the subtask (spec mục 6.1, result #10). The FE always takes the subtask **from the slot** it starts, so the two can never diverge |
+| `taskTotalMinutes` is always the whole task | The total is **not** split per subtask (spec mục 7) — a session on subtask A still reports the sum over the task |
+| `Postponed` slot | Dimmed but **still Start-able** (the BE allows `Postponed`); `Skipped` / `Cancelled` are hidden entirely |
 | The AI cannot find a slot | `is_feasible = false` + `missing_minutes` + specific warnings — **correct by design**, not a bug |
 | 409 on Start | **Correct** behaviour: another session is already running in another tab |
 | 409 on Stop | The session was already stopped → treated as **success** |
@@ -744,6 +783,8 @@ Billing   GET /api/subscription-plans → POST /api/payments/checkout → POST /
 | The clock never drifts | Intentional: the time origin comes from the server + `performance.now()` |
 | 1 task = 1 `schedule/propose` request | Batching tasks makes one failure turn the whole group into `is_feasible=false` |
 | One `proposal_id` per task | Sharing a single id makes the BE reject the request |
+| The daily briefing is read-only | `GET /briefing/today` never writes to the Backend and never consumes AI quota. It does **not** replace `GET /api/calendar` — the interactive calendar still uses the Backend endpoint, which carries the richer fields (`subTaskId`, `googleEventId`, `syncFailed`, `isManualOverride`) |
+| `top_tasks[]` cannot be deep-linked | The API returns `project_name` as text, not `project_id` → the briefing shows the project name but cannot link to the project page |
 
 ## B.5. Focus session states (from `FOCUS_SESSION_FE.md`)
 
@@ -768,6 +809,7 @@ Stop reasons: `Completed` (→ slot `Done`) · `Interrupted` / `Blocked` / `Othe
 - `src/hooks/useFocusSession.ts` — the source of truth for **every focus behaviour**. Change → update A.1.2 (MW-08) and B.5.
 - `src/components/schedule-proposal-logic.ts` — the source of truth for **AI scheduling**. Change → update A.1.2 (MW-06).
 - `src/components/focus/focus-logic.ts` — the source of truth for **button rendering per slot state**. Change → update B.5.
+- `src/pages/briefing/Briefing.tsx` — the source of truth for **the daily briefing screen**. Change → update A.1.2 (MW-11) and §9.2 (DS-11a / DS-11b).
 - `FOCUS_SESSION_FE.md` — the original BE-side spec; when it conflicts, **the BE spec wins**.
 
 ---
@@ -794,6 +836,7 @@ The number of workflows is at least equal to the number of team members.
 | **WF-08** | Execute a focus session and record the real time spent | End User, Backend, Notification Service | Quantified real working time per task, which becomes K_bias training data | F-10 | `ScheduleSlot`: `Due → InProgress → Overrun → Done`; `FocusSession`: `— → Running → Stopped / AutoTimeout / PendingConfirm` | *M5* |
 | **WF-09** | Receive reminders and manage the notification inbox | End User, Notification Service, Backend | Real-time toasts plus a persisted inbox with an unread badge | F-11 | `Notification`: `— → Unread → Read` | *M1* |
 | **WF-10** | Upgrade the plan and pay through PayOS | End User (Free tier), PayOS, Backend | The subscription is upgraded and an invoice is issued | F-12 | `Payment`: `Pending → Succeeded`; `Subscription`: `— → Active` | *M5* |
+| **WF-11** | Receive the daily briefing and act on what matters | End User (freelancer), AI Service, Backend | One screen tells the user what to work on today, which tasks are short of time, and when they focus best | F-13 | `Task`: `Open → AtRisk` *(derived, not persisted)*; `ScheduleSlot`: `— → Approved` *(unchanged — the briefing is read-only)* | *M5* |
 
 **Validity check** — every workflow satisfies the "≥ 2 actors or ≥ 3 mandatory features" condition:
 
@@ -809,8 +852,9 @@ The number of workflows is at least equal to the number of team members.
 | WF-08 | 3 | 1 | actors |
 | WF-09 | 3 | 1 | actors |
 | WF-10 | 3 | 1 | actors |
+| WF-11 | 3 | 1 | actors |
 
-**Traceability**: WF-01…WF-10 map one-to-one to the activity diagrams AD-01…AD-10 in the SDD (§4.1–§4.10); the step lists are given in §A.1.2 of this document.
+**Traceability**: WF-01…WF-11 map one-to-one to the activity diagrams AD-01…AD-11 in the SDD (§4.1–§4.11); the step lists are given in §A.1.2 of this document.
 
 ---
 
@@ -829,6 +873,7 @@ The jury may pick any scenario at random and change the input data; the expected
 | **DS-02b** | WF-02 | Exception | The customer "Minh Long Trading Co." is still attached to one project; the BE rejects deleting a referenced customer with `400/409` | Try to delete the customer → confirm in the modal | The BE error is surfaced with a clear message, no data is lost and no orphaned project is created; the customer remains in the directory and the list is reloaded |
 | **DS-03a** | WF-03 | Main | The customer "Minh Long Trading Co." already exists | Open `/projects` → "New project" → enter name, start date, deadline and description → in the Customer field open the nested "New client" modal → create "Ha Anh Studio" → it is auto-selected → "Create project" → open `/projects/{id}/milestones` → create "Phase 1 — Design" | The new project card appears first in the grid with 0% progress, the newly created customer is attached, and `GET /api/projects/{id}/progress` returns the correct percentage; the milestone chip appears in the milestone list |
 | **DS-03b** | WF-03 | Exception | The start date is later than the deadline (`20/10/2026` → `18/10/2026`) | Open "New project" → enter an inverted date range → click "Create project" | The client-side rule rejects the input: the submit is blocked with "deadline phải sau startDate" and `POST /api/projects` is never called. The same guard applies to tasks created in a project that has no milestone yet |
+| **DS-03c** | WF-03 | Exception | A project card exists on `/projects` | Click the card menu → "Archive project" → confirm → **reload the page** → open `/copilot` and look at the project dropdown | `POST /api/projects/{id}/archive` returns 200 and the status becomes `Archived`; the card is gone from `/projects` and **stays gone after a reload**; the archived project is no longer offered in the `/copilot` dropdown, on `/schedule` or in the dashboard radar; `GET /api/projects/{id}` returns 404. Nothing is hard-deleted — the milestones and tasks still exist in the DB and `POST /api/projects/{id}/restore` brings the project back |
 | **DS-04a** | WF-04 | Main | The project has the milestone "Phase 1 — Design" and 3 subtasks estimated at 60′ / 90′ / 30′ | Open `/projects/{id}/planning` → create the Flexible task "Design the customer dashboard" (est. 120′) → add the 3 subtasks → click 📅 → start 09:00, end 13:00 → choose "Whole task" → schedule → switch to the Week view | The toast "3 subtask đã được chia lịch" appears and three consecutive blocks are created at 09:00–10:00, 10:00–11:30 and 11:30–12:00 with the exact `estimatedMinutes` proportions, `status = Approved`, `isManualOverride = true`, tagged as the "Manual" source |
 | **DS-04b** | WF-04 | Exception | The task type is set to `Fixed` but `fixedStart` / `fixedEnd` are left empty | Open "New task" → select `Fixed` → leave the time range empty → click Create | The form requires the full time range and blocks the submit, or the BE answers `400` and the message is shown; no slot is created. Once the range is valid, the BE auto-creates an `Approved` slot |
 | **DS-05a** | WF-05 | Main | The AI service is running; the task "Build the payment API" has a complete description; ≥ 5 completed historical tasks exist in the same domain | Open `/copilot` → select the project → select the task → "Load" → click the ⚡ quick prompt → inspect the Draft Card → "Accept & apply subtasks" | `GET /chat/tasks/{id}` and `GET /memory/similar` return real data; the AI reads both title and description so it does not ask vague questions; the Draft Card shows "Your estimate → Adjusted" with the `K_bias` badge; after applying, the subtasks exist in `/planning` and a confirmation message is injected into the chat |
@@ -837,12 +882,14 @@ The jury may pick any scenario at random and change the input data; the expected
 | **DS-06b** | WF-06 | Exception | One task is overdue or needs more than 8 hours in a day, so the AI cannot fit it | Click "Đề xuất lịch" → observe the result | The proposal comes back with `is_feasible = false`, `missing_minutes` and specific warnings (`not_enough_time` / `overdue` / `no_free_slot` / `insufficient_time`); **no slot is created**. This is the correct designed behaviour, not a failure — the demo must present it as such |
 | **DS-07a** | WF-07 | Main | A demo Google account with Calendar access; 1 Google event this week and 2 METANOIA slots | Open `/schedule` → sidebar "Google Calendar" → "Connect" → approve the OAuth consent → return to `/auth/google/callback?calendar=connected` → "Sync" → observe the Week view | `GET /api/google-calendar/status` reports connected; `POST /api/google-calendar/sync` returns `{added, updated, cancelled}` shown in the toast; Google events and METANOIA slots coexist in one calendar and are distinguishable by their source tag |
 | **DS-07b** | WF-07 | Exception | The user denies the consent on the Google screen, or the stored token has been revoked in the Google Account | Click "Connect" → "Cancel"/"Deny" in Google → return to the app → then click "Sync" with the revoked token | The status stays "not connected" and a retry-oriented message is shown; the sync error is reported and the affected slots are flagged with `syncFailed` while the other slots are unaffected; the app never crashes |
-| **DS-08a** | WF-08 | Main | An `Approved` slot exists today at 09:00–10:00 | Open `/schedule` → click the slot → "Bắt đầu" → navigate to `/dashboard` → go back → "Dừng" → pick "Đã xong" → confirm → answer the check-in → reopen the slot modal | `POST /api/focus/start` returns 201 and the global timer bar appears on every page; the clock is accurate and unaffected by changing the system time; `POST /api/focus/{id}/stop` returns 200 and the slot becomes `Done`; `GET /api/focus/{slotId}/time-summary` renders Planned / Actual / Session count |
+| **DS-08a** | WF-08 | Main | An `Approved` slot exists today at 09:00–10:00 | Open `/schedule` → click the slot → "Bắt đầu" → navigate to `/dashboard` → go back → "Dừng" → pick "Đã xong" → confirm → answer the check-in → reopen the slot modal | `POST /api/focus/start` returns 201 and the global timer bar appears on every page; the clock is accurate and unaffected by changing the system time; `POST /api/focus/{id}/stop` returns 200 and the slot becomes `Done`; `GET /api/focus/{slotId}/time-summary` renders Planned / Actual / Session count. **If the slot belongs to a subtask**, the FE then asks "Đánh dấu subtask này là xong?" and calls `PUT /api/subtasks/{id}` with **all** fields — the task/subtask status is **not** changed by Stop itself |
 | **DS-08b** | WF-08 | Exception | A session is already running in another tab; additionally a `Proposed` slot and a 3-minute slot exist | Open a second tab and press "Bắt đầu" on another slot → observe the toast → in the first tab press "Dừng" twice quickly → open the `Proposed` slot | The second tab receives `409`: the FE reads `details`, shows "Đang có phiên khác chạy" and switches to the running session instead of raising a red error; the duplicate Stop also answers `409` and is treated as success; the `Proposed` slot renders **no** Start button (the BE would answer `400`) |
 | **DS-09a** | WF-09 | Main | The user is signed in, the app is open and SignalR is connected; a slot is about to become due | Let the BE push a `START_PROMPT` / `NEAR_END` event → observe the toast → open the bell → `/notifications` → filter "Chưa đọc" → "Đánh dấu đã đọc" | The toast shows the correct content; the unread badge updates; after every SignalR event the FE refetches `/api/focus/current` + `/api/focus/pending-confirmation` so the clock never goes stale; the inbox keeps a persistent history and the badge returns to 0 |
 | **DS-09b** | WF-09 | Exception | The SignalR endpoint is unreachable, or Web Push is blocked because the staging domain is not https | Disconnect the network for 10s → restore it → then enable push notifications and block them in the browser | `withAutomaticReconnect()` re-establishes the connection automatically and the app stays usable through the fallback poll every 20s without losing the running session; the Web Push failure is explained clearly, the status remains "not enabled" and the SignalR channel keeps working |
 | **DS-10a** | WF-10 | Main | The PayOS test merchant is configured with `ReturnUrl`/`CancelUrl` pointing at staging | Open `/pricing` → toggle monthly/yearly → "Mua gói này" → pay on the PayOS page → the app returns to `/payment/success` → wait → open `/profile` | `POST /api/payments/checkout` returns a `checkoutUrl` and the redirect happens; `POST /api/payments/{id}/sync` polls every 3s up to 10 times; on `Succeeded` the FE refetches `/api/me` + `/api/invoices` and the new plan plus its invoice are displayed |
 | **DS-10b** | WF-10 | Exception | The user cancels the payment on the PayOS page, or PayOS answers `503` / `Failed` | Click "Mua gói này" → cancel on the PayOS page → then repeat with a failing PayOS response | `Cancelled` shows the matching message and a "create again" button; `Pending` and `503` keep showing "Đang xử lý" and are retried rather than reported as a failure; the FE never concludes "payment succeeded" from the URL alone — only the backend status decides |
+| **DS-11a** | WF-11 | Main | The user is signed in; ≥ 1 Flexible task is due today, 1 task is already overdue, Google Calendar is connected, and ≥ 3 focus sessions have been recorded | Open `/dashboard` → click "Briefing hôm nay" → read the AI hint and the productive ranges → read "Task nên làm hôm nay" → read "Task thiếu thời gian" → read "Lịch hôm nay" | `GET /briefing/today?language=vi` returns 200 in **one** call; the page renders the AI-written hint, the productive ranges as chips, the top tasks with their reason chips (`overdue` / `at_risk` / `bias`), the at-risk list with `missing_minutes`, and the merged schedule (`slot` + `fixed` + `google`) sorted by start time with the all-day items first; the "Google Calendar đã liên kết" chip is on |
+| **DS-11b** | WF-11 | Exception | The AI service answers `422` (an unsupported `language` is sent), or `429` (the user's plan has no daily-briefing quota), or the service is unreachable | Request `/briefing/today` with `language=fr` → then repeat with the quota exhausted → then stop the AI service and reload `/briefing` | The FE never sends an unsupported `language` (the wrapper normalises to `vi`/`en`); a `429` shows "Bạn đã dùng hết lượt AI" without a blank page; an unreachable service shows the retry panel with a "Thử lại" button, the rest of the app stays usable and the page never crashes |
 
 ### 9.2.1. Input data the jury may vary
 
@@ -860,6 +907,7 @@ The jury may pick any row above at random and change the input data. The expecte
 | DS-08a | A different slot start time / duration | The timer, the overrun warning and the time summary follow the new slot |
 | DS-09a | A different notification action type | The toast content and the badge follow the pushed event |
 | DS-10a | A different plan (monthly / yearly) | The checkout order and the resulting invoice follow the selected plan |
+| DS-11a | A different set of due / overdue tasks, or a different productive-hours profile | The top-task list, the reason chips and the at-risk `missing_minutes` are recomputed from the same single `/briefing/today` call |
 
 ### 9.2.2. Staging and data preparation
 
@@ -884,18 +932,18 @@ The jury may pick any row above at random and change the input data. The expecte
 | **Component** | Forms, modals, slot panel, focus timer bar | Vitest + Testing Library | ✅ | 12 |
 | **API contract** | Smoke tests against the staging Backend (auth, project, task, slot, focus) | Vitest + supertest/msw | ✅ | 14 |
 | **Integration** | AI flow: propose → apply → schedule (mocked AI service) | Vitest + msw | ✅ | 8 |
-| **E2E (main)** | The 10 Main Scenarios of §9.2 | Playwright | ✅ | 10 |
+| **E2E (main)** | The 11 Main Scenarios of §9.2 | Playwright | ✅ | 11 |
 | **E2E (exception)** | 6 key exception scenarios (DS-01b, DS-03b, DS-05b, DS-06b, DS-08b, DS-10b) | Playwright | ✅ | 6 |
 | **E2E (manual)** | The 14 remaining exception scenarios | Playwright / manual | ❌ | 14 |
 | **NFR** | Performance, accuracy, accessibility, responsiveness, security, reliability | Lighthouse CI / k6 / axe-core / Playwright | partial | 8 |
-| **TOTAL** | | | **68 automated (64.2%)** | **106** |
+| **TOTAL** | | | **73 automated (65.2%)** | **112** |
 
 ### 10.1.2. Numbering convention
 
 | Prefix | Group | Count |
 |---|---|---|
-| `TC-MF-xx` | Mandatory Feature test cases (§10.2) | 36 |
-| `TC-E2E-xx` | End-to-end tests of the Main Workflows (§10.3) | 10 |
+| `TC-MF-xx` | Mandatory Feature test cases (§10.2) | 40 |
+| `TC-E2E-xx` | End-to-end tests of the Main Workflows (§10.3) | 11 |
 | `TC-ST-xxx` | State-transition tests of the primary entities (§10.4) | 52 |
 | `TC-NFR-xx` | Measurable NFR tests (§10.5) | 8 |
 
@@ -904,12 +952,12 @@ The jury may pick any row above at random and change the input data. The expecte
 | Criterion | Definition |
 |---|---|
 | Entry | A build is deployed to staging and the seed data is loaded; the Backend and the AI service answer without 5xx errors. |
-| Exit | ≥ 90% of all test cases pass (≥ 95/106); 100% of the main-path Mandatory Feature tests pass (36/36); 100% of the E2E Main Workflow tests pass (10/10); no open Critical/High defect. |
-| Automation exit | ≥ 50% of the committed cases execute automatically in CI — committed **64.2%** (68/106). |
+| Exit | ≥ 90% of all test cases pass (≥ 101/112); 100% of the main-path Mandatory Feature tests pass (40/40); 100% of the E2E Main Workflow tests pass (11/11); no open Critical/High defect. |
+| Automation exit | ≥ 50% of the committed cases execute automatically in CI — committed **65.2%** (73/112). |
 
 ---
 
-## 10.2 Mandatory Feature test cases (36)
+## 10.2 Mandatory Feature test cases (40)
 
 | ID | Feature | Scenario / steps | Expected result | Type | Auto |
 |---|---|---|---|---|---|
@@ -943,16 +991,20 @@ The jury may pick any row above at random and change the input data. The expecte
 | **TC-MF-28** | F-10 Focus session | Start a slot, navigate to another page, then stop with "Đã xong" | The global timer bar stays visible across pages; `POST /api/focus/{id}/stop` returns 200; the slot becomes `Done`; the time summary shows planned / actual / session count | Main | ✅ |
 | **TC-MF-29** | F-10 Focus session | Press Start while another session is already running | The BE answers 409; the FE reads `details` and switches to the running session with the toast "Đang có phiên khác chạy" — no red error, no crash | Exception | ✅ |
 | **TC-MF-30** | F-10 Focus session | Self-report time already worked (forgot to press Start) | `POST /api/focus/self-report` validates `endedAt > startedAt`, no future timestamps and ≤ 24h; a valid report is recorded and shows in the time summary | Exception | ✅ |
+| **TC-MF-30b** | F-10 Focus session | Stop with "Đã xong" on a slot that belongs to a **subtask** | Stop only moves the slot to `Done` — the subtask stays `ToDo`. The FE then asks "Đánh dấu subtask này là xong?" and calls `PUT /api/subtasks/{id}` with **all** fields (`title`, `estimatedMinutes`, `orderIndex`, `status`) → the subtask becomes `Done`; if every subtask of the task is `Done`, the FE asks about the task and calls `PUT /api/tasks/{id}` with all fields | Main | ✅ |
 | **TC-MF-31** | F-11 Notifications | The BE pushes a `START_PROMPT` over SignalR | The toast appears with the correct content; the FE refetches `/api/focus/current` and `/api/focus/pending-confirmation`; the unread badge increases | Main | ✅ |
 | **TC-MF-32** | F-11 Notifications | The SignalR connection is lost for 10s and restored | `withAutomaticReconnect()` re-establishes the connection; the fallback poll keeps the clock running; the running session is not lost | Exception | ✅ |
 | **TC-MF-33** | F-11 Notifications | Open `/notifications`, filter "Chưa đọc", mark one and then all as read | `POST /api/notifications/{id}/read` and `/read-all` succeed; the badge updates and the filter result changes accordingly | Main | ✅ |
 | **TC-MF-34** | F-12 PayOS billing | Buy a monthly plan and complete the payment | `POST /api/payments/checkout` returns a `checkoutUrl`; after the redirect `POST /api/payments/{id}/sync` reports `Succeeded`; the new plan and its invoice are displayed | Main | ✅ |
 | **TC-MF-35** | F-12 PayOS billing | Cancel the payment on the PayOS page | The status is `Cancelled`; the matching message and a "create again" button are shown; no subscription is activated; the FE never infers success from the URL | Exception | ✅ |
 | **TC-MF-36** | F-12 PayOS billing | Open `/profile` and inspect the plan, the invoices and the subscription history | `GET /api/me`, `/api/invoices` and `/api/user-subscriptions` return real data and are rendered consistently | Main | ❌ |
+| **TC-MF-37** | F-13 Daily briefing | Open `/briefing` with a signed-in user and at least one task due today | `GET /briefing/today?language=vi` returns 200 in one call; the page renders the AI hint, the productive ranges, the top tasks with their reason chips, the at-risk list and the merged schedule; the `at_risk` card is hidden when the list is empty | Main | ✅ |
+| **TC-MF-38** | F-13 Daily briefing | Request the briefing with an unsupported `language` value (e.g. `fr`) | The FE wrapper normalises the value to `vi`/`en`, so `fr` is never sent; the BE therefore never answers `422`; the page still renders | Exception | ✅ |
+| **TC-MF-39** | F-13 Daily briefing | The AI service is unreachable, or the access token has expired (the service answers `401`) | The page shows the retry panel with a "Thử lại" button instead of a blank screen; on `401` the FE refreshes the token and retries once; the rest of the app stays usable | Exception | ✅ |
 
 ---
 
-## 10.3 End-to-end tests of the Main Workflows (10)
+## 10.3 End-to-end tests of the Main Workflows (11)
 
 | ID | Workflow | Scenario | Steps | Expected result | Auto |
 |---|---|---|---|---|---|
@@ -966,6 +1018,7 @@ The jury may pick any row above at random and change the input data. The expecte
 | **TC-E2E-08** | WF-09 | Realtime toast → inbox | Receive a SignalR event → open the inbox → mark as read | The toast appears, the inbox lists the event and the badge returns to 0 | ✅ |
 | **TC-E2E-09** | WF-10 | Buy a plan → PayOS → invoice | Buy → pay → wait for the sync → open `/profile` | The plan is upgraded and the invoice is listed | ❌ (requires the PayOS sandbox) |
 | **TC-E2E-10** | WF-04→WF-08 | Full cycle: manual + AI task + AI slot → focus → RAG | Create a task manually, decompose another with AI, schedule both with AI, run a focus session on one | The session time is stored and the next `/memory/similar` call reflects the new actual time in the K_bias ratio | ❌ (needs a long session) |
+| **TC-E2E-11** | WF-11 | Briefing: open → read → refresh | Open `/dashboard` → click "Briefing hôm nay" → read the hint, the top tasks and the at-risk list → click "Làm mới" | `/briefing` renders every section from a single `GET /briefing/today` call; the reason chips match the task states; "Làm mới" re-fetches and the content is stable (no duplicate render, no flicker of the error state) | ✅ |
 
 ---
 
@@ -1014,11 +1067,12 @@ The jury may pick any row above at random and change the input data. The expecte
 
 | ID | Transition | Steps | Expected result |
 |---|---|---|---|
-| **TC-ST-025** | `Draft → Active` | Create the project with a valid date range and customer | The project becomes `Active` and is counted in the "Active projects" KPI |
+| **TC-ST-025** | `— → Active` | Create the project with a valid date range and customer | The project becomes `Active` and is counted in the "Active projects" KPI |
 | **TC-ST-026** | `Active → Completed` | Mark the project completed | The status is persisted; the card moves to the Completed filter; the portfolio average progress is updated |
-| **TC-ST-027** | `Completed → Active` (restore) | Restore an archived project | The project returns to `Active` and reappears in the default filter |
-| **TC-ST-028** | `Active → Draft` **(invalid)** | Try to move an active project back to draft | The transition is rejected; the BE accepts only the documented transitions |
-| **TC-ST-029** | `Completed → Draft` **(invalid)** | Try to move a completed project to draft | The transition is rejected; the project stays `Completed` |
+| **TC-ST-027** | `Active → Archived` (soft delete) | Click "Archive project" on a project card | `POST /api/projects/{id}/archive` returns 200; the card disappears from `/projects`; **after a reload it stays gone**; the project no longer appears in the `/copilot` project dropdown, on `/schedule` or in the dashboard radar. `GET /api/projects/{id}` returns 404 |
+| **TC-ST-027b** | `Archived → Active` (restore) | `POST /api/projects/{id}/restore` | The project returns to `Active` and reappears in the default filter |
+| **TC-ST-028** | `Active → OnHold` | Put the project on hold | The status is persisted; the card shows the "On hold" badge; chat and Apply still work (`OnHold` is a temporary pause, not a closed project — FR-08b-1 #28) |
+| **TC-ST-029** | `Archived → Completed` **(invalid)** | Try to complete an archived project directly | The transition is rejected; the project stays `Archived` and stays hidden |
 
 ### 10.4.5. Milestone (4)
 
@@ -1089,16 +1143,16 @@ The jury may pick any row above at random and change the input data. The expecte
 
 | Group | Committed | Automated | Manual | Pass rate target |
 |---|---|---|---|---|
-| Mandatory Feature (§10.2) | 36 | 27 | 9 | 100% on the main path |
-| E2E Main Workflow (§10.3) | 10 | 8 | 2 | 100% |
+| Mandatory Feature (§10.2) | 40 | 31 | 9 | 100% on the main path |
+| E2E Main Workflow (§10.3) | 11 | 9 | 2 | 100% |
 | State transitions (§10.4) | 52 | 25 | 27 | ≥ 90%, 100% on the valid transitions |
 | NFR (§10.5) | 8 | 8 | 0 | 100% on the measurable thresholds |
-| **TOTAL** | **106** | **68 (64.2%)** | **38** | **≥ 90% overall (≥ 95/106)** |
+| **TOTAL** | **112** | **73 (65.2%)** | **38** | **≥ 90% overall (≥ 101/112)** |
 
 **Commitments carried into Appendix A of BM01:**
-- 106 committed test cases; the executed count must be **≥ 106**.
-- ≥ 50% automated in CI — committed **64.2%** (68/106).
-- 100% of the main-path Mandatory Feature tests must pass (36/36).
-- 100% of the E2E Main Workflow tests must pass (10/10).
-- ≥ 90% overall pass rate (≥ 95/106).
+- 112 committed test cases; the executed count must be **≥ 112**.
+- ≥ 50% automated in CI — committed **65.2%** (73/112).
+- 100% of the main-path Mandatory Feature tests must pass (40/40).
+- 100% of the E2E Main Workflow tests must pass (11/11).
+- ≥ 90% overall pass rate (≥ 101/112).
 - 0 open Critical/High defects.

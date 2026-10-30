@@ -5,9 +5,11 @@ import { LoginPage } from "./pages/login/Login";
 import { RegisterPage } from "./pages/register/Register";
 import { LandingPage } from "./pages/landing/Landing";
 import { DashboardPage } from "./pages/dashboard/Dashboard";
+import { BriefingPage } from "./pages/briefing/Briefing";
 import { OnboardingPage } from "./pages/onboarding/Onboarding";
 import { PricingPage } from "./pages/pricing/Pricing";
 import { ProjectsPage } from "./pages/projects/Projects";
+import { ProjectAiChatPage } from "./pages/project-ai-chat/ProjectAiChat";
 import { ClientsPage } from "./pages/clients/Clients";
 import { ProjectDetailPage } from "./pages/project-detail/ProjectDetail";
 import { PlanningPage } from "./pages/planning/Planning";
@@ -122,6 +124,11 @@ function App() {
       >
         <Route path="/onboarding" element={guarded("Thiết lập", <OnboardingPage />)} />
         <Route path="/dashboard" element={guarded("Lịch ngày", <DashboardPage />)} />
+        {/* Briefing hôm nay — AI service gộp task + lịch + khung giờ tập trung */}
+        <Route
+          path="/briefing"
+          element={guarded("Briefing hôm nay", <BriefingPage />)}
+        />
         <Route path="/projects" element={guarded("Dự án", <ProjectsPage />)} />
         <Route path="/clients" element={guarded("Khách hàng", <ClientsPage />)} />
         <Route
@@ -131,6 +138,11 @@ function App() {
         <Route
           path="/projects/:projectId/planning"
           element={guarded("Lập kế hoạch", <PlanningPage />)}
+        />
+        {/* FR-08b-1 — AI chat mức dự án (brief → milestone + task) */}
+        <Route
+          path="/projects/:projectId/execution"
+          element={guarded("AI lập kế hoạch", <ProjectAiChatPage />)}
         />
         <Route
           path="/projects/:projectId/milestones"

@@ -293,7 +293,14 @@ export function CopilotPage() {
     }
   }, [messages, isTyping]);
 
-  /* Load project list khi mount */
+  /*
+   * Load project list khi mount.
+   *
+   * ⚠️ `listProjects()` đã lọc sẵn project `Archived` (xoá mềm) → dự án đã
+   * bị archive KHÔNG xuất hiện trong dropdown này.
+   *
+   * (Trước đây dùng `listProjects()` thẳng nên dự án đã archive vẫn hiện.)
+   */
   useEffect(() => {
     let cancelled = false;
     setProjectsLoading(true);

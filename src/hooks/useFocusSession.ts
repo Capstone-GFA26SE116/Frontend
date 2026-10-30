@@ -65,6 +65,22 @@ const TICK_MS = 1_000;
  */
 const PLANNED_MINUTES_KEY = "metanoia:focus:plannedMinutes";
 
+/**
+ * Key lưu `subTaskId` theo `sessionId` trong `sessionStorage`.
+ *
+ * ⚠️ BẮT BUỘC theo spec mục 8.1:
+ *   "**Chú ý subtask:** phản hồi **không có `subTaskId`** (đã kiểm tra).
+ *    Muốn hiện 'đang làm subtask nào', FE tự nhớ subtask của phiên vừa
+ *    Start (lưu cùng `sessionId`). Khi người dùng mở ở thiết bị khác thì
+ *    không biết được."
+ *
+ * Ta cần `subTaskId` cho 2 việc:
+ *  1. Hiển thị "đang làm subtask nào" trên thanh đồng hồ.
+ *  2. Sau khi Stop `Completed`, hỏi "Đánh dấu subtask này là xong?" rồi
+ *     gọi `PUT /api/subtasks/{id}` (spec mục E + 6.3).
+ */
+const SUBTASK_ID_KEY = "metanoia:focus:subTaskId";
+
 /** Trạng thái phiên mà hook đang quản lý. */
 export type FocusSessionPhase =
   /** Chưa có phiên nào đang chạy. */
@@ -93,7 +109,18 @@ export type StartFocusOutcome =
 
 /** Kết quả chuẩn hoá của `stopFocusSession`. */
 export type StopFocusOutcome =
-  | { kind: "stopped"; data: FocusStopResponse }
+  | {
+      kind: "stopped";
+      data: FocusStopResponse;
+      /**
+       * `subTaskId` của phiên vừa dừng (null nếu phiên task-only).
+       *
+       * Cần để hỏi "Đánh dấu subtask này là xong?" sau khi Stop `Completed`
+       * (spec mục E) — vì `/current` không trả `subTaskId` và sau khi stop
+       * thì state đã bị xoá.
+       */
+      subTaskId: string | null;
+    }
   /** 409 = đã dừng trước đó (bấm 2 lần / 2 tab) → coi như thành công. */
   | { kind: "alreadyStopped" }
   | { kind: "error"; error: string };
@@ -115,6 +142,16 @@ export interface FocusTimerState {
 export interface UseFocusSessionResult {
   /** Phiên đang chạy (null nếu không có). */
   session: FocusCurrentResponse | null;
+  /**
+   * `subTaskId` của phiên đang chạy (null nếu phiên task-only).
+   *
+   * ⚠️ `GET /api/focus/current` **KHÔNG** trả field này (spec mục 8.1) →
+   * ta tự nhớ lúc Start và lưu trong `sessionStorage`.
+   *
+   * Dùng để: (1) hiện "đang làm subtask nào" trên thanh đồng hồ,
+   * (2) hỏi "Đánh dấu subtask này là xong?" sau khi Stop `Completed`.
+   */
+  currentSubTaskId: string | null;
   /** Trạng thái phiên. */
   phase: FocusSessionPhase;
   /** true khi đang gọi API — dùng để disable nút. */
@@ -256,6 +293,41 @@ function clearStoredPlannedMinutes(sessionId: string): void {
   }
 }
 
+/** Đọc `subTaskId` đã lưu cho 1 phiên (null nếu phiên task-only). */
+function readStoredSubTaskId(sessionId: string): string | null {
+  try {
+    const raw = window.sessionStorage.getItem(SUBTASK_ID_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Record<string, string>;
+    return parsed?.[sessionId] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Lưu `subTaskId` cho 1 phiên (giữ tối đa 5 phiên gần nhất). */
+function storeSubTaskId(sessionId: string, subTaskId: string | null): void {
+  if (!sessionId) return;
+  try {
+    const raw = window.sessionStorage.getItem(SUBTASK_ID_KEY);
+    const parsed = raw
+      ? (JSON.parse(raw) as Record<string, string>)
+      : ({} as Record<string, string>);
+    if (subTaskId) {
+      parsed[sessionId] = subTaskId;
+    } else {
+      delete parsed[sessionId];
+    }
+    const keys = Object.keys(parsed);
+    if (keys.length > 5) {
+      for (const k of keys.slice(0, keys.length - 5)) delete parsed[k];
+    }
+    window.sessionStorage.setItem(SUBTASK_ID_KEY, JSON.stringify(parsed));
+  } catch {
+    // sessionStorage bị chặn → bỏ qua, không sao.
+  }
+}
+
 /**
  * Hook quản lý phiên làm việc.
  *
@@ -265,6 +337,13 @@ function clearStoredPlannedMinutes(sessionId: string): void {
  */
 export function useFocusSession(enabled: boolean = true): UseFocusSessionResult {
   const [session, setSession] = useState<FocusCurrentResponse | null>(null);
+  /**
+   * `subTaskId` của phiên đang chạy.
+   *
+   * `GET /api/focus/current` không trả field này (spec mục 8.1) → ta tự
+   * nhớ lúc Start. Mất khi mở ở thiết bị/tab khác — đúng như spec ghi.
+   */
+  const [currentSubTaskId, setCurrentSubTaskId] = useState<string | null>(null);
   const [phase, setPhase] = useState<FocusSessionPhase>("idle");
   const [error, setError] = useState<string | null>(null);
   const [pendingConfirmation, setPendingConfirmation] =
@@ -331,11 +410,14 @@ export function useFocusSession(enabled: boolean = true): UseFocusSessionResult 
       // khác), trang lịch sẽ `seedPlannedMinutes` bổ sung.
       const stored = readStoredPlannedMinutes(res.data.sessionId);
       if (stored) setPlannedMinutes(stored);
+      // `/current` cũng KHÔNG trả `subTaskId` (spec mục 8.1) → tự nhớ.
+      setCurrentSubTaskId(readStoredSubTaskId(res.data.sessionId));
     } else {
       anchorRef.current = null;
       setElapsedSeconds(0);
       setPhase("idle");
       setPlannedMinutes(0);
+      setCurrentSubTaskId(null);
     }
   }, [enabled, anchorFromServer]);
 
@@ -426,6 +508,14 @@ export function useFocusSession(enabled: boolean = true): UseFocusSessionResult 
         // (vì `/current` không trả field này).
         setPlannedMinutes(res.data.plannedMinutes ?? 0);
         storePlannedMinutes(res.data.sessionId, res.data.plannedMinutes ?? 0);
+        /*
+         * ⚠️ Lưu `subTaskId` của phiên — bắt buộc theo spec mục 8.1 vì
+         * `GET /current` KHÔNG trả field này. Ta cần nó để hỏi "Đánh dấu
+         * subtask này là xong?" sau khi Stop `Completed` (spec mục E).
+         */
+        const startedSubTaskId = req.subTaskId ?? null;
+        storeSubTaskId(res.data.sessionId, startedSubTaskId);
+        setCurrentSubTaskId(startedSubTaskId);
         // Cảnh báo bắt đầu sớm: phiên ĐÃ được tạo. Ta vẫn nạp nó vào state
         // để thanh đồng hồ hiện, nhưng báo UI để hỏi user có giữ không.
         if (res.data.warning === "STARTED_VERY_EARLY") {
@@ -443,15 +533,27 @@ export function useFocusSession(enabled: boolean = true): UseFocusSessionResult 
       }
 
       // 409 = đã có phiên đang chạy → chuyển sang phiên đó.
+      //
+      // Spec mục 5.1: "`details` là phiên đó (cùng dạng `GET /current`) —
+      // Không báo lỗi đỏ, chuyển sang màn hình phiên đang chạy."
       if (res.status === 409) {
         const conflict = parseConflictSession(res.details);
         if (conflict) {
           setSession(conflict);
           anchorFromServer(conflict);
           setPhase("running");
+          // `/current` không trả `subTaskId` → lấy lại phiên này có subtask
+          // không (có thể user vừa Start ở tab khác).
+          setCurrentSubTaskId(readStoredSubTaskId(conflict.sessionId));
           return { kind: "conflict", session: conflict };
         }
-        // Không đọc được details → vẫn nạp lại từ server cho chắc.
+        /*
+         * Không đọc được `details` → nạp lại `/current` để lấy phiên thật.
+         *
+         * ⚠️ Không được báo lỗi đỏ: 409 là hành vi ĐÚNG (đã có phiên chạy).
+         * Nếu vẫn không có phiên, ta vẫn trả `conflict` với phiên rỗng để UI
+         * hiện "Đang có phiên khác chạy" thay vì crash.
+         */
         void refresh();
         return {
           kind: "conflict",
@@ -487,6 +589,13 @@ export function useFocusSession(enabled: boolean = true): UseFocusSessionResult 
 
       setPhase("busy");
       setError(null);
+      /*
+       * Ghi nhớ `subTaskId` TRƯỚC khi stop, vì sau khi stop ta xoá state.
+       * Đây là nguồn duy nhất để biết phiên vừa dừng làm task hay subtask
+       * (`/current` không trả `subTaskId` — spec mục 8.1).
+       */
+      const stoppedSubTaskId =
+        readStoredSubTaskId(targetId) ?? currentSubTaskId;
       const res = await stopFocusSession(targetId, {
         stopReason: reason,
         note: note ?? null,
@@ -501,9 +610,15 @@ export function useFocusSession(enabled: boolean = true): UseFocusSessionResult 
         anchorRef.current = null;
         setElapsedSeconds(0);
         setPlannedMinutes(0);
+        setCurrentSubTaskId(null);
         clearStoredPlannedMinutes(targetId);
+        storeSubTaskId(targetId, null);
         setPhase("idle");
-        return { kind: "stopped", data: res.data };
+        return {
+          kind: "stopped",
+          data: res.data,
+          subTaskId: stoppedSubTaskId,
+        };
       }
 
       // 409 = phiên đã dừng trước đó (bấm 2 lần, hoặc 2 tab) → coi như OK.
@@ -513,7 +628,9 @@ export function useFocusSession(enabled: boolean = true): UseFocusSessionResult 
         anchorRef.current = null;
         setElapsedSeconds(0);
         setPlannedMinutes(0);
+        setCurrentSubTaskId(null);
         clearStoredPlannedMinutes(targetId);
+        storeSubTaskId(targetId, null);
         setPhase("idle");
         return { kind: "alreadyStopped" };
       }
@@ -522,7 +639,7 @@ export function useFocusSession(enabled: boolean = true): UseFocusSessionResult 
       setError(res.error);
       return { kind: "error", error: res.error };
     },
-    [enabled, session],
+    [enabled, session, currentSubTaskId],
   );
 
   const confirm = useCallback(
@@ -599,6 +716,7 @@ export function useFocusSession(enabled: boolean = true): UseFocusSessionResult 
 
   return {
     session,
+    currentSubTaskId,
     phase,
     busy: phase === "busy",
     timer,

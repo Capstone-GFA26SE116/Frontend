@@ -24,6 +24,13 @@ import "./focus.css";
 export interface FocusTimerBarProps {
   /** Tên task đang làm. */
   taskTitle: string | null;
+  /**
+   * Tên subtask đang làm (null = phiên task-only).
+   *
+   * `GET /api/focus/current` không trả `subTaskId` (spec mục 8.1) → ta tự
+   * nhớ lúc Start và tra tên từ danh sách subtask.
+   */
+  subTaskTitle?: string | null;
   /** Tổng giây đã làm. */
   elapsedSeconds: number;
   /** Phút dự kiến (0 = làm ngoài lịch). */
@@ -44,6 +51,7 @@ export interface FocusTimerBarProps {
 
 export function FocusTimerBar({
   taskTitle,
+  subTaskTitle,
   elapsedSeconds,
   plannedMinutes,
   remainingSeconds,
@@ -131,6 +139,18 @@ export function FocusTimerBar({
             </button>
           ) : (
             <span className="fc-bar__task">{taskTitle || "Không rõ task"}</span>
+          )}
+          {/* Tên subtask — chỉ có khi phiên gắn subtask.
+              Nguồn: FE tự nhớ lúc Start (spec mục 8.1: `/current` không trả
+              `subTaskId`). */}
+          {subTaskTitle && (
+            <span
+              className="fc-bar__subtask"
+              title="Bạn đang làm subtask này"
+            >
+              <span className="material-symbols-outlined">segment</span>
+              {subTaskTitle}
+            </span>
           )}
         </div>
       </div>

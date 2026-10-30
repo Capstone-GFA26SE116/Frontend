@@ -2292,7 +2292,18 @@ function EventChip({
       <SlotFocusActions
         slotId={ev.scheduleSlotId ?? null}
         taskId={ev.taskId ?? null}
-        subTaskId={ev.subTaskId ?? null}
+        /*
+         * ⚠️ `subTaskId` phải lấy từ SLOT, không từ event.
+         *
+         * Spec mục 6.1: "Slot gắn subtask nhưng **không gửi** `subTaskId` khi
+         * Start → Phiên **không** có subtask. Backend **không tự lấy**
+         * `subTaskId` từ slot."
+         *
+         * Với event gộp nhiều slot của 1 task, `event.subTaskId` là `null`
+         * (aggregate) → dùng nó sẽ làm mất nhãn subtask của phiên. Ta tra
+         * slot gốc để lấy đúng `subTaskId` của slot đang bấm.
+         */
+        subTaskId={ev.scheduleSlot?.subTaskId ?? ev.subTaskId ?? null}
         status={ev.slotStatus ?? ev.status}
         plannedMinutes={ev.slotPlannedMinutes ?? undefined}
         compact
@@ -2899,7 +2910,13 @@ function EventDetailModal({
             <SlotFocusPanel
               slotId={slot?.id ?? event.scheduleSlotId ?? null}
               taskId={event.taskId}
-              subTaskId={event.subTaskId}
+              /*
+               * ⚠️ `subTaskId` của SLOT, không của event — spec mục 6.1:
+               * backend không tự lấy `subTaskId` từ slot khi Start.
+               * Với event aggregate (gộp nhiều slot của 1 task) thì
+               * `event.subTaskId` là null → phải tra slot gốc.
+               */
+              subTaskId={slot?.subTaskId ?? event.subTaskId ?? null}
               status={slot?.status ?? event.status}
               plannedMinutes={
                 slot?.proposedMinutes ?? event.slotPlannedMinutes ?? undefined

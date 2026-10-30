@@ -475,11 +475,7 @@ function ProjectDetailBody({
           <Link
             to={`/projects/${project.id}/execution`}
             className="pd-direction pd-direction--execution"
-            aria-label="Open AI auto-decomposition (coming soon)"
-            onClick={(e) => {
-              e.preventDefault();
-              // TODO: trigger AI decompose
-            }}
+            aria-label="Open AI project planner"
           >
             <div className="pd-direction-badge">AI</div>
             <div className="pd-direction-icon">
@@ -488,7 +484,7 @@ function ProjectDetailBody({
             <div className="pd-direction-body">
               <h3 className="pd-direction-title">AI auto-decompose</h3>
               <p className="pd-direction-desc">
-                AI reads your project, decomposes it into smaller tasks, and schedules time automatically.
+                Paste the client brief — AI proposes milestones + tasks, you review and apply.
               </p>
             </div>
             <div className="pd-direction-cta">
@@ -1255,9 +1251,19 @@ function prettyStatus(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-function normalizeStatus(s: string): "active" | "planning" | "done" | "other" {
+/**
+ * Map status của project → tone hiển thị.
+ *
+ * ⚠️ Enum THẬT của backend: `Active` | `OnHold` | `Completed` | `Archived`.
+ * Code cũ chỉ biết `active` / `planning` / `done` → `OnHold` rơi vào
+ * nhánh `other` và hiển thị sai.
+ */
+function normalizeStatus(
+  s: string,
+): "active" | "planning" | "done" | "other" {
   const v = (s ?? "").toLowerCase();
   if (v === "active" || v === "inprogress" || v === "in_progress") return "active";
+  if (v === "onhold" || v === "on_hold" || v === "on-hold") return "planning";
   if (v === "planning" || v === "plan" || v === "draft") return "planning";
   if (v === "done" || v === "completed" || v === "complete") return "done";
   return "other";

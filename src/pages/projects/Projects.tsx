@@ -10,6 +10,7 @@ import { createPortal } from "react-dom";
 import { Link, useNavigate } from "react-router-dom";
 import { useStaggeredMount } from "../../hooks/useStaggeredMount";
 import {
+  archiveProject,
   createClient,
   createProject,
   filterProjects,
@@ -35,7 +36,15 @@ import "./projects.css";
  * Class prefix `.proj-*`. Render trong <SiteLayout />.
  * =========================================================== */
 
-type ProjectStatus = "active" | "pending" | "completed";
+/**
+ * Trạng thái project — enum THẬT của backend.
+ *
+ * ⚠️ Code cũ dùng `"active" | "pending" | "completed"`, nhưng `pending`
+ * **không tồn tại** trong enum backend (`Active / OnHold / Completed /
+ * Archived`) → mọi status lạ (kể cả `Archived`) rơi vào nhánh `else` và
+ * bị hiển thị như "Active".
+ */
+type ProjectStatus = "active" | "onhold" | "completed";
 type ViewMode = "grid" | "list";
 
 /**
@@ -111,8 +120,8 @@ function truncate(s: string, max = 120): string {
 /**
  * Map `ProjectDto` từ BE -> view-model `Project` cho UI.
  *
- * Response shape mới (từ GET /api/projects/filter):
- *  - `status` là string tự do: "active" | "pending" | "completed" | ...
+ * Response shape (từ GET /api/projects/filter):
+ *  - `status` là enum THẬT của BE: `Active` | `OnHold` | `Completed` | `Archived`
  *  - `client` là object lồng (id/name/contactEmail/phone), null với dự án nội bộ
  *  - `createdAt` là ISO datetime
  *
@@ -122,12 +131,22 @@ function truncate(s: string, max = 120): string {
 function dtoToProject(d: ProjectDto): Project {
   const days = daysUntil(d.deadline);
   const clientName = d.client?.name ?? "Internal";
+  const raw = (d.status ?? "").trim().toLowerCase();
+  /*
+   * ⚠️ Enum thật: Active | OnHold | Completed | Archived.
+   *
+   * `Archived` được loại khỏi danh sách ngay ở tầng API
+   * (`filterProjects` / `listProjects`), nhưng ta vẫn map an toàn ở đây để
+   * không bao giờ render một dự án đã archive.
+   */
   const status: ProjectStatus =
-    d.status === "completed"
-      ? "completed"
-      : d.status === "pending"
-        ? "pending"
-        : "active";
+    raw === "archived"
+      ? "active" // ← không tới được (đã lọc ở API), nhưng an toàn
+      : raw === "completed" || raw === "complete" || raw === "done"
+        ? "completed"
+        : raw === "onhold" || raw === "on_hold" || raw === "on-hold"
+          ? "onhold"
+          : "active";
 
   return {
     id: d.id,
@@ -144,18 +163,18 @@ function dtoToProject(d: ProjectDto): Project {
     doneTasks: 0,
     totalTasks: 0,
     badgeKind:
-      status === "completed" ? "ai" : status === "pending" ? "pending" : "ai",
+      status === "completed" ? "ai" : status === "onhold" ? "pending" : "ai",
     badgeTone:
       status === "completed"
         ? "tertiary"
-        : status === "pending"
+        : status === "onhold"
           ? "tertiary"
           : "secondary",
     badgeLabel:
       status === "completed"
         ? "Completed"
-        : status === "pending"
-          ? "Awaiting launch"
+        : status === "onhold"
+          ? "On hold"
           : "AI Orchestrated",
     clientTag: clientName,
     insightIcon: "description",
@@ -177,7 +196,7 @@ function dtoToProject(d: ProjectDto): Project {
 const STATUS_FILTERS: { id: "all" | ProjectStatus; label: string }[] = [
   { id: "all", label: "All" },
   { id: "active", label: "Active" },
-  { id: "pending", label: "Pending" },
+  { id: "onhold", label: "On hold" },
   { id: "completed", label: "Completed" },
 ];
 
@@ -185,7 +204,7 @@ const STATUS_FILTERS: { id: "all" | ProjectStatus; label: string }[] = [
 const STATUS_ICONS: Record<"all" | ProjectStatus, string> = {
   all: "apps",
   active: "bolt",
-  pending: "hourglass_top",
+  onhold: "hourglass_top",
   completed: "task_alt",
 };
 
@@ -217,7 +236,6 @@ export function ProjectsPage() {
   const [clientBrowserSearch, setClientBrowserSearch] = useState("");
   const projectFormRef = useRef<HTMLFormElement | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const [chunkingId, setChunkingId] = useState<string | null>(null);
   const [toast, setToast] = useState<{
     visible: boolean;
     text: string;
@@ -330,7 +348,7 @@ export function ProjectsPage() {
     return {
       all: projects.length,
       active: projects.filter((p) => p.status === "active").length,
-      pending: projects.filter((p) => p.status === "pending").length,
+      onhold: projects.filter((p) => p.status === "onhold").length,
       completed: projects.filter((p) => p.status === "completed").length,
     };
   }, [projects]);
@@ -616,45 +634,29 @@ export function ProjectsPage() {
     );
   });
 
-  function handleAiChunking(projectId: string) {
-    setChunkingId(projectId);
-    window.setTimeout(() => {
-      setChunkingId(null);
-    showToast(
-      "AI finished decomposing tasks into the Deep Work frame!",
-      "auto_awesome",
-      "primary",
-    );
-    }, 1200);
-  }
+  /*
+   * ❌ ĐÃ BỎ `handleApprovePending`.
+   *
+   * Nút "Approve" cũ chỉ setState (không gọi API) và áp dụng cho status
+   * `pending` — vốn không tồn tại trong enum backend. Nay mọi project còn sống
+   * (Active / OnHold) đều dùng chung 2 nút: Manual decompose + AI decompose.
+   */
 
-  function handleApprovePending(projectId: string) {
-    setProjects((prev) =>
-      prev.map((p) =>
-        p.id === projectId
-          ? {
-              ...p,
-              status: "active",
-              badgeKind: "ai",
-              badgeTone: "secondary",
-              badgeLabel: "AI Orchestrated",
-              progressLabel: undefined,
-            }
-          : p,
-      ),
-    );
-    showToast(
-      "Approved and scheduled 18 tasks into Google / Bio Calendar!",
-      "event_available",
-      "success",
-    );
-  }
-
-  function handleDeleteProject(projectId: string) {
+  async function handleDeleteProject(projectId: string) {
     const p = projects.find((x) => x.id === projectId);
-    setProjects((prev) => prev.filter((x) => x.id !== projectId));
     setOpenMenuId(null);
-    showToast(`Project "${p?.name ?? ""}" has been deleted`, "delete", "info");
+    if (!p) return;
+    const res = await archiveProject(projectId);
+    if (!res.ok) {
+      showToast(
+        `Failed to archive "${p.name}": ${res.error ?? "unknown error"}`,
+        "error",
+        "error",
+      );
+      return;
+    }
+    setProjects((prev) => prev.filter((x) => x.id !== projectId));
+    showToast(`Project "${p.name}" has been archived`, "archive", "info");
   }
 
   // Đóng dropdown khi click ra ngoài.
@@ -791,7 +793,7 @@ export function ProjectsPage() {
             <div
               className="proj-rail-segments"
               aria-hidden="true"
-              title={`${counts.active} active · ${counts.pending} pending · ${counts.completed} completed`}
+              title={`${counts.active} active · ${counts.onhold} on hold · ${counts.completed} completed`}
             >
               {counts.active > 0 && (
                 <span
@@ -799,10 +801,10 @@ export function ProjectsPage() {
                   style={{ flexGrow: counts.active }}
                 />
               )}
-              {counts.pending > 0 && (
+              {counts.onhold > 0 && (
                 <span
                   className="proj-rail-seg proj-rail-seg--pending"
-                  style={{ flexGrow: counts.pending }}
+                  style={{ flexGrow: counts.onhold }}
                 />
               )}
               {counts.completed > 0 && (
@@ -1071,7 +1073,7 @@ export function ProjectsPage() {
             foot={
               projects.length === 0
                 ? "No projects yet"
-                : `${projects.filter((p) => p.status === "pending").length} projects awaiting launch`
+                : `${projects.filter((p) => p.status === "onhold").length} projects on hold`
             }
             mounted={kpiAnim.mounted}
             delayStyle={kpiAnim.getDelay(0)}
@@ -1163,13 +1165,10 @@ export function ProjectsPage() {
                 delayStyle={cardsAnim.getDelay(i)}
                 mounted={cardsAnim.mounted}
                 isMenuOpen={openMenuId === p.id}
-                isChunking={chunkingId === p.id}
                 onToggleMenu={(e) => {
                   e.stopPropagation();
                   setOpenMenuId((cur) => (cur === p.id ? null : p.id));
                 }}
-                onAiChunk={() => handleAiChunking(p.id)}
-                onApprove={() => handleApprovePending(p.id)}
                 onDelete={() => handleDeleteProject(p.id)}
                 onOpen={() => navigate(`/projects/${p.id}`)}
               />
@@ -1940,24 +1939,21 @@ interface ProjectCardProps {
   mounted: boolean;
   delayStyle: { animationDelay: string };
   isMenuOpen: boolean;
-  isChunking: boolean;
   onToggleMenu: (e: React.MouseEvent) => void;
-  onAiChunk: () => void;
-  onApprove: () => void;
   onDelete: () => void;
   onOpen: () => void;
 }
 
 function ProjectCard(p: ProjectCardProps) {
   const { project: prj } = p;
-  const isPending = prj.status === "pending";
+  const isOnHold = prj.status === "onhold";
 
   return (
     <article
       className={
         "proj-card" +
         (p.mounted ? " proj-card--in" : "") +
-        (isPending ? " proj-card--pending" : "")
+        (isOnHold ? " proj-card--pending" : "")
       }
       style={p.delayStyle}
       data-status={prj.status}
@@ -2008,11 +2004,14 @@ function ProjectCard(p: ProjectCardProps) {
                 </span>
                 Set cognitive load
               </button>
-              <button type="button" className="proj-menu-item">
-                <span className="material-symbols-outlined">archive</span>
-                Archive project
-              </button>
-              <div className="proj-menu-sep" />
+              {/*
+               * ⚠️ Backend KHÔNG có `DELETE /api/projects/{id}` — chỉ có
+               * `POST /api/projects/{id}/archive` (xoá mềm → `Archived`).
+               * Nên nút này GỌI API thật, không phải xoá state giả.
+               *
+               * Trước đây có 2 nút trùng chức năng: "Archive project" (không
+               * có handler) và "Delete project" (chỉ setState) → gộp lại 1 nút.
+               */}
               <button
                 type="button"
                 className="proj-menu-item proj-menu-item--danger"
@@ -2021,8 +2020,8 @@ function ProjectCard(p: ProjectCardProps) {
                   p.onDelete();
                 }}
               >
-                <span className="material-symbols-outlined">delete</span>
-                Delete project
+                <span className="material-symbols-outlined">archive</span>
+                Archive project
               </button>
             </div>
           )}
@@ -2044,7 +2043,7 @@ function ProjectCard(p: ProjectCardProps) {
               prj.daysLeft <= 7 ? "error" : "secondary"
             }`}
           >
-            {isPending ? "Just launched" : `${prj.daysLeft} days left`}
+            {isOnHold ? "On hold" : `${prj.daysLeft} days left`}
           </span>
         </div>
       </div>
@@ -2085,65 +2084,39 @@ function ProjectCard(p: ProjectCardProps) {
       </div>
 
       <div className="proj-card-actions">
-        {isPending ? (
-          <>
-            <button
-              type="button"
-              className="proj-action proj-action--primary proj-action--flex"
-              onClick={(e) => {
-                e.stopPropagation();
-                p.onApprove();
-              }}
-            >
-              <span className="material-symbols-outlined proj-action-icon">
-                check_circle
-              </span>
-              <span>{prj.primaryAction.label}</span>
-            </button>
-            <button
-              type="button"
-              className="proj-action proj-action--plain proj-action--flex"
-            >
-              <span className="material-symbols-outlined proj-action-icon">
-                {prj.secondaryAction.icon}
-              </span>
-              <span>{prj.secondaryAction.label}</span>
-            </button>
-          </>
-        ) : (
-          <>
-            {/* 2-direction split: Manual (planning) vs AI (execution) */}
-            <Link
-              to={`/projects/${prj.id}/planning`}
-              className="proj-action proj-action--plain proj-action--flex"
-              title="Manually decompose project into tasks and schedule them on calendar"
-            >
-              <span className="material-symbols-outlined proj-action-icon">
-                checklist
-              </span>
-              <span>Manual decompose</span>
-            </Link>
-            <Link
-              to={`/projects/${prj.id}/execution`}
-              className="proj-action proj-action--ai proj-action--flex"
-              title="AI auto-decompose + schedule (coming soon)"
-              onClick={(e) => {
-                e.preventDefault();
-                p.onAiChunk();
-              }}
-            >
-              <span
-                className={
-                  "material-symbols-outlined" +
-                  (p.isChunking ? " proj-action-icon--spin" : " proj-action-icon")
-                }
-              >
-                {p.isChunking ? "refresh" : "auto_awesome"}
-              </span>
-              <span>{p.isChunking ? "Chunking…" : "AI decompose"}</span>
-            </Link>
-          </>
-        )}
+        {/*
+         * Mọi project còn sống (Active / OnHold) đều có 2 hướng: Manual vs AI.
+         *
+         * ⚠️ Trước đây có nhánh riêng cho `pending` với nút "Approve" — nhưng
+         * (a) `pending` không tồn tại trong enum backend, và (b) nút đó chỉ
+         * setState, không gọi API nào → hiện nút giả.
+         * `OnHold` vẫn chat/Apply được (FR-08b-1 #28) → dùng chung nhánh này.
+         */}
+        <>
+          {/* 2-direction split: Manual (planning) vs AI (execution) */}
+          <Link
+            to={`/projects/${prj.id}/planning`}
+            className="proj-action proj-action--plain proj-action--flex"
+            title="Manually decompose project into tasks and schedule them on calendar"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span className="material-symbols-outlined proj-action-icon">
+              checklist
+            </span>
+            <span>Manual decompose</span>
+          </Link>
+          <Link
+            to={`/projects/${prj.id}/execution`}
+            className="proj-action proj-action--ai proj-action--flex"
+            title="AI reads the client brief, decomposes it into milestones + tasks, then you review and apply"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span className="material-symbols-outlined proj-action-icon">
+              auto_awesome
+            </span>
+            <span>AI decompose</span>
+          </Link>
+        </>
       </div>
     </article>
   );

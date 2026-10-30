@@ -97,14 +97,24 @@ export function toSlotPhase(status: string | null | undefined): FocusSlotPhase {
 /**
  * Slot này có cho phép bấm Start không?
  *
- * - `Proposed` → KHÔNG (BE trả 400 "slot chưa duyệt").
- * - `Done`/`Cancelled` → KHÔNG (BE trả 400).
- * - `Skipped`/`Postponed` → KHÔNG (ẩn hoặc làm mờ).
- * - `Approved` → CÓ (cho phép start sớm).
- * - `Due`/`Missed` → CÓ (nút Start nổi bật).
+ * Theo spec FOCUS_SESSION_FE (1).md mục 4:
+ *   "Start được khi slot ở: `Approved`, `Due`, `InProgress`, `Overrun`,
+ *    `Missed`, `Postponed`. Slot `Proposed`, `Done`, `Skipped`, `Cancelled`
+ *    thì 400."
+ *
+ * Lưu ý `InProgress` / `Overrun` nằm trong danh sách Start-được của BE, nhưng
+ * ở UI ta hiện nút **Stop** thay vì Start (xem `isSlotRunning`) — vì đang
+ * có phiên chạy thì Start sẽ trả 409.
  */
 export function canStartSlot(phase: FocusSlotPhase): boolean {
-  return phase === "Approved" || phase === "Due" || phase === "Missed";
+  return (
+    phase === "Approved" ||
+    phase === "Due" ||
+    phase === "InProgress" ||
+    phase === "Overrun" ||
+    phase === "Missed" ||
+    phase === "Postponed"
+  );
 }
 
 /**
@@ -116,9 +126,26 @@ export function isSlotRunning(phase: FocusSlotPhase): boolean {
 
 /**
  * Slot này bị "ẩn mờ" (không quan tâm)?
+ *
+ * ⚠️ Theo spec mục 4, `Postponed` cũng nằm trong nhóm "Bỏ qua, hủy, dời
+ * → Ẩn hoặc làm mờ", **NHƯNG** BE vẫn cho Start được với `Postponed`
+ * ("Start được khi slot ở: Approved, Due, InProgress, Overrun, Missed,
+ * Postponed"). Vì vậy:
+ *   • `Skipped` / `Cancelled` → dim + KHÔNG Start (BE trả 400).
+ *   • `Postponed` → dim nhưng VẪN Start được → không nằm trong hàm này.
  */
 export function isSlotDimmed(phase: FocusSlotPhase): boolean {
-  return phase === "Skipped" || phase === "Cancelled" || phase === "Postponed";
+  return phase === "Skipped" || phase === "Cancelled";
+}
+
+/**
+ * Slot này bị "làm mờ" nhưng vẫn hành động được (Postponed).
+ *
+ * Hiển thị dạng mờ để user biết nó đã bị dời, nhưng vẫn cho bấm Start
+ * (BE cho phép).
+ */
+export function isSlotFaded(phase: FocusSlotPhase): boolean {
+  return phase === "Postponed";
 }
 
 /** Nhãn tiếng Việt của trạng thái slot — dùng cho badge. */
@@ -186,6 +213,62 @@ export const CHECK_IN_OPTIONS = [
   "Bị gián đoạn",
   "Chưa xong",
 ];
+
+/* ---------- Body cho POST /api/focus/start ---------- */
+
+/**
+ * Body của `POST /api/focus/start`.
+ *
+ * Theo spec FOCUS_SESSION_FE (1).md mục 7 — mẫu TypeScript gốc:
+ *
+ * ```ts
+ * type FocusStartBody = { taskId: string; scheduleSlotId?: string;
+ *                         subTaskId?: string; focusTrackId?: string };
+ *
+ * function buildStartBody(task, opts) {
+ *   const body = { taskId: task.id };
+ *   if (opts?.slot) body.scheduleSlotId = opts.slot.id;
+ *   // slot gắn subtask thì gửi đúng subtask đó; backend không tự lấy
+ *   const sub = opts?.slot?.subTaskId ?? opts?.subTaskId;
+ *   if (sub) body.subTaskId = sub;
+ *   return body;
+ * }
+ * ```
+ *
+ * ⚠️ Điểm dễ sai nhất (spec mục 6.1 + bảng "kết quả đã kiểm tra" #9):
+ *   *"Slot gắn subtask nhưng **không gửi** `subTaskId` khi Start → Phiên
+ *   **không** có subtask. Backend **không tự lấy** `subTaskId` từ slot."*
+ *
+ * ⇒ `subTaskId` phải lấy TỪ SLOT, không phải từ task. Với event gộp
+ *   nhiều slot của 1 task, `event.subTaskId` là `null` (task aggregate) →
+ *   nếu ta gửi theo event thì phiên sẽ mất nhãn subtask. Ta luôn gửi
+ *   theo slot.
+ */
+export interface FocusStartBody {
+  taskId: string;
+  scheduleSlotId?: string;
+  subTaskId?: string;
+}
+
+/**
+ * Dựng body Start đúng theo spec.
+ *
+ * @param taskId Task đang làm (bắt buộc).
+ * @param slot   Slot gắn vào phiên (nếu có) — nguồn của `subTaskId`.
+ * @param subTaskId Subtask được chọn khi làm việc **ngoài lịch**.
+ */
+export function buildFocusStartBody(
+  taskId: string,
+  slot?: { id: string; subTaskId?: string | null } | null,
+  subTaskId?: string | null,
+): FocusStartBody {
+  const body: FocusStartBody = { taskId };
+  if (slot?.id) body.scheduleSlotId = slot.id;
+  // Ưu tiên subtask của slot; backend không tự suy ra.
+  const sub = slot?.subTaskId ?? subTaskId;
+  if (sub) body.subTaskId = sub;
+  return body;
+}
 
 /* ---------- Action type của thông báo ---------- */
 

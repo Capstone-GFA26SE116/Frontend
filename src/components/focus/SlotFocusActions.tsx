@@ -1,7 +1,9 @@
 import { useFocusActions } from "./focus-context";
 import {
+  buildFocusStartBody,
   canStartSlot,
   isSlotDimmed,
+  isSlotFaded,
   isSlotRunning,
   slotPhaseLabel,
   toSlotPhase,
@@ -13,16 +15,17 @@ import "./focus.css";
  * <SlotFocusActions> — nút Start / Stop cho 1 schedule slot.
  * ===========================================================
  *
- * Quy tắc hiển thị theo spec FOCUS_SESSION_FE.md (mục 1 — trạng thái slot):
+ * Quy tắc hiển thị theo spec FOCUS_SESSION_FE (1).md mục 4:
  *
- *   • `Proposed`  → KHÔNG có nút Start (chỉ xem, chưa duyệt).
+ *   • `Proposed`  → KHÔNG có nút Start (chỉ xem, chưa duyệt → BE trả 400).
  *   • `Approved`  → có nút Start (cho phép bắt đầu sớm).
  *   • `Due`       → nút Start nổi bật.
  *   • `InProgress`→ nút Stop.
  *   • `Overrun`   → nút Stop (màu cảnh báo).
  *   • `Missed`    → có nút Start (làm bù).
+ *   • `Postponed` → làm mờ nhưng VẪN Start được (BE cho phép).
  *   • `Done`      → không nút.
- *   • `Skipped` / `Cancelled` / `Postponed` → ẩn hoặc làm mờ.
+ *   • `Skipped` / `Cancelled` → ẩn hoặc làm mờ, không Start.
  *
  * Slot đang chạy ở tab khác vẫn hiện "Stop" — vì `GET /api/focus/current`
  * là nguồn sự thật toàn cục, không phụ thuộc slot nào được bấm.
@@ -33,7 +36,16 @@ export interface SlotFocusActionsProps {
   slotId: string | null;
   /** Id của task — bắt buộc cho `POST /api/focus/start`. */
   taskId: string | null;
-  /** Id của subtask (nếu slot thuộc subtask). */
+  /**
+   * Id của subtask mà slot này gắn với.
+   *
+   * ⚠️ Phải là `subTaskId` **của slot**, không phải của event. Spec mục 6.1:
+   * "Slot gắn subtask nhưng không gửi `subTaskId` khi Start → Phiên **không**
+   * có subtask. Backend **không tự lấy** `subTaskId` từ slot."
+   *
+   * Với event gộp nhiều slot của 1 task, `event.subTaskId` là `null` → nếu ta
+   * dùng nó thì phiên sẽ mất nhãn subtask. Luôn truyền subtask của slot.
+   */
   subTaskId?: string | null;
   /** Status của slot (BE trả string tự do). */
   status: string | null | undefined;
@@ -64,6 +76,16 @@ export function SlotFocusActions({
   // nhưng start ngoài lịch không có ý nghĩa trong UI này).
   if (!slotId || !taskId) return null;
 
+  /*
+   * Narrow vào biến cục bộ: `slotId` / `taskId` là `string | null` ở props,
+   * nhưng đã được guard ở trên → trong closure TS không tự narrow.
+   */
+  const slot: { id: string; subTaskId: string | null } = {
+    id: slotId,
+    subTaskId: subTaskId ?? null,
+  };
+  const task = taskId;
+
   // Slot đã ẩn mờ → không hiện gì.
   if (isSlotDimmed(phase)) return null;
 
@@ -74,11 +96,8 @@ export function SlotFocusActions({
   if (!running && !startable) return null;
 
   async function handleStart() {
-    await start({
-      taskId: taskId!,
-      scheduleSlotId: slotId,
-      subTaskId: subTaskId ?? null,
-    });
+    // Body theo spec mục 7: subtask lấy TỪ SLOT (backend không tự lấy).
+    await start(buildFocusStartBody(task, slot));
     onChanged?.();
   }
 
@@ -119,12 +138,16 @@ export function SlotFocusActions({
       ? "Làm bù"
       : phase === "Approved"
         ? "Bắt đầu sớm"
-        : "Bắt đầu";
+        : phase === "Postponed"
+          ? "Làm lại"
+          : "Bắt đầu";
+
+  const faded = isSlotFaded(phase);
 
   return (
     <button
       type="button"
-      className={`fc-slot-btn fc-slot-btn--start${compact ? " fc-slot-btn--compact" : ""}`}
+      className={`fc-slot-btn fc-slot-btn--start${faded ? " fc-slot-btn--faded" : ""}${compact ? " fc-slot-btn--compact" : ""}`}
       onClick={() => void handleStart()}
       disabled={busy}
       title={

@@ -51,6 +51,13 @@ export interface FocusActions {
   /** true khi đang có phiên làm việc chạy. */
   hasActiveSession: boolean;
   /**
+   * `subTaskId` của phiên đang chạy (null = phiên task-only).
+   *
+   * ⚠️ `GET /api/focus/current` KHÔNG trả field này (spec mục 8.1) → ta tự
+   * nhớ lúc Start. Dùng để hiện "đang làm subtask nào" trên thanh đồng hồ.
+   */
+  currentSubTaskId: string | null;
+  /**
    * Phút dự kiến của phiên đang chạy (0 = không xác định).
    *
    * `GET /api/focus/current` KHÔNG trả `plannedMinutes` — chỉ response của

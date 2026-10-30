@@ -428,9 +428,16 @@ export function DashboardPage() {
   }
 
   /* ---------- Load hôm nay từ API calendar ---------- */
-  const loadTodaySchedule = useCallback(async () => {
-    setSlotsLoading(true);
-    setSlotsError(null);
+
+  /**
+   * Gọi API calendar cho hôm nay và trả về danh sách slot đã chuẩn hoá.
+   *
+   * Tách riêng khỏi `loadTodaySchedule` vì `loadTodaySchedule` setState
+   * **đồng bộ** ở đầu → không được gọi trực tiếp trong `useEffect`
+   * (react-hooks/set-state-in-effect). Effect dùng hàm này (setState chỉ
+   * chạy sau `await`), còn nút "Thử lại" dùng `loadTodaySchedule`.
+   */
+  const fetchTodaySlots = useCallback(async () => {
     // Khoảng [00:00 hôm nay, 00:00 ngày mai) theo local time.
     const dayStart = new Date();
     dayStart.setHours(0, 0, 0, 0);
@@ -443,12 +450,7 @@ export function DashboardPage() {
       includeCancelled: false,
     });
 
-    if (!res.ok) {
-      setFocusSlots([]);
-      setSlotsError(res.error);
-      setSlotsLoading(false);
-      return;
-    }
+    if (!res.ok) return { ok: false as const, error: res.error, slots: [] };
 
     const now = new Date();
     const slots = withUpNext(
@@ -467,13 +469,41 @@ export function DashboardPage() {
       now.getTime(),
     );
 
-    setFocusSlots(slots);
-    setSlotsLoading(false);
+    return { ok: true as const, error: null, slots };
   }, []);
 
+  const loadTodaySchedule = useCallback(async () => {
+    setSlotsLoading(true);
+    setSlotsError(null);
+    const res = await fetchTodaySlots();
+    if (!res.ok) {
+      setFocusSlots([]);
+      setSlotsError(res.error);
+      setSlotsLoading(false);
+      return;
+    }
+    setFocusSlots(res.slots);
+    setSlotsLoading(false);
+  }, [fetchTodaySlots]);
+
+  /* Lần tải đầu tiên: setState chỉ chạy SAU await → không vi phạm
+     react-hooks/set-state-in-effect, và không render 2 lần liên tiếp. */
   useEffect(() => {
-    void loadTodaySchedule();
-  }, [loadTodaySchedule]);
+    let cancelled = false;
+    void (async () => {
+      const res = await fetchTodaySlots();
+      if (cancelled) return;
+      if (res.ok) {
+        setFocusSlots(res.slots);
+      } else {
+        setSlotsError(res.error);
+      }
+      setSlotsLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchTodaySlots]);
 
   /* ---------- Load Deadline radar (project sắp tới hạn) ----------
    * GET /api/projects cho danh sách, rồi GET /api/projects/{id}/progress
@@ -801,6 +831,16 @@ export function DashboardPage() {
           </div>
 
           <div className="dash-actions">
+            <Link
+              to="/briefing"
+              className="dash-btn dash-btn--ghost"
+              title="AI tổng hợp task ưu tiên, task thiếu thời gian và khung giờ tập trung hôm nay"
+            >
+              <span className="material-symbols-outlined dash-btn-icon">
+                auto_awesome
+              </span>
+              <span>Briefing hôm nay</span>
+            </Link>
             <button
               type="button"
               onClick={handleSync}

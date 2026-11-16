@@ -1,114 +1,183 @@
 /* ===========================================================
- * Landing — DESIGN.md tokens applied.
- * HTML y cũ, chỉ đổi CSS theo Voltagent design language:
- *   - canvas #101010 (dark only)
- *   - accent #00d992 (electric green) cho CTA
- *   - hairline #3d3a39 thay shadow
- *   - Inter + SF Mono, eyebrow tracking 2.52px, hero weight 400
- * Tokens lấy từ /DESIGN.md (xem src/styles/voltagent-tokens.css).
+ * Landing — trang chủ công khai `/`
+ * ----------------------------------------------------------
+ * Theo DESIGN.md (Voltagent design language):
+ *   - canvas #101010 (dark only, không light-mode)
+ *   - accent #00d992 (electric green) — CTA / active / live
+ *   - hairline #3d3a39 thay cho drop-shadow
+ *   - Inter (narrative) + SF Mono (code, metric counters)
+ *   - display-xl 60px weight 400 · eyebrow-mono 14px tracking 2.52px
+ *   - radius: button 6px · card 8px · pill 9999px
+ *
+ * KHÔNG dùng: gradient mesh, glow blob, atmospheric backdrop,
+ *             drop-shadow trên card, màu accent thứ hai.
+ * Scope prefix: `.landing-*`
  * =========================================================== */
 
 .landing {
+  /* ── Design tokens (scope trong landing) ── */
+  --ld-canvas: #101010;
+  --ld-soft: #1a1a1a;
+  --ld-hairline: #3d3a39;
+  --ld-ink: #f2f2f2;
+  --ld-ink-strong: #ffffff;
+  --ld-body: #bdbdbd;
+  --ld-mute: #8b949e;
+  --ld-code: #f5f6f7;
+
+  --ld-primary: #00d992;
+  --ld-primary-soft: #2fd6a1;
+  --ld-primary-deep: #10b981;
+  --ld-on-primary: #101010;
+  --ld-primary-wash: rgba(0, 217, 146, 0.1);
+  --ld-primary-glow: rgba(0, 217, 146, 0.45);
+
+  --ld-r-xs: 4px;
+  --ld-r-sm: 6px;
+  --ld-r-md: 8px;
+  --ld-r-pill: 9999px;
+
+  --ld-sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --ld-mono: "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono",
+    "JetBrains Mono", monospace;
+
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background-color: var(--voltagent-canvas, #101010);
-  color: var(--voltagent-ink, #f2f2f2);
-  font-family: var(--font-sans), Inter, system-ui, -apple-system, "Segoe UI",
-    Roboto, sans-serif;
+  background-color: var(--ld-canvas);
+  color: var(--ld-ink);
+  font-family: var(--ld-sans);
   font-feature-settings: "calt", "rlig";
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
-/* ─── header ─── */
+/* ─── Header (nav-bar) ─── */
 .landing-header {
   margin: 0 auto;
   display: flex;
   width: 100%;
-  max-width: 72rem;
+  max-width: 80rem;
   align-items: center;
   justify-content: space-between;
-  padding: var(--voltagent-space-md, 12px) var(--voltagent-space-3xl, 32px);
-  border-bottom: 1px solid var(--voltagent-hairline, #3d3a39);
+  gap: 16px;
+  padding: 12px 32px;
+  border-bottom: 1px solid var(--ld-hairline);
+}
+
+.landing-brand {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  border-radius: var(--ld-r-sm);
 }
 
 .landing-nav {
   display: flex;
   align-items: center;
-  gap: var(--voltagent-space-sm, 8px);
+  gap: 8px;
   font-size: 0.875rem;
 }
 
+/* nav-link — text body */
 .landing-nav-link {
-  /* nav-link: text body, body-sm */
-  border-radius: var(--voltagent-radius-sm, 6px);
-  padding: var(--voltagent-space-xs, 4px) var(--voltagent-space-md, 12px);
+  border-radius: var(--ld-r-sm);
+  padding: 4px 12px;
   font-weight: 500;
-  color: var(--voltagent-body, #bdbdbd);
+  color: var(--ld-body);
   text-decoration: none;
   transition: color 150ms ease, background-color 150ms ease;
 }
 
 .landing-nav-link:hover {
-  color: var(--voltagent-ink-strong, #ffffff);
-  background-color: var(--voltagent-canvas-soft, #1a1a1a);
+  color: var(--ld-ink-strong);
+  background-color: var(--ld-soft);
 }
 
-/* button-ghost-green — "Bắt đầu miễn phí"
-   dùng hairline border thay vì fill violet như cũ */
+/* button-outline-on-dark dạng ghost — "Bắt đầu miễn phí" */
 .landing-nav-cta {
-  border-radius: var(--voltagent-radius-sm, 6px);
-  background-color: var(--voltagent-canvas, #101010);
-  border: 1px solid var(--voltagent-primary, #00d992);
-  padding: var(--voltagent-space-sm, 8px) var(--voltagent-space-lg, 16px);
+  border-radius: var(--ld-r-sm);
+  background-color: var(--ld-canvas);
+  border: 1px solid var(--ld-primary);
+  padding: 8px 16px;
   font-weight: 600;
-  color: var(--voltagent-primary, #00d992);
+  color: var(--ld-primary);
   text-decoration: none;
   transition: background-color 150ms ease, color 150ms ease;
 }
 
 .landing-nav-cta:hover {
-  background-color: var(--voltagent-primary, #00d992);
-  color: var(--voltagent-on-primary, #101010);
+  background-color: var(--ld-primary);
+  color: var(--ld-on-primary);
 }
 
-/* ─── main ─── */
+/* ─── Main ─── */
 .landing-main {
-  margin: 0 auto;
-  width: 100%;
-  max-width: 64rem; /* 1024 — cho hero thoáng */
-  padding: var(--voltagent-space-5xl, 48px) var(--voltagent-space-3xl, 32px) var(--voltagent-space-6xl, 64px);
-  text-align: center;
-  flex: 1; /* đẩy footer xuống đáy khi content ngắn */
+  flex: 1;
   display: flex;
   flex-direction: column;
+}
+
+/* ===========================================================
+ * 1. HERO BAND
+ * =========================================================== */
+.landing-hero {
+  margin: 0 auto;
+  width: 100%;
+  max-width: 80rem;
+  padding: 64px 32px 72px;
+}
+
+.landing-hero-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 48px;
   align-items: center;
 }
 
-/* eyebrow-mono: 14px, weight 600, tracking 2.52px, uppercase,
-   green nhạt (primary-soft) để không "hét" */
-.landing-eyebrow {
-  font-family: var(--voltagent-font-sans, Inter, sans-serif);
-  font-size: 14px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 2.52px;
-  color: var(--voltagent-primary-soft, #2fd6a1);
+@media (min-width: 1024px) {
+  .landing-hero-grid {
+    grid-template-columns: 1.05fr 0.95fr;
+    gap: 56px;
+  }
 }
 
-/* display-xl: 60px / weight 500 / tracking -0.65px / white
-   - Lifted từ 400 → 500 (giữ tinh thần "calm, NOT billboard" của DESIGN.md
-     nhưng bớt hiền — vẫn là Inter "documentation voice").
-   - Thêm letter-spacing -1px tinh tế để "snap" hơn khi size lớn.
-   - Gradient accent cho phần "sát thực tế" theo cung Inter Tight. */
+.landing-hero-copy {
+  min-width: 0;
+}
+
+/* eyebrow-mono — 14px / 600 / tracking 2.52px, dạng pill tag */
+.landing-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 16px;
+  border-radius: var(--ld-r-pill);
+  border: 1px solid var(--ld-primary-glow);
+  background-color: var(--ld-primary-wash);
+  font-family: var(--ld-sans);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  letter-spacing: 2.52px;
+  text-transform: uppercase;
+  color: var(--ld-primary-soft);
+}
+
+.landing-eyebrow .material-symbols-outlined {
+  font-size: 16px;
+  letter-spacing: normal;
+}
+
+/* display-xl — 60px / weight 400 / -0.65px */
 .landing-headline {
-  margin-top: var(--voltagent-space-lg, 16px);
+  margin: 24px 0 0;
   font-size: 2.25rem;
-  font-weight: 500;
+  font-weight: 400;
   line-height: 1.05;
-  letter-spacing: -0.5px;
-  color: var(--voltagent-ink-strong, #ffffff);
+  letter-spacing: -0.65px;
+  color: var(--ld-ink-strong);
 }
 
 @media (min-width: 768px) {
@@ -121,67 +190,63 @@
 
 @media (min-width: 1024px) {
   .landing-headline {
-    font-size: 64px;
-    line-height: 64px;
-    letter-spacing: -1px;
+    font-size: 60px;
+    line-height: 60px;
+    letter-spacing: -0.65px;
   }
 }
 
-/* Accent: chữ "sát thực tế" tô gradient electric-green +
-   subtle text-shadow glow. Đây là focal point duy nhất của brand
-   (DESIGN.md: "Reserve primary cho CTA, status pills, lightning glyph")
-   nhưng dùng cho highlight copy trong hero là acceptable khi nó
-   vẫn là typographic moment, không phải fill body. */
+/* Accent: gradient xanh điện cho phần highlight — typographic moment,
+   không phải body fill. Không dùng material shadow, chỉ color blur. */
 .landing-headline-accent {
   display: inline-block;
   background: linear-gradient(
     135deg,
-    var(--voltagent-primary, #00d992) 0%,
-    var(--voltagent-primary-soft, #2fd6a1) 50%,
-    var(--voltagent-primary-deep, #10b981) 100%
+    var(--ld-primary) 0%,
+    var(--ld-primary-soft) 50%,
+    var(--ld-primary-deep) 100%
   );
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
-  /* subtle glow — không material-shadow, chỉ là outer color blur */
-  filter: drop-shadow(0 0 18px rgba(0, 217, 146, 0.18));
 }
 
-/* body-lg: 18px, weight 400, line-height 28px — body grey */
+/* body-lg — 18px / 400 / 28px */
 .landing-subhead {
-  margin: var(--voltagent-space-xl, 20px) auto 0;
-  max-width: 36rem;
+  margin: 20px 0 0;
+  max-width: 34rem;
   font-size: 1rem;
   line-height: 1.65;
-  color: var(--voltagent-body, #bdbdbd);
+  color: var(--ld-body);
 }
 
 @media (min-width: 768px) {
   .landing-subhead {
     font-size: 1.125rem;
+    line-height: 28px;
   }
 }
 
-/* ─── CTA row ─── */
+/* CTA row */
 .landing-cta-row {
-  margin-top: var(--voltagent-space-3xl, 32px);
+  margin-top: 32px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: var(--voltagent-space-md, 12px);
+  gap: 12px;
   flex-wrap: wrap;
 }
 
-/* button-primary: green fill, near-black text, 6px radius */
+/* button-primary — green fill, near-black text, 6px radius */
 .landing-cta-primary {
-  border-radius: var(--voltagent-radius-sm, 6px);
-  background-color: var(--voltagent-primary, #00d992);
-  border: 1px solid var(--voltagent-primary, #00d992);
-  padding: var(--voltagent-space-md, 12px) var(--voltagent-space-xl, 20px);
+  border-radius: var(--ld-r-sm);
+  background-color: var(--ld-primary);
+  border: 1px solid var(--ld-primary);
+  padding: 12px 20px;
   font-size: 16px;
   font-weight: 600;
-  color: var(--voltagent-on-primary, #101010);
+  line-height: 24px;
+  color: var(--ld-on-primary);
   text-decoration: none;
   transition: filter 150ms ease, transform 100ms ease;
 }
@@ -194,29 +259,808 @@
   transform: translateY(1px);
 }
 
-/* button-outline-on-dark: hairline, body text */
+/* button-outline-on-dark — hairline, ink text */
 .landing-cta-secondary {
-  border-radius: var(--voltagent-radius-sm, 6px);
-  background-color: var(--voltagent-canvas, #101010);
-  border: 1px solid var(--voltagent-hairline, #3d3a39);
-  padding: var(--voltagent-space-md, 12px) var(--voltagent-space-xl, 20px);
+  border-radius: var(--ld-r-sm);
+  background-color: var(--ld-canvas);
+  border: 1px solid var(--ld-hairline);
+  padding: 12px 20px;
   font-size: 16px;
   font-weight: 600;
-  color: var(--voltagent-ink, #f2f2f2);
+  line-height: 24px;
+  color: var(--ld-ink);
   text-decoration: none;
   transition: border-color 150ms ease, background-color 150ms ease;
 }
 
 .landing-cta-secondary:hover {
-  border-color: var(--voltagent-mute, #8b949e);
-  background-color: var(--voltagent-canvas-soft, #1a1a1a);
+  border-color: var(--ld-mute);
+  background-color: var(--ld-soft);
 }
 
-/* ─── footer ─── */
-.landing-footer {
-  border-top: 1px solid var(--voltagent-hairline, #3d3a39);
-  padding: var(--voltagent-space-2xl, 24px) 0;
+/* ===========================================================
+ * App preview — dựng lại pattern Dashboard của app thật
+ *   (metric card + sparkline + segmented bar + progress + slot list)
+ * =========================================================== */
+.landing-hero-visual {
+  min-width: 0;
+}
+
+/* Khung app — hairline, không shadow */
+.landing-app {
+  border-radius: var(--ld-r-md);
+  background-color: var(--ld-canvas);
+  border: 1px solid var(--ld-hairline);
+  overflow: hidden;
+}
+
+/* ─── App bar ─── */
+.landing-app-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--ld-hairline);
+  background-color: var(--ld-soft);
+}
+
+.landing-app-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-color: var(--ld-canvas);
+  border: 1px solid var(--ld-hairline);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ld-primary);
+  flex-shrink: 0;
+}
+
+.landing-app-avatar .material-symbols-outlined {
+  font-size: 16px;
+}
+
+.landing-app-greeting {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--ld-ink);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* button-pill-tag */
+.landing-app-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding: 3px 10px;
+  border-radius: var(--ld-r-pill);
+  border: 1px solid var(--ld-hairline);
+  background-color: var(--ld-canvas);
+  font-family: var(--ld-sans);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--ld-ink);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.landing-app-chip .material-symbols-outlined {
+  font-size: 13px;
+  letter-spacing: normal;
+}
+
+.landing-app-chip--ai,
+.landing-app-chip--ok {
+  color: var(--ld-primary);
+  border-color: var(--ld-primary-glow);
+  background-color: var(--ld-primary-wash);
+}
+
+/* ─── Grid 2 metric ─── */
+.landing-app-metrics {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+@media (min-width: 560px) {
+  .landing-app-metrics {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Metric card — card-feature chrome */
+.landing-app-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  background-color: var(--ld-canvas);
+  border-bottom: 1px solid var(--ld-hairline);
+}
+
+@media (min-width: 560px) {
+  .landing-app-metric:first-child {
+    border-right: 1px solid var(--ld-hairline);
+  }
+}
+
+.landing-app-metric--progress {
+  border-bottom: 1px solid var(--ld-hairline);
+}
+
+.landing-app-metric-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.landing-app-metric-label {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--ld-body);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.landing-app-metric-value {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Metric counter — SF Mono */
+.landing-app-metric-number {
+  font-family: var(--ld-mono);
+  font-size: 24px;
+  font-weight: 550;
+  line-height: 28px;
+  letter-spacing: -0.6px;
+  color: var(--ld-ink-strong);
+}
+
+.landing-app-metric-trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ld-primary);
+  white-space: nowrap;
+}
+
+.landing-app-metric-trend .material-symbols-outlined {
+  font-size: 14px;
+}
+
+.landing-app-metric-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ld-mute);
+}
+
+.landing-app-metric-foot-emph {
+  font-family: var(--ld-mono);
+  font-size: 12px;
+  color: var(--ld-ink);
+  white-space: nowrap;
+}
+
+/* Sparkline */
+.landing-app-spark {
+  margin-top: auto;
+  width: 100%;
+  height: 32px;
+  color: var(--ld-primary);
+}
+
+.landing-app-spark-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Segmented bar — 60 / 20 / 20 */
+.landing-app-bar {
+  margin-top: auto;
+  display: flex;
+  width: 100%;
+  height: 8px;
+  border-radius: var(--ld-r-pill);
+  overflow: hidden;
+  background-color: var(--ld-soft);
+}
+
+.landing-app-bar-seg--60 {
+  background-color: var(--ld-primary);
+}
+
+.landing-app-bar-seg--20a {
+  background-color: var(--ld-primary-soft);
+}
+
+.landing-app-bar-seg--20b {
+  background-color: var(--ld-primary-deep);
+}
+
+/* Progress bar */
+.landing-app-progress {
+  margin-top: auto;
+  width: 100%;
+  height: 8px;
+  border-radius: var(--ld-r-pill);
+  overflow: hidden;
+  background-color: var(--ld-soft);
+}
+
+.landing-app-progress-fill {
+  height: 100%;
+  border-radius: var(--ld-r-pill);
+  background-color: var(--ld-primary);
+}
+
+/* ─── Schedule list ─── */
+.landing-app-schedule {
+  padding: 14px 18px 16px;
+  background-color: var(--ld-canvas);
+}
+
+.landing-app-schedule-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--ld-ink);
+}
+
+/* Chấm active — primary live dot */
+.landing-app-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--ld-primary);
+  box-shadow: 0 0 8px rgba(0, 217, 146, 0.45);
+  flex-shrink: 0;
+}
+
+.landing-app-slots {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.landing-app-slot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0 9px 12px;
+  border-bottom: 1px solid var(--ld-hairline);
+}
+
+.landing-app-slot:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+/* Thanh indicator bên trái — primary cho AI, mờ hơn cho slot thường */
+.landing-app-slot-bar {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 16px;
+  border-radius: 1px;
+  background-color: var(--ld-hairline);
+}
+
+.landing-app-slot--ai .landing-app-slot-bar {
+  background-color: var(--ld-primary);
+}
+
+.landing-app-slot--active .landing-app-slot-bar {
+  background-color: var(--ld-primary);
+  box-shadow: 0 0 8px rgba(0, 217, 146, 0.5);
+}
+
+.landing-app-slot-time {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--ld-mono);
+  font-size: 12px;
+  line-height: 15px;
+  color: var(--ld-ink);
+  flex-shrink: 0;
+}
+
+.landing-app-slot-time-end {
+  font-size: 11px;
+  color: var(--ld-mute);
+}
+
+.landing-app-slot-title {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ld-body);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.landing-app-slot--active .landing-app-slot-title {
+  color: var(--ld-ink);
+  font-weight: 600;
+}
+
+.landing-app-slot-chip {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--ld-r-xs);
+  background-color: var(--ld-soft);
+  border: 1px solid var(--ld-hairline);
+  font-family: var(--ld-mono);
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--ld-mute);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.landing-app-slot-chip--ai {
+  border-color: var(--ld-primary-glow);
+  background-color: var(--ld-primary-wash);
+  color: var(--ld-primary);
+}
+
+.landing-app-slot-chip--ai .material-symbols-outlined {
+  font-size: 11px;
+}
+
+/* ===========================================================
+ * 2. METRICS STRIP — green-divider-band
+ *    2px primary border trên/dưới = chromatic divider duy nhất
+ * =========================================================== */
+.landing-metrics {
+  border-top: 2px solid var(--ld-primary);
+  border-bottom: 2px solid var(--ld-primary);
+  background-color: var(--ld-canvas);
+}
+
+.landing-metrics-inner {
+  margin: 0 auto;
+  width: 100%;
+  max-width: 80rem;
+  padding: 40px 32px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+}
+
+@media (min-width: 768px) {
+  .landing-metrics-inner {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+  }
+}
+
+.landing-metric {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
-  font-size: 0.75rem; /* caption */
-  color: var(--voltagent-mute, #8b949e);
+  gap: 4px;
+}
+
+@media (min-width: 768px) {
+  .landing-metric {
+    padding: 0 24px;
+  }
+
+  /* Divider dọc giữa các metric — hairline */
+  .landing-metric:not(:first-child) {
+    border-left: 1px solid var(--ld-hairline);
+  }
+}
+
+/* Metric counter — SF Mono, theo DESIGN.md token cho "numeric counters" */
+.landing-metric-value {
+  font-family: var(--ld-mono);
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 44px;
+  letter-spacing: -1px;
+  color: var(--ld-primary);
+}
+
+@media (min-width: 768px) {
+  .landing-metric-value {
+    font-size: 48px;
+    line-height: 52px;
+  }
+}
+
+.landing-metric-label {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22px;
+  color: var(--ld-ink);
+}
+
+.landing-metric-note {
+  font-family: var(--ld-mono);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ld-mute);
+}
+
+/* ===========================================================
+ * 3. FEATURE GRID — content-band + card-feature
+ * =========================================================== */
+.landing-features {
+  margin: 0 auto;
+  width: 100%;
+  max-width: 80rem;
+  padding: 72px 32px 80px;
+}
+
+/* Dashed divider — rhythm cue duy nhất của brand */
+.landing-features::before {
+  content: "";
+  display: block;
+  width: 100%;
+  max-width: 8rem;
+  height: 1px;
+  margin: 0 auto 56px;
+  border-top: 1px dashed rgba(79, 93, 117, 0.4);
+}
+
+.landing-section-head {
+  text-align: center;
+  max-width: 42rem;
+  margin: 0 auto 48px;
+}
+
+.landing-eyebrow--inline {
+  /* inline-flex không tạo block gap → dùng padding-bottom trên wrapper
+     để tách eyebrow khỏi heading (design token: spacing.lg = 16px). */
+  display: inline-flex;
+  margin-bottom: 16px;
+}
+
+/* display-lg — 36px / 400 / -0.9px */
+.landing-section-title {
+  margin: 0 0 16px;
+  font-size: 2rem;
+  font-weight: 400;
+  line-height: 1.15;
+  letter-spacing: -0.9px;
+  color: var(--ld-ink-strong);
+}
+
+@media (min-width: 768px) {
+  .landing-section-title {
+    font-size: 36px;
+    line-height: 40px;
+  }
+}
+
+/* body-lg */
+.landing-section-desc {
+  margin: 0;
+  font-size: 16px;
+  line-height: 26px;
+  color: var(--ld-body);
+}
+
+@media (min-width: 768px) {
+  .landing-section-desc {
+    font-size: 18px;
+    line-height: 28px;
+  }
+}
+
+.landing-feature-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+@media (min-width: 768px) {
+  .landing-feature-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* card-feature — hairline, KHÔNG drop-shadow */
+.landing-feature-card {
+  padding: 24px;
+  border-radius: var(--ld-r-md);
+  background-color: var(--ld-canvas);
+  border: 1px solid var(--ld-hairline);
+  transition: border-color 200ms ease, transform 200ms ease;
+}
+
+.landing-feature-card:hover {
+  border-color: var(--ld-primary-glow);
+  transform: translateY(-2px);
+  box-shadow: 0 0 15px rgba(92, 88, 85, 0.2);
+}
+
+/* Icon container — rounded.full, hairline */
+.landing-feature-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--ld-r-sm);
+  background-color: var(--ld-soft);
+  border: 1px solid var(--ld-hairline);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  color: var(--ld-primary);
+}
+
+.landing-feature-icon .material-symbols-outlined {
+  font-size: 20px;
+}
+
+/* display-sm — 20px / 600 */
+.landing-feature-title {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+  letter-spacing: -0.2px;
+  color: var(--ld-ink);
+}
+
+/* body-md — 16px / 26px */
+.landing-feature-body {
+  margin: 0;
+  font-size: 16px;
+  line-height: 26px;
+  color: var(--ld-body);
+}
+
+/* ===========================================================
+ * 4. FOOTER
+ * =========================================================== */
+.landing-footer {
+  border-top: 1px solid var(--ld-hairline);
+  background-color: var(--ld-canvas);
+  padding: 48px 32px 24px;
+}
+
+.landing-footer-inner {
+  margin: 0 auto;
+  width: 100%;
+  max-width: 80rem;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+}
+
+@media (min-width: 768px) {
+  .landing-footer-inner {
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: 48px;
+  }
+}
+
+.landing-footer-tagline {
+  margin: 16px 0 0;
+  max-width: 22rem;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ld-mute);
+}
+
+.landing-footer-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* caption-strong, uppercase tracking */
+.landing-footer-head {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--ld-ink);
+  margin-bottom: 4px;
+}
+
+.landing-footer-link {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ld-body);
+  text-decoration: none;
+  transition: color 150ms ease;
+}
+
+.landing-footer-link:hover {
+  color: var(--ld-primary);
+}
+
+.landing-footer-bottom {
+  margin: 40px auto 0;
+  width: 100%;
+  max-width: 80rem;
+  padding-top: 24px;
+  border-top: 1px solid var(--ld-hairline);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ld-mute);
+}
+
+.landing-footer-meta {
+  font-family: var(--ld-mono);
+}
+
+/* ===========================================================
+ * Animation layer
+ * =========================================================== */
+@keyframes landing-stagger-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes landing-stagger-up-card {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Hero */
+.landing-hero {
+  opacity: 0;
+}
+
+.landing-hero--in {
+  opacity: 1;
+  animation: landing-stagger-up 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Metrics — mỗi metric fade-up với delay riêng */
+.landing-metric {
+  opacity: 0;
+}
+
+.landing-metrics--in .landing-metric {
+  animation: landing-stagger-up 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Feature cards */
+.landing-feature-card {
+  opacity: 0;
+}
+
+.landing-feature-card--in {
+  animation: landing-stagger-up-card 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ===========================================================
+ * Responsive
+ * =========================================================== */
+@media (max-width: 767px) {
+  .landing-header {
+    padding: 12px 16px;
+  }
+
+  /* Header chật ở mobile → ẩn link phụ "Bảng giá" (vẫn có ở footer),
+     thu nhỏ CTA cho vừa. */
+  .landing-nav-link--pricing {
+    display: none;
+  }
+
+  .landing-nav-cta {
+    padding: 8px 12px;
+  }
+
+  .landing-hero {
+    padding: 40px 16px 48px;
+  }
+
+  .landing-metrics-inner {
+    padding: 32px 16px;
+  }
+
+  .landing-features {
+    padding: 56px 16px 64px;
+  }
+
+  .landing-footer {
+    padding: 40px 16px 20px;
+  }
+
+  /* App preview — giảm padding cho mobile */
+  .landing-app-bar {
+    padding: 12px 14px;
+  }
+
+  .landing-app-metric {
+    padding: 14px;
+  }
+
+  .landing-app-schedule {
+    padding: 12px 14px 14px;
+  }
+
+  .landing-app-slot {
+    gap: 8px;
+  }
+
+  .landing-app-slot-title {
+    font-size: 12px;
+  }
+}
+
+/* Ẩn chip phụ khi màn hình hẹp để danh sách không bị wrap */
+@media (max-width: 460px) {
+  .landing-app-slot-chip:not(.landing-app-slot-chip--ai) {
+    display: none;
+  }
+}
+
+/* ===========================================================
+ * Reduced motion
+ * =========================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .landing-hero,
+  .landing-metric,
+  .landing-feature-card {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .landing-feature-card:hover,
+  .landing-cta-primary:active {
+    transform: none;
+  }
 }

@@ -503,6 +503,31 @@
   flex-direction: column;
   gap: 14px;
 }
+
+/* Metadata: chiều + chế độ + khoảng thực tế BE đã dùng */
+.gcs-result-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.gcs-meta-chip {
+  padding: 3px 10px;
+  border-radius: 9999px;
+  background: var(--gcs-primary-wash);
+  border: 1px solid rgba(0, 217, 146, 0.24);
+  color: var(--gcs-primary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+.gcs-meta-chip--muted {
+  background: var(--gcs-low);
+  border-color: var(--gcs-line);
+  color: var(--gcs-text-3);
+  font-family: "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+  font-weight: 400;
+}
 .gcs-result-group {
   display: flex;
   flex-direction: column;

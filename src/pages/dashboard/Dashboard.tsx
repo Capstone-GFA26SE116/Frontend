@@ -10,6 +10,7 @@ import {
   listProjects,
   type CalendarItemDto,
   type GoogleCalendarSyncDirection,
+  type GoogleCalendarSyncResultDto,
 } from "../../lib/api-client";
 import "./dashboard.css";
 
@@ -404,6 +405,10 @@ export function DashboardPage() {
   const [syncOpen, setSyncOpen] = useState(false);
   /** Lỗi 400 từ server khi sync (VD: `to` trước `from`). */
   const [syncError, setSyncError] = useState<string | null>(null);
+  /** Kết quả sync vừa rồi → hiển thị chi tiết (kèm `pushErrors`). */
+  const [syncResult, setSyncResult] = useState<GoogleCalendarSyncResultDto | null>(
+    null,
+  );
   const [toast, setToast] = useState<{
     visible: boolean;
     text: string;
@@ -705,6 +710,7 @@ export function DashboardPage() {
   function handleSync() {
     if (syncing) return;
     setSyncError(null);
+    setSyncResult(null);
     setSyncOpen(true);
   }
 
@@ -752,7 +758,8 @@ export function DashboardPage() {
       return;
     }
     setSyncError(null);
-    setSyncOpen(false);
+    // Giữ hộp thoại mở để user xem kết quả chi tiết (đặc biệt `pushErrors`).
+    setSyncResult(res.data);
 
     const { added, updated, cancelled } = res.data;
     const pushFailed = res.data.pushFailed ?? 0;
@@ -1463,14 +1470,17 @@ export function DashboardPage() {
           busy={syncing}
           serverError={syncError}
           needsReconnect={reconnectRequired}
+          result={syncResult}
           onReconnect={() => {
             setSyncOpen(false);
             void connectGoogle();
           }}
           onSubmit={(opts) => void handleSyncSubmit(opts)}
+          onBack={() => setSyncResult(null)}
           onClose={() => {
             setSyncOpen(false);
             setSyncError(null);
+            setSyncResult(null);
           }}
         />
       )}

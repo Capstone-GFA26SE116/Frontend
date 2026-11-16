@@ -23,6 +23,7 @@ import {
   listTasks,
   type CalendarItemDto,
   type GoogleCalendarSyncDirection,
+  type GoogleCalendarSyncResultDto,
   type ProjectDto,
   type ScheduleSlotDto,
   type SubtaskDto,
@@ -2451,6 +2452,10 @@ function GoogleCalendarCard({
   const [syncOpen, setSyncOpen] = useState(false);
   /** Lỗi 400 từ server khi sync (VD: `to` trước `from`). */
   const [syncError, setSyncError] = useState<string | null>(null);
+  /** Kết quả sync vừa rồi → hiển thị chi tiết (kèm `pushErrors`). */
+  const [syncResult, setSyncResult] = useState<GoogleCalendarSyncResultDto | null>(
+    null,
+  );
 
   /** Định dạng `tokenExpiresAt` -> chuỗi ngắn gọn cho user đọc. */
   const tokenExpiresAt = status?.tokenExpiresAt ?? null;
@@ -2479,6 +2484,7 @@ function GoogleCalendarCard({
    */
   function openSyncDialog() {
     setSyncError(null);
+    setSyncResult(null);
     setSyncOpen(true);
   }
 
@@ -2518,7 +2524,8 @@ function GoogleCalendarCard({
       return;
     }
     setSyncError(null);
-    setSyncOpen(false);
+    // Giữ hộp thoại mở để user xem kết quả chi tiết (đặc biệt `pushErrors`).
+    setSyncResult(res.data);
 
     const { added, updated, cancelled } = res.data;
     const pushFailed = res.data.pushFailed ?? 0;
@@ -2536,8 +2543,8 @@ function GoogleCalendarCard({
 
     if (pushFailed > 0) {
       toast.error(
-        "Đồng bộ xong nhưng có lỗi",
-        `Một số slot chưa đồng bộ được, thử lại sau. · ${parts.join(" · ")}`,
+        "Một số slot chưa đồng bộ được",
+        `Thử lại sau. · ${parts.join(" · ")}`,
       );
     } else {
       toast.success("Đã đồng bộ Google Calendar", parts.join(" · "));
@@ -2640,14 +2647,17 @@ function GoogleCalendarCard({
           busy={busy === "sync"}
           serverError={syncError}
           needsReconnect={reconnectRequired}
+          result={syncResult}
           onReconnect={() => {
             setSyncOpen(false);
             void connect();
           }}
           onSubmit={(opts) => void handleSync(opts)}
+          onBack={() => setSyncResult(null)}
           onClose={() => {
             setSyncOpen(false);
             setSyncError(null);
+            setSyncResult(null);
           }}
         />
       )}

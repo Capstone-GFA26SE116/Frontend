@@ -79,6 +79,14 @@ export interface GoogleCalendarSyncDialogProps {
   needsReconnect?: boolean;
   /** Bấm "Kết nối lại" → bắt đầu lại OAuth. */
   onReconnect?: () => void;
+  /**
+   * Kết quả sync vừa rồi.
+   *
+   * Khi có giá trị → dialog chuyển sang chế độ **xem kết quả**: hiển thị số
+   * liệu kéo về + đẩy lên, kèm `pushErrors` (spec mục 3: tối đa 5 dòng lỗi
+   * đầu tiên) để user biết chính xác slot nào lỗi và vì sao.
+   */
+  result?: GoogleCalendarSyncResultDto | null;
   /** Gọi sync với các tuỳ chọn đã chọn. */
   onSubmit: (options: {
     from: string | null;
@@ -87,6 +95,8 @@ export interface GoogleCalendarSyncDialogProps {
   }) => void;
   /** Đóng hộp thoại. */
   onClose: () => void;
+  /** Đóng hộp thoại & quay lại form chọn hướng (từ chế độ kết quả). */
+  onBack?: () => void;
 }
 
 /* ---------- Component ---------- */
@@ -96,8 +106,10 @@ export function GoogleCalendarSyncDialog({
   serverError,
   needsReconnect = false,
   onReconnect,
+  result = null,
   onSubmit,
   onClose,
+  onBack,
 }: GoogleCalendarSyncDialogProps) {
   /**
    * Hướng đồng bộ — mặc định `FromGoogle`.
@@ -194,6 +206,26 @@ export function GoogleCalendarSyncDialog({
 
         {/* ---------- Body ---------- */}
         <div className="gcs-body">
+          {/* Chế độ xem kết quả (sau khi sync xong) */}
+          {result ? (
+            <>
+              <GoogleCalendarSyncResult result={result} />
+              {onBack && (
+                <button
+                  type="button"
+                  className="gcs-btn gcs-btn--ghost gcs-btn--full"
+                  onClick={onBack}
+                  disabled={busy}
+                >
+                  <span className="material-symbols-outlined gcs-icon-14">
+                    tune
+                  </span>
+                  Đổi hướng / khoảng ngày
+                </button>
+              )}
+            </>
+          ) : (
+            <>
           {/* Hướng đồng bộ */}
           <p className="gcs-label">Chiều đồng bộ</p>
           <div className="gcs-directions" role="radiogroup" aria-label="Chiều đồng bộ">
@@ -298,26 +330,41 @@ export function GoogleCalendarSyncDialog({
               Kết nối lại Google Calendar
             </button>
           )}
+            </>
+          )}
         </div>
 
         {/* ---------- Foot ---------- */}
         <div className="gcs-foot">
-          <button
-            type="button"
-            className="gcs-btn gcs-btn--ghost"
-            onClick={onClose}
-            disabled={busy}
-          >
-            Huỷ
-          </button>
-          <button
-            type="button"
-            className="gcs-btn gcs-btn--primary"
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-          >
-            {busy ? "Đang đồng bộ…" : "Đồng bộ"}
-          </button>
+          {result ? (
+            <button
+              type="button"
+              className="gcs-btn gcs-btn--primary"
+              onClick={onClose}
+              disabled={busy}
+            >
+              Đóng
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="gcs-btn gcs-btn--ghost"
+                onClick={onClose}
+                disabled={busy}
+              >
+                Huỷ
+              </button>
+              <button
+                type="button"
+                className="gcs-btn gcs-btn--primary"
+                onClick={handleSubmit}
+                disabled={!canSubmit}
+              >
+                {busy ? "Đang đồng bộ…" : "Đồng bộ"}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -345,6 +392,9 @@ export function GoogleCalendarSyncResult({
 }) {
   const pushFailed = result.pushFailed ?? 0;
   const pushErrors = result.pushErrors ?? [];
+  const pushedCreated = result.pushedCreated ?? 0;
+  const pushedUpdated = result.pushedUpdated ?? 0;
+  const pushedDeleted = result.pushedDeleted ?? 0;
 
   /** Nhóm số liệu phía kéo về (Google → METANOIA). */
   const pulled = [
@@ -355,14 +405,62 @@ export function GoogleCalendarSyncResult({
 
   /** Nhóm số liệu phía đẩy lên (METANOIA → Google). */
   const pushed = [
-    { label: "Tạo mới", value: result.pushedCreated ?? 0 },
-    { label: "Cập nhật", value: result.pushedUpdated ?? 0 },
-    { label: "Xoá", value: result.pushedDeleted ?? 0 },
+    { label: "Tạo mới", value: pushedCreated },
+    { label: "Cập nhật", value: pushedUpdated },
+    { label: "Xoá", value: pushedDeleted },
     { label: "Lỗi", value: pushFailed },
   ];
 
+  /**
+   * Chiều đồng bộ thực tế BE đã dùng.
+   *
+   * Nếu khác `FromGoogle` mà **không có slot nào được đẩy lên** và cũng
+   * không lỗi → gần như chắc chắn là do các slot trong khoảng đều ở trạng
+   * thái không đủ điều kiện (`Proposed`, `Done`, `Skipped`...). Theo spec
+   * mục 2 chỉ `Approved`, `Due`, `InProgress`, `Overrun` mới được đẩy.
+   */
+  const pushedNothing =
+    (result.direction === "ToGoogle" || result.direction === "Both") &&
+    pushedCreated === 0 &&
+    pushedUpdated === 0 &&
+    pushedDeleted === 0 &&
+    pushFailed === 0;
+
+  /** Nhãn khoảng thực tế BE đã dùng (UTC → hiển thị). */
+  const rangeText = (() => {
+    const from = result.rangeFromUtc
+      ? new Date(result.rangeFromUtc).toLocaleString()
+      : null;
+    const to = result.rangeToUtc
+      ? new Date(result.rangeToUtc).toLocaleString()
+      : null;
+    if (from && to) return `${from} → ${to}`;
+    if (from) return `từ ${from}`;
+    if (to) return `đến ${to}`;
+    return null;
+  })();
+
   return (
     <div className="gcs-result">
+      {/* Metadata: chiều + chế độ + khoảng thực tế */}
+      <div className="gcs-result-meta">
+        {result.direction && (
+          <span className="gcs-meta-chip">
+            {result.direction === "FromGoogle"
+              ? "Từ Google về"
+              : result.direction === "ToGoogle"
+                ? "Từ METANOIA lên"
+                : "Cả hai chiều"}
+          </span>
+        )}
+        {result.mode && (
+          <span className="gcs-meta-chip">
+            {result.mode === "Range" ? "Theo khoảng ngày" : "Chỉ phần thay đổi"}
+          </span>
+        )}
+        {rangeText && <span className="gcs-meta-chip gcs-meta-chip--muted">{rangeText}</span>}
+      </div>
+
       <div className="gcs-result-group">
         <p className="gcs-result-title">Từ Google về</p>
         <div className="gcs-result-stats">
@@ -389,6 +487,19 @@ export function GoogleCalendarSyncResult({
           ))}
         </div>
       </div>
+
+      {/* Đẩy lên nhưng không có gì được đẩy → giải thích lý do */}
+      {pushedNothing && (
+        <p className="gcs-note">
+          <span className="material-symbols-outlined">info</span>
+          <span>
+            Không có khung giờ nào được đẩy lên. Chỉ các khung giờ ở trạng
+            thái <strong>Đã duyệt</strong>, <strong>Đến giờ</strong>,{" "}
+            <strong>Đang làm</strong> hoặc <strong>Quá giờ</strong> mới được
+            đẩy — các khung còn <strong>Chờ duyệt</strong> sẽ không được đẩy.
+          </span>
+        </p>
+      )}
 
       {pushFailed > 0 && (
         <p className="gcs-warn" role="alert">

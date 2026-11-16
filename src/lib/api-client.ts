@@ -1854,7 +1854,19 @@ export async function syncGoogleCalendar(
 
   // Endpoint nhận POST **không có body** → gửi body rỗng cho an toàn với
   // proxy/BE cũ yêu cầu `Content-Type: application/json`.
-  return post<GoogleCalendarSyncResultDto>(url, {});
+  //
+  // ⚠️ Debug: bật `VITE_DEBUG_GCAL_SYNC=true` trong `.env` để log URL đầy đủ
+  // (kèm query `direction`/`from`/`to`) ra console. Tắt lại sau khi xong.
+  const debug = import.meta.env.VITE_DEBUG_GCAL_SYNC === "true";
+  if (debug) {
+    console.log("[gcal-sync] POST", `${BASE_URL}${url}`, options ?? {});
+  }
+
+  const res = await post<GoogleCalendarSyncResultDto>(url, {});
+  if (debug) {
+    console.log("[gcal-sync] ←", res.ok ? res.data : res);
+  }
+  return res;
 }
 
 /**

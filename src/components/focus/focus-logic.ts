@@ -176,6 +176,167 @@ export function slotPhaseLabel(phase: FocusSlotPhase): string {
   }
 }
 
+/* ---------- Trạng thái task / subtask ---------- */
+
+/**
+ * Trạng thái task mà BE chấp nhận.
+ *
+ * ⚠️ BE trả `status` là **string tự do** (không có enum trong swagger), nên
+ * ta dùng union lỏng (`| (string & {})`) để không ép chặt.
+ *
+ * Theo spec `FOCUS_SESSION_FE (1).md` mục 2: task/subtask có trạng thái
+ * `ToDo`, `Done`, `Skipped`. BE còn có thể trả `Scheduled` / `InProgress`
+ * (do hệ thống đặt khi đã duyệt slot / bắt đầu làm) → ta liệt kê để
+ * autocomplete, nhưng **không** dựa vào chúng để quyết định hành động.
+ */
+export type FocusTaskStatus =
+  | "ToDo"
+  | "Scheduled"
+  | "InProgress"
+  | "Done"
+  | "Skipped"
+  | (string & {});
+
+/** Trạng thái subtask: `ToDo`, `Done`, `Skipped`. */
+export type FocusSubtaskStatus = "ToDo" | "Done" | "Skipped" | (string & {});
+
+/** Chuẩn hoá status task về dạng đã biết (fallback = chính chuỗi gốc). */
+export function toTaskStatus(status: string | null | undefined): string {
+  if (!status) return "ToDo";
+  const s = status.trim().toLowerCase();
+  switch (s) {
+    case "todo":
+    case "pending":
+      return "ToDo";
+    case "scheduled":
+      return "Scheduled";
+    case "inprogress":
+    case "in_progress":
+    case "in progress":
+      return "InProgress";
+    case "done":
+    case "completed":
+      return "Done";
+    case "skipped":
+      return "Skipped";
+    default:
+      return status;
+  }
+}
+
+/**
+ * Task/subtask này đã đóng chưa (`Done` / `Skipped`)?
+ *
+ * Spec mục 2 + mục 3: Start trên task `Done`/`Skipped` → BE trả 400
+ * ("Hãy mở lại task trước khi làm việc"). FE nên ẨN nút Start.
+ */
+export function isClosedStatus(status: string | null | undefined): boolean {
+  const s = toTaskStatus(status);
+  return s === "Done" || s === "Skipped";
+}
+
+/**
+ * Bảng chuyển trạng thái hợp lệ.
+ *
+ * Server là nơi quyết định — bảng này chỉ để FE ẩn nút sai.
+ *
+ * ⚠️ Spec MỚI (`FOCUS_SESSION_FE (1).md` mục 6.3): Start/Stop **không**
+ * đổi trạng thái task/subtask. Mọi thay đổi trạng thái đều do FE gọi
+ * `PUT` (thay thế toàn bộ → phải gửi đủ trường).
+ *
+ * | Đối tượng | Từ              | Sang được bằng tay                          |
+ * |-----------|-----------------|---------------------------------------------|
+ * | Subtask   | `ToDo`          | `Done`, `Skipped`                           |
+ * | Subtask   | `Done`/`Skipped`| `ToDo`                                       |
+ * | Task      | `ToDo`/`Scheduled`/`InProgress` | `Done`, `Skipped`             |
+ * | Task      | `Done`/`Skipped`| `ToDo` ("Mở lại")                            |
+ * | Slot      | `Proposed`      | `Approved`, `Cancelled`                      |
+ * | Slot      | `Approved`/`Due`/`Missed` | `Postponed`, `Skipped`, `Cancelled`, `Done` |
+ * | Slot      | `Postponed`     | `Approved`, `Skipped`, `Cancelled`, `Done`   |
+ * | Slot      | `Done`/`Skipped`/`Cancelled` | (không có — chốt)               |
+ */
+const TASK_MANUAL_TRANSITIONS: Record<string, string[]> = {
+  ToDo: ["Done", "Skipped"],
+  Scheduled: ["Done", "Skipped"],
+  InProgress: ["Done", "Skipped"],
+  Done: ["ToDo"],
+  Skipped: ["ToDo"],
+};
+
+const SUBTASK_MANUAL_TRANSITIONS: Record<string, string[]> = {
+  ToDo: ["Done", "Skipped"],
+  Done: ["ToDo"],
+  Skipped: ["ToDo"],
+};
+
+/** Task này có thể chuyển sang trạng thái `next` không (bằng tay)? */
+export function canTransitionTask(
+  from: string | null | undefined,
+  next: string,
+): boolean {
+  const allowed = TASK_MANUAL_TRANSITIONS[toTaskStatus(from)] ?? [];
+  return allowed.includes(next);
+}
+
+/** Subtask này có thể chuyển sang trạng thái `next` không (bằng tay)? */
+export function canTransitionSubtask(
+  from: string | null | undefined,
+  next: string,
+): boolean {
+  const allowed = SUBTASK_MANUAL_TRANSITIONS[toTaskStatus(from)] ?? [];
+  return allowed.includes(next);
+}
+
+/* ---------- Trạng thái phiên (sessions) ---------- */
+
+/**
+ * Nhãn tiếng Việt cho `state` của phiên (spec mục 6).
+ */
+export function sessionStateLabel(state: string | null | undefined): string {
+  switch (state) {
+    case "Running":
+      return "Đang chạy";
+    case "Stopped":
+      return "Đã dừng";
+    case "PendingConfirmation":
+      return "Chờ xác nhận";
+    case "Confirmed":
+      return "Đã xác nhận";
+    case "Discarded":
+      return "Đã loại bỏ";
+    default:
+      return "Chưa rõ";
+  }
+}
+
+/** Tone màu cho badge của trạng thái phiên. */
+export function sessionStateTone(
+  state: string | null | undefined,
+): "running" | "stopped" | "pending" | "confirmed" | "muted" {
+  switch (state) {
+    case "Running":
+      return "running";
+    case "Stopped":
+      return "stopped";
+    case "PendingConfirmation":
+      return "pending";
+    case "Confirmed":
+      return "confirmed";
+    default:
+      return "muted";
+  }
+}
+
+/**
+ * Phiên này có được tính vào thời gian thực tế không?
+ *
+ * Spec mục 6: phiên `AutoTimeout` **chưa xác nhận** (`PendingConfirmation`)
+ * và `Discarded` **không tính** — và không làm task `InProgress`.
+ */
+export function isCountedSession(state: string | null | undefined): boolean {
+  return state !== "PendingConfirmation" && state !== "Discarded";
+}
+
 /* ---------- Lý do dừng ---------- */
 
 /** Nhãn tiếng Việt cho `stopReason`. */
@@ -186,13 +347,69 @@ export const STOP_REASON_LABELS: Record<FocusStopReason, string> = {
   Other: "Lý do khác",
 };
 
-/** Mô tả ngắn gợi ý cho từng lý do dừng. */
+/**
+ * Lý do dừng **bắt buộc** phải có `note`.
+ *
+ * ⚠️ Theo spec MỚI (`FOCUS_SESSION_FE (1).md` mục 5.2):
+ *   `"note": "Đã gửi file cho khách"` — **`note` tùy chọn**, KHÔNG lý do nào
+ *   bắt buộc.
+ *
+ *   (Bản spec CŨ `FOCUS_START_STOP_REWORK_FE.md` mục 4 bắt buộc `note` cho
+ *   `Blocked`/`Other` — BE đã bỏ quy tắc đó. Ta giữ hàm này nhưng danh sách
+ *   rỗng để không phá vỡ chỗ gọi, và để sẵn sàng nếu BE đổi lại.)
+ */
+export const STOP_REASONS_REQUIRING_NOTE: FocusStopReason[] = [];
+
+/** Lý do dừng này có bắt buộc ghi chú không? */
+export function stopReasonNeedsNote(reason: FocusStopReason): boolean {
+  return STOP_REASONS_REQUIRING_NOTE.includes(reason);
+}
+
+/**
+ * Mô tả ngắn gợi ý cho từng lý do dừng.
+ *
+ * ⚠️ Mô tả phải khớp với hành vi MỚI của BE (`FOCUS_SESSION_FE (1).md`
+ * mục 5.2):
+ *   - `Completed` → slot `Done`. **KHÔNG** đánh dấu task/subtask xong.
+ *   - `Interrupted` → slot quay về `Due`.
+ *   - `Blocked` → slot quay về `Due` (không phải `Postponed` như bản cũ).
+ *   - `Other` → slot quay về `Due`.
+ */
 export const STOP_REASON_HINTS: Record<FocusStopReason, string> = {
-  Completed: "Công việc đã hoàn thành — slot sẽ chuyển sang Done.",
-  Interrupted: "Slot sẽ trở lại trạng thái Due để bạn làm tiếp.",
-  Blocked: "Slot sẽ trở lại trạng thái Due để bạn làm tiếp.",
-  Other: "Slot sẽ trở lại trạng thái Due để bạn làm tiếp.",
+  Completed:
+    "Slot chuyển sang Done. Bạn sẽ được hỏi có đánh dấu xong task/subtask không.",
+  Interrupted: "Slot trở lại Due để bạn làm tiếp.",
+  Blocked: "Slot trở lại Due để bạn làm tiếp.",
+  Other: "Slot trở lại Due để bạn làm tiếp.",
 };
+
+/**
+ * Trạng thái slot sau khi Stop với lý do tương ứng — dùng để hiển thị
+ * "ảnh hưởng" cho người dùng trong hộp thoại Stop.
+ *
+ * ⚠️ Spec mục 5.2: "Slot (nếu phiên có gắn slot): `Completed` thì `Done`;
+ * các lý do còn lại thì quay về `Due` (để hiện lại nút Start)."
+ */
+export const STOP_REASON_SLOT_RESULT: Record<FocusStopReason, FocusSlotPhase> = {
+  Completed: "Done",
+  Interrupted: "Due",
+  Blocked: "Due",
+  Other: "Due",
+};
+
+/** Nhãn tiếng Việt cho trạng thái slot (dùng trong hộp thoại Stop). */
+export function slotPhaseShortLabel(phase: FocusSlotPhase): string {
+  switch (phase) {
+    case "Done":
+      return "Hoàn thành";
+    case "Due":
+      return "Đến giờ";
+    case "Postponed":
+      return "Đang chờ";
+    default:
+      return slotPhaseLabel(phase);
+  }
+}
 
 /**
  * `checkInRequired = true` (BE trả về khi stop) nghĩa là nên hỏi

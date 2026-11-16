@@ -1,12 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   ScheduleWarningDto,
+  SubtaskDto,
   TaskDto,
 } from "../lib/api-client";
 import {
+  PROPOSAL_GROUP_ICONS,
+  PROPOSAL_GROUP_LABELS,
+  filterProposalGroups,
   fmtMinutes,
   fmtRange,
+  groupProposalSlots,
   slotKey,
+  summarizeProposal,
+  type ProposalFilter,
+  type ProposalSlotGroup,
   type UseScheduleProposal,
 } from "./schedule-proposal-logic";
 import "./schedule-proposal.css";
@@ -30,60 +38,256 @@ import "./schedule-proposal.css";
 /** Nhãn tiếng Việt cho `warning.type` do AI trả về. */
 const WARNING_LABELS: Record<string, string> = {
   not_enough_time: "Không đủ thời gian trống",
-  overdue: "Task đã quá hạn",
-  past_deadline: "Task đã quá hạn",
-  no_free_slot: "Không còn khung giờ trống",
+  overdue: "Đã quá hạn",
+  past_deadline: "Đã quá hạn",
+  no_free_slot: "Hết khung giờ trống",
   insufficient_time: "Không đủ thời gian trống",
 };
 
-/** ---------- Warning group ---------- */
-
-function WarningGroup({
-  warnings,
-  tasksById,
-}: {
-  warnings: ScheduleWarningDto[];
-  tasksById: Map<string, TaskDto>;
-}) {
-  if (warnings.length === 0) return null;
+/**
+ * 1 dòng cảnh báo của AI.
+ *
+ * Hiển thị ngay dưới tên task trong nhóm (thay vì gom hết lên đầu panel)
+ * để người dùng thấy ngay vấn đề của task đang xét.
+ */
+function WarningLine({ warning }: { warning: ScheduleWarningDto }) {
+  const label = WARNING_LABELS[warning.type] ?? warning.type;
+  const hasNumbers = warning.needed_minutes > 0 || warning.free_minutes > 0;
   return (
-    <ul className="sp-warn-list">
-      {warnings.map((w, i) => {
-        const label = WARNING_LABELS[w.type];
-        // AI có thể trả 0 cho cả 2 khi warning mang tính chất thông báo
-        // (ví dụ task quá hạn) — lúc đó dòng số liệu chỉ toàn dấu gạch, vô nghĩa.
-        const hasNumbers = w.needed_minutes > 0 || w.free_minutes > 0;
-        return (
-          <li key={`${w.task_id}-${i}`} className="sp-warn">
-            <span className="material-symbols-outlined sp-warn-icon">warning</span>
-            <div className="sp-warn-body">
-              <strong>{tasksById.get(w.task_id)?.title ?? "Task"}</strong>
-              <span className="sp-warn-type">{label ?? w.type}</span>
-              {/* Deadline để user tự kiểm chứng AI có đọc đúng không. */}
-              {(() => {
-                const task = tasksById.get(w.task_id);
-                if (!task?.deadline) return null;
-                const dl = new Date(task.deadline);
-                if (Number.isNaN(dl.getTime())) return null;
-                const overdue = dl.getTime() < Date.now();
-                return (
-                  <span className={`sp-warn-deadline${overdue ? " sp-warn-deadline--late" : ""}`}>
-                    Deadline: {dl.toLocaleString("vi-VN")}
-                    {overdue ? " (đã qua)" : ""}
-                  </span>
-                );
-              })()}
-              {w.message && <span className="sp-warn-msg">{w.message}</span>}
-              {hasNumbers && (
-                <span className="sp-warn-stat">
-                  Cần {fmtMinutes(w.needed_minutes)} · chỉ còn {fmtMinutes(w.free_minutes)} trống
-                </span>
-              )}
-            </div>
-          </li>
-        );
-      })}
-    </ul>
+    <div className="sp-task-warn">
+      <span className="material-symbols-outlined sp-icon-16">warning</span>
+      <span className="sp-task-warn-text">
+        {label}
+        {hasNumbers && (
+          <span className="sp-task-warn-stat">
+            {fmtMinutes(warning.needed_minutes)} / {fmtMinutes(warning.free_minutes)}
+          </span>
+        )}
+        {warning.message && <span className="sp-task-warn-msg">{warning.message}</span>}
+      </span>
+    </div>
+  );
+}
+
+/* ---------- Summary chips ---------- */
+
+/**
+ * Dải chip tóm tắt kết quả AI.
+ *
+ * Thay thế "verdict" cũ (1 dòng chung chung) bằng số liệu cụ thể:
+ * bao nhiêu task quá hạn / thiếu chỗ / sẵn sàng, tổng số khung giờ và
+ * tổng thời lượng đề xuất.
+ */
+function SummaryChips({
+  groups,
+  activeFilter,
+  onFilter,
+  selectedCount,
+}: {
+  groups: ProposalSlotGroup[];
+  activeFilter: ProposalFilter;
+  onFilter: (f: ProposalFilter) => void;
+  selectedCount: number;
+}) {
+  const summary = summarizeProposal(groups);
+
+  const chip = (
+    kind: ProposalFilter,
+    label: string,
+    icon: string,
+    count: number,
+    tone: string,
+  ) => {
+    const isActive = activeFilter === kind;
+    return (
+      <button
+        type="button"
+        className={`sp-chip${isActive ? " sp-chip--on" : ""} ${tone}`}
+        onClick={() => onFilter(kind)}
+        aria-pressed={isActive}
+      >
+        <span className="material-symbols-outlined sp-icon-14">{icon}</span>
+        <span className="sp-chip-label">{label}</span>
+        <span className="sp-chip-count">{count}</span>
+      </button>
+    );
+  };
+
+  return (
+    <div className="sp-summary">
+      <div className="sp-summary-chips">
+        {chip("all", "Tất cả", "apps", summary.totalItems, "sp-chip--all")}
+        {chip(
+          "overdue",
+          PROPOSAL_GROUP_LABELS.overdue,
+          PROPOSAL_GROUP_ICONS.overdue,
+          summary.counts.overdue,
+          "sp-chip--danger",
+        )}
+        {chip(
+          "tight",
+          PROPOSAL_GROUP_LABELS.tight,
+          PROPOSAL_GROUP_ICONS.tight,
+          summary.counts.tight,
+          "sp-chip--warn",
+        )}
+        {chip(
+          "ready",
+          PROPOSAL_GROUP_LABELS.ready,
+          PROPOSAL_GROUP_ICONS.ready,
+          summary.counts.ready,
+          "sp-chip--ok",
+        )}
+      </div>
+      <p className="sp-summary-meta">
+        {summary.totalSubtasks > 0 && `${summary.totalSubtasks} subtask · `}
+        {summary.totalSlots} khung giờ · {fmtMinutes(summary.totalMinutes)}
+        {selectedCount > 0 && ` · đã chọn ${selectedCount}`}
+      </p>
+    </div>
+  );
+}
+
+/* ---------- Task group ---------- */
+
+/**
+ * 1 nhóm = 1 task, hoặc 1 subtask (khi AI gắn `subtask_id` cho slot).
+ *
+ * - **Nhóm cấp task**: tiêu đề = tên task, kèm deadline + warning.
+ * - **Nhóm cấp subtask**: tiêu đề = tên subtask, hiện tên task cha ở dưới
+ *   (vì nhiều subtask của cùng task nằm cạnh nhau).
+ *
+ * Cả hai loại đều có checkbox tổng (tick/untick cả nhóm) và các slot con.
+ * Nhóm không có slot nào (AI chỉ báo warning) vẫn hiện để user biết
+ * việc đó có vấn đề.
+ */
+function TaskGroup({
+  group,
+  tasksById,
+  excluded,
+  approving,
+  onToggleSlot,
+  onToggleTask,
+}: {
+  group: ProposalSlotGroup;
+  tasksById: Map<string, TaskDto>;
+  excluded: Set<string>;
+  approving: boolean;
+  onToggleSlot: (slot: Parameters<typeof slotKey>[0]) => void;
+  onToggleTask: (group: ProposalSlotGroup) => void;
+}) {
+  const total = group.slots.length;
+  const off = group.slots.filter((s) => excluded.has(slotKey(s))).length;
+  const allOff = total > 0 && off === total;
+  const someOff = off > 0 && off < total;
+
+  const task = tasksById.get(group.taskId);
+  const deadline = task?.deadline ? new Date(task.deadline) : null;
+  const hasDeadline = deadline && !Number.isNaN(deadline.getTime());
+
+  /** Nhóm cấp subtask → hiện tên subtask; nhóm cấp task → hiện tên task. */
+  const isSubtaskGroup = group.subtaskId !== null;
+  const heading = isSubtaskGroup
+    ? (group.subtaskTitle ?? "Subtask")
+    : group.title;
+
+  return (
+    <section
+      className={`sp-task sp-task--${group.kind}${isSubtaskGroup ? " sp-task--subtask" : ""}`}
+    >
+      <div className="sp-task-head">
+        <label className="sp-check sp-check--task">
+          <input
+            type="checkbox"
+            checked={total > 0 && !allOff}
+            ref={(el) => {
+              if (el) el.indeterminate = someOff;
+            }}
+            onChange={() => onToggleTask(group)}
+            disabled={total === 0 || approving}
+            aria-label={`Chọn tất cả khung giờ của ${heading}`}
+          />
+          <span className="sp-task-title">{heading}</span>
+        </label>
+
+        {/* Badge trạng thái chỉ hiện ở nhóm cấp task — nhóm subtask thừa kế
+            trạng thái của task cha, hiện lại ở dòng "task cha" bên dưới. */}
+        {!isSubtaskGroup && (
+          <span className={`sp-task-badge sp-task-badge--${group.kind}`}>
+            <span className="material-symbols-outlined sp-icon-14">
+              {PROPOSAL_GROUP_ICONS[group.kind]}
+            </span>
+            {PROPOSAL_GROUP_LABELS[group.kind]}
+          </span>
+        )}
+      </div>
+
+      {/* Nhóm cấp subtask: hiện task cha + trạng thái + phút ước lượng. */}
+      {isSubtaskGroup && (
+        <div className="sp-task-parent">
+          <span className="material-symbols-outlined sp-icon-16">account_tree</span>
+          <span className="sp-task-parent-name">{group.title}</span>
+          <span className={`sp-task-parent-kind sp-task-parent-kind--${group.kind}`}>
+            {PROPOSAL_GROUP_LABELS[group.kind]}
+          </span>
+          {hasDeadline && (
+            <span
+              className={`sp-task-parent-deadline${group.isOverdue ? " sp-task-parent-deadline--late" : ""}`}
+            >
+              {deadline?.toLocaleDateString("vi-VN", {
+                day: "2-digit",
+                month: "2-digit",
+              })}
+            </span>
+          )}
+          {group.subtaskMinutes != null && group.subtaskMinutes > 0 && (
+            <span className="sp-task-parent-min">
+              {fmtMinutes(group.subtaskMinutes)}
+            </span>
+          )}
+        </div>
+      )}
+
+      {hasDeadline && !isSubtaskGroup && (
+        <div className={`sp-task-deadline${group.isOverdue ? " sp-task-deadline--late" : ""}`}>
+          <span className="material-symbols-outlined sp-icon-14">event</span>
+          Deadline: {deadline.toLocaleString("vi-VN")}
+          {group.isOverdue && " (đã qua)"}
+        </div>
+      )}
+
+      {group.warnings.map((w, i) => (
+        <WarningLine key={`${group.taskId}-w-${i}`} warning={w} />
+      ))}
+
+      {total === 0 ? (
+        <p className="sp-task-empty">AI không tìm được khung giờ trống.</p>
+      ) : (
+        <ul className="sp-task-slots">
+          {group.slots.map((s) => {
+            const key = slotKey(s);
+            const checked = !excluded.has(key);
+            return (
+              <li key={key} className={`sp-slot${checked ? "" : " sp-slot--off"}`}>
+                <div className="sp-slot-row">
+                  <label className="sp-check">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => onToggleSlot(s)}
+                      disabled={approving}
+                    />
+                    <span className="sp-slot-time">{fmtRange(s.start, s.end)}</span>
+                  </label>
+                  <span className="sp-slot-dur">{fmtMinutes(s.proposed_minutes)}</span>
+                </div>
+                {s.explanation && <p className="sp-slot-why">{s.explanation}</p>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -92,9 +296,12 @@ function WarningGroup({
 export function ProposalBody({
   hook,
   tasksById,
+  subtasksById,
 }: {
   hook: UseScheduleProposal;
   tasksById: Map<string, TaskDto>;
+  /** Bản đồ subtask để tách slot thành nhóm cấp subtask (optional). */
+  subtasksById?: Map<string, SubtaskDto>;
 }) {
   const {
     proposal,
@@ -105,9 +312,34 @@ export function ProposalBody({
     selectedSlots,
     unscheduledTaskIds,
     toggle,
-    toggleAll,
   } = hook;
+
+  /** Nhóm lọc đang active (null = xem tất cả). */
+  const [filter, setFilter] = useState<ProposalFilter>("all");
+  /** Task đang mở rộng phần chi tiết. */
   const [showAll, setShowAll] = useState(false);
+
+  const groups = useMemo(
+    () => (proposal ? groupProposalSlots(proposal, tasksById, subtasksById) : []),
+    [proposal, tasksById, subtasksById],
+  );
+
+  const visibleGroups = useMemo(
+    () => filterProposalGroups(groups, filter),
+    [groups, filter],
+  );
+
+  /** Bật/tắt cả nhóm 1 task. */
+  const toggleTask = (group: ProposalSlotGroup) => {
+    const allOff = group.slots.every((s) => excluded.has(slotKey(s)));
+    for (const s of group.slots) {
+      if (allOff) {
+        if (excluded.has(slotKey(s))) toggle(s);
+      } else if (!excluded.has(slotKey(s))) {
+        toggle(s);
+      }
+    }
+  };
 
   if (loading) {
     return (
@@ -130,31 +362,29 @@ export function ProposalBody({
     );
   }
 
-  const slots = proposal.slots ?? [];
-  const warnings = proposal.warnings ?? [];
-  const visibleSlots = showAll ? slots : slots.slice(0, 8);
+  if (groups.length === 0) {
+    return (
+      <div className="sp-state">
+        <span className="material-symbols-outlined sp-state-icon">event_busy</span>
+        <p>Không tìm được khung giờ trống phù hợp.</p>
+      </div>
+    );
+  }
+
+  // Mỗi nhóm hiện tối đa 4 task; bấm "Xem thêm" để bung phần còn lại.
+  const GROUP_PAGE = 4;
+  const shownGroups = showAll
+    ? visibleGroups
+    : visibleGroups.slice(0, GROUP_PAGE);
 
   return (
     <>
-      {/* Kết luận của AI — luôn hiện, kể cả khi không khả thi. */}
-      <div className={`sp-verdict${proposal.is_feasible ? "" : " sp-verdict--warn"}`}>
-        <span className="material-symbols-outlined sp-verdict-icon">
-          {proposal.is_feasible ? "task_alt" : "warning"}
-        </span>
-        <div>
-          <strong>
-            {proposal.is_feasible
-              ? "Đủ chỗ cho lịch này"
-              : "Chưa đủ thời gian — vẫn có thể xếp phần đủ được"}
-          </strong>
-          {!proposal.is_feasible && proposal.missing_minutes > 0 && (
-            <span className="sp-verdict-missing">
-              Còn thiếu {fmtMinutes(proposal.missing_minutes)} so với ước lượng của bạn.
-            </span>
-          )}
-          {proposal.explanation && <p className="sp-verdict-text">{proposal.explanation}</p>}
-        </div>
-      </div>
+      <SummaryChips
+        groups={groups}
+        activeFilter={filter}
+        onFilter={setFilter}
+        selectedCount={selectedSlots.length}
+      />
 
       {error && (
         <div className="sp-inline-error" role="alert">
@@ -163,75 +393,48 @@ export function ProposalBody({
         </div>
       )}
 
-      {warnings.length > 0 && <WarningGroup warnings={warnings} tasksById={tasksById} />}
-
-      {slots.length === 0 ? (
+      {shownGroups.length === 0 ? (
         <div className="sp-state">
-          <span className="material-symbols-outlined sp-state-icon">event_busy</span>
-          <p>AI không tìm được khung giờ trống phù hợp cho các task này.</p>
+          <span className="material-symbols-outlined sp-state-icon">filter_alt_off</span>
+          <p>Không có việc nào trong nhóm này.</p>
         </div>
       ) : (
-        <>
-          <div className="sp-list-head">
-            <label className="sp-check">
-              <input
-                type="checkbox"
-                checked={selectedSlots.length === slots.length}
-                onChange={(e) => toggleAll(e.currentTarget.checked)}
-                disabled={approving}
-              />
-              <span>
-                {selectedSlots.length}/{slots.length} khung giờ
-              </span>
-            </label>
-          </div>
+        <div className="sp-groups">
+          {shownGroups.map((g) => (
+            <TaskGroup
+              key={g.taskId}
+              group={g}
+              tasksById={tasksById}
+              excluded={excluded}
+              approving={approving}
+              onToggleSlot={toggle}
+              onToggleTask={toggleTask}
+            />
+          ))}
+        </div>
+      )}
 
-          <ul className="sp-list">
-            {visibleSlots.map((s) => {
-              const key = slotKey(s);
-              const checked = !excluded.has(key);
-              return (
-                <li key={key} className={`sp-slot${checked ? "" : " sp-slot--off"}`}>
-                  <label className="sp-check">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggle(s)}
-                      disabled={approving}
-                    />
-                    <span className="sp-slot-title">
-                      {tasksById.get(s.task_id)?.title ?? "Task"}
-                    </span>
-                  </label>
-                  <div className="sp-slot-meta">
-                    <span className="material-symbols-outlined sp-icon-14">schedule</span>
-                    {fmtRange(s.start, s.end)}
-                    <span className="sp-slot-dur">{fmtMinutes(s.proposed_minutes)}</span>
-                  </div>
-                  {s.explanation && <p className="sp-slot-why">{s.explanation}</p>}
-                </li>
-              );
-            })}
-          </ul>
+      {visibleGroups.length > shownGroups.length && (
+        <button
+          type="button"
+          className="sp-more"
+          onClick={() => setShowAll(true)}
+        >
+          Xem thêm {visibleGroups.length - shownGroups.length} việc
+        </button>
+      )}
 
-          {slots.length > 8 && (
-            <button
-              type="button"
-              className="sp-more"
-              onClick={() => setShowAll((v) => !v)}
-              disabled={approving}
-            >
-              {showAll ? "Thu gọn" : `Xem thêm ${slots.length - 8} khung giờ`}
-            </button>
-          )}
+      {showAll && visibleGroups.length > GROUP_PAGE && (
+        <button type="button" className="sp-more" onClick={() => setShowAll(false)}>
+          Thu gọn
+        </button>
+      )}
 
-          {unscheduledTaskIds.length > 0 && (
-            <div className="sp-note">
-              <span className="material-symbols-outlined sp-icon-14">info</span>
-              {unscheduledTaskIds.length} task được AI nhắc tới nhưng chưa có khung giờ nào.
-            </div>
-          )}
-        </>
+      {unscheduledTaskIds.length > 0 && (
+        <div className="sp-note">
+          <span className="material-symbols-outlined sp-icon-16">info</span>
+          {unscheduledTaskIds.length} việc chưa có khung giờ phù hợp.
+        </div>
       )}
     </>
   );
@@ -249,10 +452,23 @@ export function ProposalActions({
   const { proposal, selectedSlots, approving, approve } = hook;
   if (!proposal) return null;
   const count = selectedSlots.length;
+
+  /** Số subtask khác nhau trong các slot đang chọn — để nói rõ Apply sẽ làm gì. */
+  const subtaskCount = new Set(
+    selectedSlots.map((s) => s.subtask_id).filter(Boolean),
+  ).size;
+
   return (
     <div className="sp-actions">
       <span className="sp-actions-hint">
-        {count === 0 ? "Chọn ít nhất 1 khung giờ" : `Sẽ thêm ${count} khung giờ vào lịch`}
+        {count === 0 ? (
+          "Chọn ít nhất 1 khung giờ"
+        ) : (
+          <>
+            <strong>{count}</strong> khung giờ
+            {subtaskCount > 0 && ` · ${subtaskCount} subtask`}
+          </>
+        )}
       </span>
       <button
         type="button"
@@ -263,10 +479,10 @@ export function ProposalActions({
         }}
         disabled={approving || count === 0}
       >
-        <span className="material-symbols-outlined sp-icon-18">
+        <span className="material-symbols-outlined sp-icon-20">
           {approving ? "progress_activity" : "check"}
         </span>
-        {approving ? "Đang thêm…" : "Thêm vào lịch"}
+        {approving ? "Đang apply…" : "Apply"}
       </button>
     </div>
   );
@@ -277,13 +493,16 @@ export function ProposalActions({
 export function ProposalDialog({
   hook,
   tasksById,
+  subtasksById,
   onClose,
   onDone,
 }: {
   hook: UseScheduleProposal;
   tasksById: Map<string, TaskDto>;
+  /** Bản đồ subtask để tách slot thành nhóm cấp subtask (optional). */
+  subtasksById?: Map<string, SubtaskDto>;
   onClose: () => void;
-  /** Gọi sau khi duyệt thành công (vd: nạp lại lịch rồi đóng panel). */
+  /** Gọi sau khi apply thành công (vd: nạp lại lịch rồi đóng panel). */
   onDone?: () => void | Promise<void>;
 }) {
   const { close, approving, proposal, loading, error } = hook;
@@ -317,10 +536,8 @@ export function ProposalDialog({
             <span className="material-symbols-outlined">auto_awesome</span>
           </div>
           <div className="sp-head-text">
-            <h2 className="sp-title">AI đề xuất lịch</h2>
-            <p className="sp-sub">
-              Xem trước các khung giờ AI sắp xếp. Chưa có gì được thêm vào lịch cho tới khi bạn duyệt.
-            </p>
+            <p className="sp-eyebrow">AI Schedule</p>
+            <h2 className="sp-title">Đề xuất lịch</h2>
           </div>
           <button
             type="button"
@@ -330,14 +547,14 @@ export function ProposalDialog({
               onClose();
             }}
             disabled={approving}
-            aria-label="Close"
+            aria-label="Đóng"
           >
             <span className="material-symbols-outlined">close</span>
           </button>
         </div>
 
         <div className="sp-body">
-          <ProposalBody hook={hook} tasksById={tasksById} />
+          <ProposalBody hook={hook} tasksById={tasksById} subtasksById={subtasksById} />
         </div>
 
         <ProposalActions hook={hook} onDone={onDone} />

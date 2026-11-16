@@ -16,6 +16,8 @@ import { PlanningPage } from "./pages/planning/Planning";
 import { MilestonesPage } from "./pages/milestones/Milestones";
 import { SchedulePage } from "./pages/schedule/Schedule";
 import { CopilotPage } from "./pages/copilot/Copilot";
+import { ProjectDocumentsPage } from "./pages/documents/ProjectDocuments";
+import { MyDocumentsPage } from "./pages/documents/MyDocuments";
 import {
   PaymentCancelPage,
   PaymentSuccessPage,
@@ -52,6 +54,8 @@ function guarded(label: string, node: ReactNode) {
  *  /dashboard         -> Cần đăng nhập + đã hoàn tất onboarding (Lịch ngày)
  *  /projects          -> Cần đăng nhập + đã hoàn tất onboarding (Không gian dự án)
  *  /projects/:id/milestones -> Quản lý milestone của dự án
+ *  /projects/:id/documents -> Kho tài liệu của dự án
+ *  /documents               -> Tất cả tài liệu của tôi (gom mọi dự án)
  *  /clients           -> Cần đăng nhập + đã hoàn tất onboarding (Danh bạ khách hàng)
  *  /schedule          -> Cần đăng nhập + đã hoàn tất onboarding (Lịch Tuần & Tháng)
  *  /copilot           -> Cần đăng nhập + đã hoàn tất onboarding (AI Schedule Coordinator)
@@ -151,6 +155,16 @@ function App() {
         <Route
           path="/projects/:projectId/schedule"
           element={guarded("Lịch dự án", <SchedulePage />)}
+        />
+        {/* Kho tài liệu của dự án (BE spec: PROJECT_DOCUMENTS_FE) */}
+        <Route
+          path="/projects/:projectId/documents"
+          element={guarded("Tài liệu dự án", <ProjectDocumentsPage />)}
+        />
+        {/* Tất cả tài liệu của tôi (gom mọi dự án) */}
+        <Route
+          path="/documents"
+          element={guarded("Tài liệu của tôi", <MyDocumentsPage />)}
         />
         <Route path="/schedule" element={guarded("Lịch tuần & tháng", <SchedulePage />)} />
         <Route path="/copilot" element={guarded("AI Copilot", <CopilotPage />)} />

@@ -1,0 +1,34 @@
+@startuml
+title MW-10 - Plan Upgrade and Payment
+
+start
+:Open the pricing page;
+
+:Load the plans and the account information;
+:Display the plans and the comparison table;
+
+:Select a monthly or yearly cycle;
+:Click "Buy this plan";
+
+:Create the payment transaction;
+:Redirect to the payment gateway;
+
+:Make the payment;
+
+:Receive the payment result;
+:Reconcile the transaction status;
+
+if (Status?) then (Success)
+  :Activate the purchased plan;
+  :Create the invoice;
+  :Show the new plan and the invoice;
+elseif (Pending) then (Pending)
+  :Auto-reconcile again after a few seconds;
+  :Wait for the system confirmation;
+else (Failed)
+  :Display the failure reason;
+  :Retry or create a new transaction;
+endif
+
+stop
+@enduml

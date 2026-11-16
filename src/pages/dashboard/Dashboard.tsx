@@ -2,13 +2,14 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import { useStaggeredMount } from "../../hooks/useStaggeredMount";
+import { useGoogleCalendar } from "../../hooks/useGoogleCalendar";
+import { GoogleCalendarSyncDialog } from "../../components/GoogleCalendarSyncDialog";
 import {
-  getGoogleCalendarStatus,
   getProjectProgress,
   listCalendar,
   listProjects,
-  syncGoogleCalendar,
   type CalendarItemDto,
+  type GoogleCalendarSyncDirection,
 } from "../../lib/api-client";
 import "./dashboard.css";
 
@@ -398,9 +399,11 @@ export function DashboardPage() {
   // Deadline radar: project sắp tới hạn + progress thật (cột phải).
   const [radar, setRadar] = useState<RadarItem[]>([]);
   const [radarLoading, setRadarLoading] = useState(true);
-  // true khi user đã liên kết Google Calendar (đổi hành vi nút Sync).
-  const [googleConnected, setGoogleConnected] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  /** Mở hộp thoại đồng bộ (chọn hướng + khoảng ngày). */
+  const [syncOpen, setSyncOpen] = useState(false);
+  /** Lỗi 400 từ server khi sync (VD: `to` trước `from`). */
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [toast, setToast] = useState<{
     visible: boolean;
     text: string;
@@ -641,19 +644,16 @@ export function DashboardPage() {
   }, [monthAnchor]);
 
   /* ---------- Trạng thái kết nối Google Calendar ----------
-   * Chỉ để đổi nhãn nút Sync cho đúng thực tế; lỗi thì coi như chưa kết nối.
+   * Dùng hook `useGoogleCalendar` để dùng chung nguồn sự thật với trang
+   * Schedule (và user menu trong SiteLayout). Hook tự lo phần connect /
+   * sync / disconnect + trạng thái reconnect.
    */
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const res = await getGoogleCalendarStatus();
-      if (cancelled) return;
-      setGoogleConnected(res.ok ? !!res.data.isConnected : false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const {
+    isConnected: googleConnected,
+    connect: connectGoogle,
+    sync: syncGoogle,
+    reconnectRequired,
+  } = useGoogleCalendar(Boolean(user));
 
   /* ---------- Tính lại status + nowMs mỗi TICK_MS ----------
    * Lý do: status (`done`/`running`/`next`) chỉ đúng tại thời điểm load.
@@ -695,33 +695,81 @@ export function DashboardPage() {
     showToast(`Captured "${v.length > 28 ? v.slice(0, 28) + "…" : v}"`);
   }
 
+  /**
+   * Mở hộp thoại đồng bộ Google Calendar.
+   *
+   * ⚠️ Theo spec `GOOGLE_CALENDAR_SYNC_FE.md` mục 5: phải hỏi rõ **hướng**
+   * và khoảng ngày, vì chiều đẩy lên sẽ ghi vào lịch Google thật của user.
+   * → Nút nhanh ở Dashboard chỉ mở hộp thoại, không tự đồng bộ.
+   */
   function handleSync() {
     if (syncing) return;
+    setSyncError(null);
+    setSyncOpen(true);
+  }
+
+  /**
+   * Gửi sync theo hướng + khoảng ngày đã chọn trong hộp thoại.
+   */
+  async function handleSyncSubmit(options: {
+    from: string | null;
+    to: string | null;
+    direction: GoogleCalendarSyncDirection;
+  }) {
     setSyncing(true);
     showToast("Scanning and syncing with Google Calendar…", "sync");
-    void (async () => {
-      const res = await syncGoogleCalendar();
-      setSyncing(false);
-      if (!res.ok) {
-        // 401 / chưa liên kết → nhắc user kết nối thay vì báo lỗi kỹ thuật.
-        const notConnected =
-          res.status === 401 || res.status === 400 || res.status === 404;
+    const res = await syncGoogle({
+      from: options.from,
+      to: options.to,
+      direction: options.direction,
+    });
+    setSyncing(false);
+    if (!res.ok) {
+      // 401 / chưa liên kết → nhắc user kết nối thay vì báo lỗi kỹ thuật.
+      const notConnected =
+        res.status === 401 || res.status === 400 || res.status === 404;
+      if (notConnected && res.status !== 400) {
         showToast(
-          notConnected
-            ? "Google Calendar chưa được liên kết. Kết nối ở trang Schedule."
-            : "Đồng bộ thất bại. Vui lòng thử lại.",
+          "Google Calendar chưa được liên kết. Kết nối ở trang Schedule.",
           "error",
+        );
+        setSyncOpen(false);
+        return;
+      }
+      // 409 `GOOGLE_RECONNECT_REQUIRED` → gợi ý kết nối lại (hook set cờ).
+      if (res.status === 409 && res.errorCode === "GOOGLE_RECONNECT_REQUIRED") {
+        setSyncError(
+          "Kết nối Google Calendar đã hết hạn hoặc bị thu hồi. Hãy kết nối lại Google Calendar rồi thử đồng bộ lần nữa.",
         );
         return;
       }
-      const { added, updated, cancelled } = res.data;
+      if (res.status === 502) {
+        setSyncError("Google Calendar đang lỗi hoặc mất mạng. Vui lòng thử lại sau.");
+        return;
+      }
+      // Lỗi khác (VD `to` trước `from`) → giữ hộp thoại mở để user sửa.
+      setSyncError(res.error);
+      return;
+    }
+    setSyncError(null);
+    setSyncOpen(false);
+
+    const { added, updated, cancelled } = res.data;
+    const pushFailed = res.data.pushFailed ?? 0;
+    const pushed = res.data.pushedCreated ?? 0;
+
+    if (pushFailed > 0) {
       showToast(
-        `Đã đồng bộ: +${added} mới · ${updated} cập nhật · ${cancelled} huỷ`,
-        "sync_done",
+        `Đồng bộ xong nhưng có lỗi: ${pushFailed} slot chưa đẩy được, thử lại sau.`,
+        "error",
       );
-      // Slot có thể đổi giờ sau khi sync → nạp lại timeline hôm nay.
-      void loadTodaySchedule();
-    })();
+    } else {
+      const parts = [`+${added} mới`, `${updated} cập nhật`, `${cancelled} huỷ`];
+      if (pushed > 0) parts.push(`${pushed} đẩy lên`);
+      showToast(`Đã đồng bộ: ${parts.join(" · ")}`, "sync_done");
+    }
+    // Slot có thể đổi giờ sau khi sync → nạp lại timeline hôm nay.
+    void loadTodaySchedule();
   }
 
   function handleQuickAddFocus() {
@@ -1406,6 +1454,26 @@ export function DashboardPage() {
         </span>
         <span className="dash-toast-text">{toast.text}</span>
       </div>
+
+      {/* ================= Hộp thoại đồng bộ Google Calendar =================
+          Chọn hướng (kéo về / đẩy lên / cả hai) + khoảng ngày.
+          Bắt buộc hỏi hướng vì chiều đẩy lên ghi vào lịch Google thật. */}
+      {syncOpen && (
+        <GoogleCalendarSyncDialog
+          busy={syncing}
+          serverError={syncError}
+          needsReconnect={reconnectRequired}
+          onReconnect={() => {
+            setSyncOpen(false);
+            void connectGoogle();
+          }}
+          onSubmit={(opts) => void handleSyncSubmit(opts)}
+          onClose={() => {
+            setSyncOpen(false);
+            setSyncError(null);
+          }}
+        />
+      )}
     </div>
   );
 }

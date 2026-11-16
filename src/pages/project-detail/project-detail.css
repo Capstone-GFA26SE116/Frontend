@@ -604,6 +604,33 @@
   color: var(--body);
   max-width: 36rem;
 }
+
+/* ----- Kho tài liệu của dự án (link sang trang /projects/:id/documents) ----- */
+.pd-docs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px;
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+}
+.pd-docs .pd-section-title {
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
+  letter-spacing: -0.6px;
+}
+.pd-docs .pd-section-head {
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+@media (max-width: 768px) {
+  .pd-docs .pd-section-head { flex-direction: column; align-items: flex-start; }
+}
 .pd-direction-grid {
   display: grid;
   grid-template-columns: 1fr;

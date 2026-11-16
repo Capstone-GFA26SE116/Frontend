@@ -1,0 +1,32 @@
+@startuml
+title MW-02 - Client Management
+
+start
+:Open the client directory;
+
+:Load the list of clients;
+:Display the list and profile completeness;
+
+if (Action?) then (Create)
+  :Enter client details;
+  :Validate the data;
+  if (Valid?) then (Yes)
+    :Create the client;
+  else (No)
+    :Return a validation error;
+  endif
+elseif (Edit) then (Edit)
+  :Update the details;
+  :Save the client;
+elseif (Delete) then (Delete)
+  :Confirm the deletion;
+  :Delete the client;
+else (View)
+  :Select a client;
+  :Load and display the details;
+endif
+
+:Refresh the client list;
+
+stop
+@enduml

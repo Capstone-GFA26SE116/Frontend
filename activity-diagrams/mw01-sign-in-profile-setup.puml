@@ -1,0 +1,36 @@
+@startuml
+title MW-01 - Sign In and Profile Setup
+
+start
+:Open the landing page;
+:Click "Sign in";
+:Choose Google sign-in or enter email and password;
+
+:Validate the sign-in credentials;
+
+if (Sign-in successful?) then (Yes)
+  :Issue access token;
+  :Persist the session;
+else (No)
+  :Return an error message;
+  :Re-enter the credentials;
+  :Validate the sign-in credentials;
+  if (Sign-in successful?) then (Yes)
+    :Issue access token;
+    :Persist the session;
+  else (No)
+    :Return an error message;
+    stop
+  endif
+endif
+
+if (Profile already set up?) then (No)
+  :Select role, sectors and goals;
+  :Save the personal profile;
+else (Yes)
+endif
+
+:Enter the workspace;
+
+stop
+@enduml

@@ -1,7 +1,10 @@
+import { useEffect, useState } from "react";
+import { getTask, listSubtasks } from "../../lib/api-client";
 import { useFocusActions } from "./focus-context";
 import {
   buildFocusStartBody,
   canStartSlot,
+  isClosedStatus,
   isSlotDimmed,
   isSlotFaded,
   isSlotRunning,
@@ -15,7 +18,7 @@ import "./focus.css";
  * <SlotFocusActions> — nút Start / Stop cho 1 schedule slot.
  * ===========================================================
  *
- * Quy tắc hiển thị theo spec FOCUS_SESSION_FE (1).md mục 4:
+ * Quy tắc hiển thị theo spec FOCUS_START_STOP_REWORK_FE.md mục 3 + 6:
  *
  *   • `Proposed`  → KHÔNG có nút Start (chỉ xem, chưa duyệt → BE trả 400).
  *   • `Approved`  → có nút Start (cho phép bắt đầu sớm).
@@ -26,6 +29,11 @@ import "./focus.css";
  *   • `Postponed` → làm mờ nhưng VẪN Start được (BE cho phép).
  *   • `Done`      → không nút.
  *   • `Skipped` / `Cancelled` → ẩn hoặc làm mờ, không Start.
+ *
+ * ⚠️ MỚI (spec mục 2 + mục 3): Start trên task/subtask đã `Done`/`Skipped`
+ * → BE trả 400 ("Hãy mở lại task trước khi làm việc"). Ta tra trạng thái
+ * task (và subtask của slot) để **ẩn nút Start** — nhưng vẫn xử lý 400
+ * từ server nếu trạng thái đổi giữa lúc render và lúc bấm.
  *
  * Slot đang chạy ở tab khác vẫn hiện "Stop" — vì `GET /api/focus/current`
  * là nguồn sự thật toàn cục, không phụ thuộc slot nào được bấm.
@@ -72,6 +80,46 @@ export function SlotFocusActions({
   const { start, openStopDialog, busy } = useFocusActions();
   const phase = toSlotPhase(status);
 
+  /*
+   * Trạng thái task (và subtask của slot) — dùng để ẩn nút Start khi
+   * task/subtask đã `Done`/`Skipped` (spec mục 3: BE trả 400).
+   *
+   * `null` = chưa biết (đang tải) → vẫn cho Start (BE sẽ báo lỗi nếu sai).
+   */
+  const [taskClosed, setTaskClosed] = useState<boolean | null>(null);
+  const [subTaskClosed, setSubTaskClosed] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!taskId) {
+      // Không có task → không cần tra cứu gì. State đã là `null` mặc định
+      // nên không cần setState đồng bộ (tránh lint set-state-in-effect).
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const res = await getTask(taskId);
+      if (cancelled) return;
+      setTaskClosed(res.ok ? isClosedStatus(res.data.status) : null);
+
+      // Chỉ cần tra subtask khi slot thực sự gắn 1 subtask.
+      if (!subTaskId) {
+        setSubTaskClosed(null);
+        return;
+      }
+      const subs = await listSubtasks(taskId);
+      if (cancelled) return;
+      if (!subs.ok) {
+        setSubTaskClosed(null);
+        return;
+      }
+      const sub = subs.data.find((s) => s.id === subTaskId);
+      setSubTaskClosed(sub ? isClosedStatus(sub.status) : null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [taskId, subTaskId]);
+
   // Không có slot → không Start được (BE yêu cầu taskId, slotId là optional
   // nhưng start ngoài lịch không có ý nghĩa trong UI này).
   if (!slotId || !taskId) return null;
@@ -92,8 +140,16 @@ export function SlotFocusActions({
   const running = isSlotRunning(phase);
   const startable = canStartSlot(phase);
 
+  /*
+   * Task/subtask đã đóng → ẩn nút Start.
+   *
+   * Spec mục 2 + mục 3: "Task hoặc subtask `Done`/`Skipped`: ẩn hoặc vô hiệu
+   * nút Start (server trả `400` nếu vẫn gửi)."
+   */
+  const closed = taskClosed === true || subTaskClosed === true;
+
   // Không có hành động nào phù hợp (VD: Done, Proposed).
-  if (!running && !startable) return null;
+  if (!running && (!startable || closed)) return null;
 
   async function handleStart() {
     // Body theo spec mục 7: subtask lấy TỪ SLOT (backend không tự lấy).

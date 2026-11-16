@@ -86,6 +86,13 @@ export type ApiErr = {
    * màn hình phiên đó thay vì báo lỗi đỏ.
    */
   details?: unknown;
+  /**
+   * Mã lỗi kỹ thuật do BE trả (VD: `GOOGLE_RECONNECT_REQUIRED`).
+   *
+   * Dùng để **rẽ nhánh logic** theo mã (VD 409 + code này → gợi ý user
+   * kết nối lại Google) thay vì đoán qua message.
+   */
+  errorCode?: string;
 };
 export type ApiResult<T> = ApiOk<T> | ApiErr;
 
@@ -139,6 +146,45 @@ function extractMessage(v: unknown, depth = 0): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Rút ra **mã lỗi kỹ thuật** từ body lỗi của BE.
+ *
+ * BE trả mã ở nhiều vị trí khác nhau:
+ *   - `{ "code": "GOOGLE_RECONNECT_REQUIRED" }`
+ *   - `{ "error": "GOOGLE_RECONNECT_REQUIRED" }`
+ *   - `{ "errorCode": "GOOGLE_RECONNECT_REQUIRED" }`
+ *   - `{ "detail": { "code": "GOOGLE_RECONNECT_REQUIRED" } }`  (ProblemDetails)
+ *
+ * Chỉ dùng cho logic (VD: 409 → gợi ý kết nối lại Google), không hiển thị
+ * trực tiếp cho user.
+ */
+function extractErrorCode(v: unknown, depth = 0): string | null {
+  if (v == null || depth > 4) return null;
+  if (typeof v === "string") {
+    const s = v.trim();
+    // Chỉ nhận mã dạng `UPPER_SNAKE` để tránh nuốt nhầm message thường.
+    return /^[A-Z][A-Z0-9_]{2,}$/.test(s) ? s : null;
+  }
+  if (typeof v !== "object") return null;
+  if (Array.isArray(v)) {
+    for (const item of v) {
+      const got = extractErrorCode(item, depth + 1);
+      if (got) return got;
+    }
+    return null;
+  }
+  const rec = v as Record<string, unknown>;
+  for (const key of ["code", "errorCode", "error_code"]) {
+    const got = extractErrorCode(rec[key], depth + 1);
+    if (got) return got;
+  }
+  for (const key of ["error", "detail", "details"]) {
+    const got = extractErrorCode(rec[key], depth + 1);
+    if (got) return got;
+  }
+  return null;
 }
 
 /** Chuỗi thông báo lỗi thân thiện cho từng mã HTTP của AI service. */
@@ -199,7 +245,11 @@ async function apiFetch<T>(
   const token = getAccessToken();
 
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    // ⚠️ KHÔNG tự đặt `Content-Type` khi body là FormData — trình duyệt phải
+    // tự thêm `boundary` của multipart. Đặt tay sẽ làm BE không đọc được file.
+    ...(options.body instanceof FormData
+      ? {}
+      : { "Content-Type": "application/json" }),
     ...(options.headers as Record<string, string> | undefined),
   };
 
@@ -251,9 +301,13 @@ async function apiFetch<T>(
     if (!res.ok) {
       let msg = friendlyStatusMessage(res.status);
       let details: unknown;
+      let errorCode: string | undefined;
       try {
         const body = await res.json();
         msg = extractMessage(body) ?? msg;
+        // Mã lỗi kỹ thuật (VD `GOOGLE_RECONNECT_REQUIRED`) để caller rẽ nhánh.
+        const code = extractErrorCode(body);
+        if (code) errorCode = code;
         // Giữ lại `details` để caller xử lý lỗi có ngữ cảnh
         // (vd: 409 của focus/start trả về phiên đang chạy).
         if (body && typeof body === "object") {
@@ -270,9 +324,13 @@ async function apiFetch<T>(
       } catch {
         // Body không phải JSON (vd: HTML error page từ proxy) → giữ msg mặc định.
       }
-      return details !== undefined
-        ? { ok: false, error: msg, status: res.status, details }
-        : { ok: false, error: msg, status: res.status };
+      return {
+        ok: false,
+        error: msg,
+        status: res.status,
+        ...(details !== undefined ? { details } : {}),
+        ...(errorCode !== undefined ? { errorCode } : {}),
+      };
     }
 
     const data = await readJson(res);
@@ -1060,6 +1118,10 @@ export async function deleteSubtask(
  * Gửi **đủ** `title`, `estimatedMinutes`, `orderIndex`, `status` — đúng như
  * mẫu trong spec mục 6.3.
  *
+ * ⚠️ `SubTaskRequestDto` của BE có `additionalProperties: false` và **KHÔNG
+ * có** field `description` → gửi thêm field lạ sẽ bị BE từ chối (400).
+ * Vì vậy ta **không** gửi `description`.
+ *
  * @param sub  Subtask đầy đủ (lấy từ `GET /api/tasks/{id}/subtasks`).
  */
 export async function markSubtaskDone(
@@ -1070,7 +1132,6 @@ export async function markSubtaskDone(
 ): Promise<ApiResult<SubtaskDto>> {
   return updateSubtask(sub.id, {
     title: sub.title,
-    description: sub.description ?? "",
     estimatedMinutes: sub.estimatedMinutes,
     orderIndex: sub.orderIndex,
     status: "Done",
@@ -1133,6 +1194,31 @@ export interface CreateMilestoneRequest {
   endDate?: string | null;
   status?: string;
   revisionCount?: number;
+  /**
+   * Chỉ dùng khi `status = "Delivered"` và BE trả 409
+   * `MILESTONE_HAS_OPEN_TASKS` → gửi lại cùng body kèm `confirmOpenTasks: true`
+   * để giao giai đoạn dù còn task dở (task dở giữ nguyên).
+   *
+   * Spec `FOCUS_START_STOP_REWORK_FE.md` mục 8.
+   */
+  confirmOpenTasks?: boolean;
+}
+
+/**
+ * Chi tiết trong lỗi 409 `MILESTONE_HAS_OPEN_TASKS`.
+ *
+ * BE trả: `{ openTaskCount, openSubTaskCount, tasks: [{ id, title, status,
+ * openSubTaskCount }] }`.
+ */
+export interface MilestoneOpenTasksDetails {
+  openTaskCount: number;
+  openSubTaskCount: number;
+  tasks: {
+    id: string;
+    title: string;
+    status: string;
+    openSubTaskCount: number;
+  }[];
 }
 
 /**
@@ -1616,10 +1702,76 @@ export interface CalendarEventRequestDto {
   end: string;
 }
 
+/**
+ * Chiều đồng bộ Google Calendar.
+ *
+ * - `FromGoogle` (mặc định): Google → METANOIA.
+ * - `ToGoogle`: METANOIA → Google (đẩy slot lên).
+ * - `Both`: kéo về trước, rồi đẩy lên.
+ */
+export type GoogleCalendarSyncDirection = "FromGoogle" | "ToGoogle" | "Both";
+
+/**
+ * Chế độ đồng bộ mà BE thực hiện.
+ *
+ * - `Incremental`: không chọn ngày → kéo về theo `syncToken` (chỉ phần thay đổi).
+ * - `Range`: có chọn ngày → lấy đầy đủ trong khoảng.
+ */
+export type GoogleCalendarSyncMode = "Incremental" | "Range";
+
+/**
+ * Response của `POST /api/google-calendar/sync`.
+ *
+ * ⚠️ BE mới bổ sung nhóm số liệu phía **đẩy lên** (`pushed*`) bên cạnh nhóm
+ * phía **kéo về** (`added`/`updated`/`cancelled`). Các field `pushed*` và `mode`
+ * có thể `null` nếu BE cũ → ta dùng `?` để không vỡ.
+ */
 export interface GoogleCalendarSyncResultDto {
+  /* ---- Phía kéo về (Google → METANOIA) ---- */
+  /** Sự kiện Google mới thêm vào METANOIA. */
   added: number;
+  /** Sự kiện Google đã cập nhật. */
   updated: number;
+  /** Sự kiện bị xoá bên Google → đánh dấu huỷ. */
   cancelled: number;
+
+  /* ---- Phía đẩy lên (METANOIA → Google) ---- */
+  /** Sự kiện Google mới được tạo từ slot. */
+  pushedCreated?: number;
+  /** Sự kiện Google đã được cập nhật từ slot. */
+  pushedUpdated?: number;
+  /** Sự kiện Google đã bị xoá (slot bị huỷ/bỏ qua/hoãn). */
+  pushedDeleted?: number;
+  /** Số slot không đẩy được (Google lỗi). */
+  pushFailed?: number;
+  /** Tối đa 5 dòng lỗi đầu tiên. */
+  pushErrors?: string[] | null;
+
+  /* ---- Metadata ---- */
+  /** Chiều đã đồng bộ (BE echo lại). */
+  direction?: GoogleCalendarSyncDirection;
+  /** Chế độ: `Incremental` (theo syncToken) hay `Range` (theo ngày). */
+  mode?: GoogleCalendarSyncMode;
+  /** Đầu khoảng thực tế đã dùng (UTC). null = không giới hạn phía đó. */
+  rangeFromUtc?: string | null;
+  /** Đầu ngày kế tiếp của `to` (không gồm). null = không giới hạn. */
+  rangeToUtc?: string | null;
+}
+
+/**
+ * Tuỳ chọn cho `POST /api/google-calendar/sync`.
+ *
+ * ⚠️ `from` / `to` là **ngày theo múi giờ người dùng**, dạng `yyyy-MM-dd`
+ * (spec `GOOGLE_CALENDAR_SYNC_FE.md` mục 1). FE **không** chuyển sang UTC —
+ * BE tự quy đổi theo timezone đã cài trong `PUT /api/me/settings`.
+ */
+export interface GoogleCalendarSyncOptions {
+  /** Ngày bắt đầu (`yyyy-MM-dd`). Bỏ trống = không giới hạn phía trước. */
+  from?: string | null;
+  /** Ngày kết thúc (`yyyy-MM-dd`). Bỏ trống = không giới hạn phía sau. */
+  to?: string | null;
+  /** Chiều đồng bộ. Mặc định `FromGoogle` khi không gửi. */
+  direction?: GoogleCalendarSyncDirection;
 }
 
 /**
@@ -1676,12 +1828,33 @@ export async function disconnectGoogleCalendar(): Promise<ApiResult<void>> {
 
 /**
  * POST /api/google-calendar/sync
- * Đồng bộ 2 chiều giữa schedule slot của METANOIA và Google Calendar.
+ * Đồng bộ giữa schedule slot của METANOIA và Google Calendar.
+ *
+ * Theo spec `GOOGLE_CALENDAR_SYNC_FE.md` mục 1:
+ *   - Query params: `from`, `to` (ngày `yyyy-MM-dd` theo múi giờ user),
+ *     `direction` (`FromGoogle` | `ToGoogle` | `Both`).
+ *   - Không có body.
+ *   - Bỏ trống cả `from` lẫn `to` → hành vi cũ (incremental theo `syncToken`).
+ *
+ * ⚠️ `from`/`to` là **ngày theo múi giờ người dùng** → ta gửi nguyên chuỗi
+ * `yyyy-MM-dd`, KHÔNG chuyển sang UTC. BE tự quy đổi.
  */
-export async function syncGoogleCalendar(): Promise<
-  ApiResult<GoogleCalendarSyncResultDto>
-> {
-  return post<GoogleCalendarSyncResultDto>("/api/google-calendar/sync", {});
+export async function syncGoogleCalendar(
+  options?: GoogleCalendarSyncOptions,
+): Promise<ApiResult<GoogleCalendarSyncResultDto>> {
+  const qs = new URLSearchParams();
+  if (options?.from) qs.set("from", options.from);
+  if (options?.to) qs.set("to", options.to);
+  if (options?.direction) qs.set("direction", options.direction);
+
+  const query = qs.toString();
+  const url = query
+    ? `/api/google-calendar/sync?${query}`
+    : "/api/google-calendar/sync";
+
+  // Endpoint nhận POST **không có body** → gửi body rỗng cho an toàn với
+  // proxy/BE cũ yêu cầu `Content-Type: application/json`.
+  return post<GoogleCalendarSyncResultDto>(url, {});
 }
 
 /**
@@ -2782,6 +2955,64 @@ export interface FocusPendingConfirmationItem {
   systemMinutes: number;
 }
 
+/**
+ * Trạng thái vòng đời của 1 phiên làm việc.
+ *
+ * Theo spec `FOCUS_START_STOP_REWORK_FE.md` mục 6:
+ *   - `Running`           → đang chạy
+ *   - `Stopped`           → dừng thường (Timer) hoặc tự khai (SelfReported)
+ *   - `PendingConfirmation`→ hệ thống tự ngắt, chờ người dùng xác nhận
+ *   - `Confirmed`         → tự ngắt đã được xác nhận
+ *   - `Discarded`         → tự ngắt bị loại bỏ (không tính)
+ */
+export type FocusSessionState =
+  | "Running"
+  | "Stopped"
+  | "PendingConfirmation"
+  | "Confirmed"
+  | "Discarded"
+  | (string & {});
+
+/**
+ * 1 phiên trong `GET /api/focus/task/{taskId}/sessions`.
+ *
+ * ⚠️ `GET /api/focus/current` **KHÔNG** trả `subTaskId` (spec mục 5) →
+ * sau khi reload trang, muốn biết phiên đang chạy thuộc subtask nào thì
+ * lấy phiên có `state = "Running"` ở API này.
+ */
+export interface FocusTaskSessionDto {
+  sessionId: string;
+  taskId: string;
+  /** Subtask của phiên (null nếu phiên task-only). */
+  subTaskId: string | null;
+  scheduleSlotId: string | null;
+  state: FocusSessionState;
+  captureMethod: CaptureMethod;
+  startedAt: string;
+  endedAt: string | null;
+  /** Phút thực tế (null nếu phiên chưa kết thúc hoặc bị loại bỏ). */
+  minutes: number | null;
+  stopReason: FocusStopReason | null;
+  note: string | null;
+}
+
+/**
+ * GET /api/focus/task/{taskId}/sessions — mọi phiên của 1 task.
+ *
+ * Dùng để: (1) biết phiên `Running` thuộc subtask nào sau khi reload trang,
+ * (2) hiển thị lịch sử phiên theo task.
+ */
+export async function listTaskFocusSessions(
+  taskId: string,
+): Promise<ApiResult<FocusTaskSessionDto[]>> {
+  if (!taskId) {
+    return { ok: false, error: "taskId is required", status: 400 };
+  }
+  return get<FocusTaskSessionDto[]>(
+    `/api/focus/task/${encodeURIComponent(taskId)}/sessions`,
+  );
+}
+
 /** Body của `POST /api/focus/{sessionId}/confirm`. */
 export interface FocusConfirmRequest {
   confirmed: boolean;
@@ -2807,6 +3038,13 @@ export interface FocusSessionSummaryItem {
   minutes: number;
   captureMethod: CaptureMethod;
   stopReason: FocusStopReason;
+  /**
+   * Trạng thái phiên (spec mục 6): `Running`, `Stopped`,
+   * `PendingConfirmation`, `Confirmed`, `Discarded`.
+   *
+   * BE có thể chưa trả field này ở time-summary → optional.
+   */
+  state?: FocusSessionState;
 }
 
 /** Response của `GET /api/focus/{slotId}/time-summary`. */
@@ -3049,5 +3287,310 @@ export async function unsubscribePushNotifications(
     endpoint: sub.endpoint,
     keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth },
   });
+}
+
+/* ================================================================
+ * PROJECT DOCUMENTS — kho tài liệu của dự án
+ * ----------------------------------------------------------
+ * Nguồn: spec `PROJECT_DOCUMENTS_FE (1).md` (BE gửi) + swagger-live.
+ *
+ *   GET    /api/projects/{projectId}/documents        → tài liệu của 1 dự án
+ *   GET    /api/documents/by-project/{projectId}     → giống API trên
+ *   GET    /api/documents                            → tài liệu của tôi (mọi dự án)
+ *   GET    /api/documents/by-user/{userId}           → của 1 người (Admin xem người khác)
+ *   GET    /api/documents/all                        → toàn hệ thống, có phân trang
+ *   POST   /api/projects/{projectId}/documents/files  → tải file lên (multipart)
+ *   POST   /api/projects/{projectId}/documents/links  → thêm liên kết
+ *   GET    /api/documents/{documentId}               → chi tiết 1 tài liệu
+ *   PUT    /api/documents/{documentId}               → sửa name / tag / linkUrl
+ *   DELETE /api/documents/{documentId}               → xoá
+ *   GET    /api/documents/{documentId}/download       → tải file về (chỉ loại File)
+ *
+ * ⚠️ Lưu ý quan trọng khi tải về: API cần header `Authorization` nên
+ * **không** dùng thẻ `<a href>` trực tiếp (trình duyệt không gửi được
+ * header) — phải fetch → blob → objectURL → click. Xem `downloadProjectDocument`.
+ * ================================================================ */
+
+/** Nhãn phân loại tài liệu. BE trả 400 nếu gửi giá trị ngoài danh sách này. */
+export type DocumentTag = "Brief" | "Contract" | "Design" | "Other";
+
+/** Loại tài liệu: `File` (tải lên, có file để tải về) | `Link` (mở `linkUrl`). */
+export type DocumentSourceType = "File" | "Link";
+
+/** 1 tài liệu trong kho của dự án. */
+export interface ProjectDocumentDto {
+  id: string;
+  projectId: string;
+  /** Tên hiển thị — đồng thời là tên file khi tải về. */
+  name: string | null;
+  sourceType: DocumentSourceType | null;
+  /** Chỉ có với loại `Link`. */
+  linkUrl: string | null;
+  /** Chỉ có với loại `File`. */
+  sizeBytes: number | null;
+  tag: DocumentTag | null;
+  uploadedAt: string;
+}
+
+/** Tài liệu trong danh sách gom nhiều dự án — có thêm tên dự án + chủ dự án. */
+export interface ProjectDocumentListItemDto extends ProjectDocumentDto {
+  projectName: string | null;
+  userId: string;
+}
+
+/** Thân trả về của `GET /api/documents/all` (API duy nhất có phân trang). */
+export interface PagedResult<T> {
+  items: T[];
+  page: number;
+  pageSize: number;
+  totalCount: number;
+}
+
+/** Body gửi lên khi tạo / sửa tài liệu. */
+export interface ProjectDocumentRequest {
+  name?: string | null;
+  tag?: DocumentTag | null;
+  /** Chỉ dùng cho loại `Link`. Gửi `linkUrl` cho tài liệu `File` → BE trả 400. */
+  linkUrl?: string | null;
+}
+
+/** Bộ lọc chung cho các API danh sách. */
+export interface DocumentListFilters {
+  search?: string;
+  tag?: DocumentTag;
+  sourceType?: DocumentSourceType;
+  projectId?: string;
+}
+
+/**
+ * Giới hạn kích thước 1 file — BE chặn ở 20 MB (và 413 nếu request > ~21 MB).
+ * FE nên chặn sớm để khỏi tốn băng thông.
+ */
+export const MAX_DOCUMENT_FILE_BYTES = 20 * 1024 * 1024;
+
+/** Dựng query string từ bộ lọc (bỏ qua giá trị rỗng). */
+function documentQuery(filters: DocumentListFilters = {}): string {
+  const sp = new URLSearchParams();
+  if (filters.search?.trim()) sp.set("search", filters.search.trim());
+  if (filters.tag) sp.set("tag", filters.tag);
+  if (filters.sourceType) sp.set("sourceType", filters.sourceType);
+  if (filters.projectId?.trim()) sp.set("projectId", filters.projectId.trim());
+  const qs = sp.toString();
+  return qs ? `?${qs}` : "";
+}
+
+/** GET /api/projects/{projectId}/documents — tài liệu của 1 dự án. */
+export async function listProjectDocuments(
+  projectId: string,
+  filters: Omit<DocumentListFilters, "projectId"> = {},
+): Promise<ApiResult<ProjectDocumentDto[]>> {
+  if (!projectId) {
+    return { ok: false, error: "projectId is required", status: 400 };
+  }
+  return get<ProjectDocumentDto[]>(
+    `/api/projects/${encodeURIComponent(projectId)}/documents${documentQuery(filters)}`,
+  );
+}
+
+/** GET /api/documents — tài liệu của tôi qua mọi dự án. */
+export async function listMyDocuments(
+  filters: DocumentListFilters = {},
+): Promise<ApiResult<ProjectDocumentListItemDto[]>> {
+  return get<ProjectDocumentListItemDto[]>(
+    `/api/documents${documentQuery(filters)}`,
+  );
+}
+
+/** GET /api/documents/by-user/{userId} — tài liệu của 1 người (Admin). */
+export async function listUserDocuments(
+  userId: string,
+  filters: Omit<DocumentListFilters, "projectId"> = {},
+): Promise<ApiResult<ProjectDocumentListItemDto[]>> {
+  if (!userId) {
+    return { ok: false, error: "userId is required", status: 400 };
+  }
+  return get<ProjectDocumentListItemDto[]>(
+    `/api/documents/by-user/${encodeURIComponent(userId)}${documentQuery(filters)}`,
+  );
+}
+
+/** GET /api/documents/all — toàn hệ thống, có phân trang (chỉ Admin). */
+export async function listAllDocuments(params: {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  tag?: DocumentTag;
+  sourceType?: DocumentSourceType;
+  projectId?: string;
+  userId?: string;
+} = {}): Promise<ApiResult<PagedResult<ProjectDocumentListItemDto>>> {
+  const sp = new URLSearchParams();
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? 20;
+  sp.set("page", String(Math.max(1, page)));
+  sp.set("pageSize", String(Math.min(100, Math.max(1, pageSize))));
+  if (params.search?.trim()) sp.set("search", params.search.trim());
+  if (params.tag) sp.set("tag", params.tag);
+  if (params.sourceType) sp.set("sourceType", params.sourceType);
+  if (params.projectId?.trim()) sp.set("projectId", params.projectId.trim());
+  if (params.userId?.trim()) sp.set("userId", params.userId.trim());
+  return get<PagedResult<ProjectDocumentListItemDto>>(
+    `/api/documents/all?${sp.toString()}`,
+  );
+}
+
+/** GET /api/documents/{documentId} — chi tiết 1 tài liệu. */
+export async function getProjectDocument(
+  documentId: string,
+): Promise<ApiResult<ProjectDocumentDto>> {
+  if (!documentId) {
+    return { ok: false, error: "documentId is required", status: 400 };
+  }
+  return get<ProjectDocumentDto>(
+    `/api/documents/${encodeURIComponent(documentId)}`,
+  );
+}
+
+/**
+ * POST /api/projects/{projectId}/documents/files — tải file lên.
+ *
+ * ⚠️ `multipart/form-data`: tên field phải viết hoa đúng (`File`, `Name`, `Tag`)
+ * và **không** tự đặt `Content-Type` (trình duyệt tự thêm `boundary`).
+ */
+export async function uploadProjectDocument(
+  projectId: string,
+  file: File,
+  opts: { name?: string; tag?: DocumentTag } = {},
+): Promise<ApiResult<ProjectDocumentDto>> {
+  if (!projectId) {
+    return { ok: false, error: "projectId is required", status: 400 };
+  }
+  if (file.size > MAX_DOCUMENT_FILE_BYTES) {
+    return {
+      ok: false,
+      error: "File vượt quá giới hạn 20 MB. Vui lòng chọn file nhỏ hơn.",
+      status: 400,
+    };
+  }
+  const form = new FormData();
+  form.append("File", file);
+  if (opts.name?.trim()) form.append("Name", opts.name.trim());
+  if (opts.tag) form.append("Tag", opts.tag);
+
+  return apiFetch<ProjectDocumentDto>(
+    `/api/projects/${encodeURIComponent(projectId)}/documents/files`,
+    { method: "POST", body: form },
+  );
+}
+
+/** POST /api/projects/{projectId}/documents/links — thêm liên kết. */
+export async function createProjectDocumentLink(
+  projectId: string,
+  body: ProjectDocumentRequest,
+): Promise<ApiResult<ProjectDocumentDto>> {
+  if (!projectId) {
+    return { ok: false, error: "projectId is required", status: 400 };
+  }
+  return post<ProjectDocumentDto>(
+    `/api/projects/${encodeURIComponent(projectId)}/documents/links`,
+    {
+      name: body.name ?? null,
+      tag: body.tag ?? "Other",
+      linkUrl: body.linkUrl ?? null,
+    },
+  );
+}
+
+/**
+ * PUT /api/documents/{documentId} — sửa.
+ *
+ * ⚠️ API này là **partial update** (khác `PUT` thay thế toàn bộ ở các API
+ * khác): chỉ trường nào gửi lên mới được đổi, bỏ trường = giữ nguyên.
+ */
+export async function updateProjectDocument(
+  documentId: string,
+  body: ProjectDocumentRequest,
+): Promise<ApiResult<ProjectDocumentDto>> {
+  if (!documentId) {
+    return { ok: false, error: "documentId is required", status: 400 };
+  }
+  return put<ProjectDocumentDto>(
+    `/api/documents/${encodeURIComponent(documentId)}`,
+    body,
+  );
+}
+
+/** DELETE /api/documents/{documentId} — xoá tài liệu (kèm file nếu có). */
+export async function deleteProjectDocument(
+  documentId: string,
+): Promise<ApiResult<void>> {
+  if (!documentId) {
+    return { ok: false, error: "documentId is required", status: 400 };
+  }
+  return del<void>(`/api/documents/${encodeURIComponent(documentId)}`);
+}
+
+/**
+ * Tải file của 1 tài liệu về máy.
+ *
+ * API cần header `Authorization` → không dùng được thẻ `<a href>` trực tiếp.
+ * Cách này: fetch → blob → objectURL → click thẻ `<a download>` → revoke.
+ *
+ * @param downloadName Tên file khi tải về. Mặc định lấy `name` của tài liệu.
+ */
+export async function downloadProjectDocument(
+  documentId: string,
+  downloadName?: string,
+): Promise<ApiResult<void>> {
+  if (!documentId) {
+    return { ok: false, error: "documentId is required", status: 400 };
+  }
+
+  const url = `${BASE_URL}/api/documents/${encodeURIComponent(documentId)}/download`;
+  const token = getAccessToken();
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+  } catch (err) {
+    const raw = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      error: `Không kết nối được máy chủ. Vui lòng kiểm tra mạng và thử lại. (${raw})`,
+    };
+  }
+
+  if (!res.ok) {
+    // 404 = dòng tài liệu còn nhưng file đã mất ở server → cần tải lại.
+    if (res.status === 404) {
+      return {
+        ok: false,
+        status: 404,
+        error: "File không còn trong kho lưu trữ. Hãy tải file lên lại.",
+      };
+    }
+    let msg = friendlyStatusMessage(res.status);
+    try {
+      const body = await res.json();
+      msg = extractMessage(body) ?? msg;
+    } catch {
+      // Body không phải JSON → giữ msg mặc định.
+    }
+    return { ok: false, status: res.status, error: msg };
+  }
+
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = downloadName || "document";
+  document.body.append(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(objectUrl);
+
+  return { ok: true, data: undefined };
 }
 

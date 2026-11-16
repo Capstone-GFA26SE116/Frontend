@@ -6,6 +6,7 @@ import {
   getGoogleCalendarStatus,
   syncGoogleCalendar,
   type GoogleCalendarStatusDto,
+  type GoogleCalendarSyncOptions,
   type GoogleCalendarSyncResultDto,
 } from "../lib/api-client";
 
@@ -43,6 +44,13 @@ export function useGoogleCalendar(enabled: boolean = true) {
   );
   /** Chống set state sau khi unmount (connect là redirect nên hay gặp). */
   const alive = useRef(true);
+
+  /**
+   * True khi BE báo 409 `GOOGLE_RECONNECT_REQUIRED` — kết nối Google đã hết
+   * hạn hoặc bị thu hồi → cần gợi ý user kết nối lại
+   * (spec `GOOGLE_CALENDAR_SYNC_FE.md` mục 4).
+   */
+  const [reconnectRequired, setReconnectRequired] = useState(false);
 
   useEffect(() => {
     alive.current = true;
@@ -128,21 +136,50 @@ export function useGoogleCalendar(enabled: boolean = true) {
     return res;
   }, []);
 
-  const sync = useCallback(async () => {
-    setBusy("sync");
-    setError(null);
-    const res = await syncGoogleCalendar();
-    if (!alive.current) return res;
-    if (res.ok) {
-      setLastSync(res.data);
-      // Sync xong token có thể đã được refresh → cập nhật lại status.
-      void refresh();
-    } else {
-      setError(res.error);
-    }
-    setBusy(null);
-    return res;
-  }, [refresh]);
+  /**
+   * Đồng bộ Google Calendar.
+   *
+   * @param options
+   *   • `direction` — chiều đồng bộ (mặc định `FromGoogle`).
+   *   • `from` / `to` — ngày `yyyy-MM-dd` theo múi giờ người dùng (tuỳ chọn).
+   *
+   * ⚠️ Theo spec `GOOGLE_CALENDAR_SYNC_FE.md` mục 5:
+   *   *"Mặc định `FromGoogle`, đừng tự gửi `ToGoogle`/`Both` khi người dùng
+   *   chưa chọn: chiều đẩy lên ghi vào lịch Google của họ."*
+   *   → Nếu caller không truyền `direction`, ta **không** gửi param này
+   *   (BE mặc định `FromGoogle`).
+   */
+  const sync = useCallback(
+    async (options?: GoogleCalendarSyncOptions) => {
+      setBusy("sync");
+      setError(null);
+      const res = await syncGoogleCalendar(options);
+      if (!alive.current) return res;
+      if (res.ok) {
+        setLastSync(res.data);
+        setReconnectRequired(false);
+        // Sync xong token có thể đã được refresh → cập nhật lại status.
+        void refresh();
+      } else {
+        setError(res.error);
+        // 409 `GOOGLE_RECONNECT_REQUIRED` → token hết hạn/bị thu hồi.
+        if (res.status === 409 && res.errorCode === "GOOGLE_RECONNECT_REQUIRED") {
+          setReconnectRequired(true);
+        }
+      }
+      setBusy(null);
+      return res;
+    },
+    [refresh],
+  );
+
+  /**
+   * True khi lần sync vừa rồi có slot không đẩy được lên Google.
+   *
+   * Spec mục 3: "Có `pushFailed > 0` thì nên báo 'Một số slot chưa đồng bộ
+   * được, thử lại sau'."
+   */
+  const hasPushFailure = (lastSync?.pushFailed ?? 0) > 0;
 
   return {
     status,
@@ -151,6 +188,8 @@ export function useGoogleCalendar(enabled: boolean = true) {
     busy,
     error,
     lastSync,
+    hasPushFailure,
+    reconnectRequired,
     refresh,
     connect,
     disconnect,

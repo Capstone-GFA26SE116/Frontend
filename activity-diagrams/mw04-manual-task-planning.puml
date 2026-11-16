@@ -1,0 +1,44 @@
+@startuml
+title MW-04 - Manual Task and Subtask Planning
+
+start
+:Open the project planning page;
+
+:Load milestones, tasks and subtasks;
+
+if (Project already has a milestone?) then (No)
+  :Prompt to create a milestone first;
+  :Create the milestone;
+  :Reload the data;
+else (Yes)
+endif
+
+:Click "New task";
+:Enter title, description, task type, milestone and estimated duration;
+
+if (Task type is fixed time?) then (Yes)
+  :Enter the fixed start and end time;
+  :Auto-create an approved time slot;
+else (No)
+endif
+
+:Create the task;
+
+:Add the subtasks with their estimated durations;
+
+:Create the subtasks;
+
+:Click the schedule button;
+:Choose one subtask or the whole task;
+
+if (One subtask?) then (Yes)
+  :Create one time slot for that subtask;
+else (Whole task)
+  :Split the time by each subtask duration;
+  :Create consecutive time slots;
+endif
+
+:Display the result on the calendar;
+
+stop
+@enduml

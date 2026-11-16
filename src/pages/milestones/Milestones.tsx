@@ -18,6 +18,7 @@ import {
   updateMilestone,
   type CreateMilestoneRequest,
   type MilestoneDto,
+  type MilestoneOpenTasksDetails,
   type ProjectDto,
   type TaskDto,
 } from "../../lib/api-client";
@@ -89,6 +90,35 @@ function prettyStatus(status: string): string {
   return map[s] ?? status ?? "—";
 }
 
+/**
+ * Đọc `details` của lỗi 409 `MILESTONE_HAS_OPEN_TASKS`.
+ *
+ * BE trả: `{ openTaskCount, openSubTaskCount, tasks: [{ id, title, status,
+ * openSubTaskCount }] }`. Nếu shape lệch → trả null (fallback sang báo lỗi
+ * chung).
+ */
+function parseOpenTasksDetails(details: unknown): MilestoneOpenTasksDetails | null {
+  if (!details || typeof details !== "object") return null;
+  const d = details as Record<string, unknown>;
+  const tasksRaw = Array.isArray(d.tasks) ? d.tasks : [];
+  const tasks = tasksRaw
+    .filter((t): t is Record<string, unknown> => !!t && typeof t === "object")
+    .map((t) => ({
+      id: typeof t.id === "string" ? t.id : "",
+      title: typeof t.title === "string" ? t.title : "(không rõ tên)",
+      status: typeof t.status === "string" ? t.status : "ToDo",
+      openSubTaskCount:
+        typeof t.openSubTaskCount === "number" ? t.openSubTaskCount : 0,
+    }));
+  return {
+    openTaskCount:
+      typeof d.openTaskCount === "number" ? d.openTaskCount : tasks.length,
+    openSubTaskCount:
+      typeof d.openSubTaskCount === "number" ? d.openSubTaskCount : 0,
+    tasks,
+  };
+}
+
 /** "27 Oct 2026" */
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
@@ -144,6 +174,21 @@ export function MilestonesPage() {
   const [deleting, setDeleting] = useState<MilestoneDto | null>(null);
   const [removing, setRemoving] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  /**
+   * 409 `MILESTONE_HAS_OPEN_TASKS` — giao giai đoạn `Delivered` khi còn task dở.
+   *
+   * Spec `FOCUS_START_STOP_REWORK_FE.md` mục 8: BE trả 409 kèm `details`
+   * `{ openTaskCount, openSubTaskCount, tasks: [...] }`. Ta hiện hộp thoại
+   * "Còn N task dở, vẫn giao?" — chọn "vẫn giao" thì gửi lại cùng body kèm
+   * `confirmOpenTasks: true` (task dở giữ nguyên).
+   */
+  const [openTasksWarning, setOpenTasksWarning] = useState<{
+    details: MilestoneOpenTasksDetails;
+    body: CreateMilestoneRequest;
+    milestoneId: string;
+  } | null>(null);
+  const [confirmingDelivery, setConfirmingDelivery] = useState(false);
 
   const [toasts, toast] = useCenterToast();
   const { mounted } = useStaggeredMount(60, 40, milestones.length);
@@ -334,6 +379,17 @@ export function MilestonesPage() {
     setSaving(false);
 
     if (!res.ok) {
+      /*
+       * 409 `MILESTONE_HAS_OPEN_TASKS` — còn task dở trong giai đoạn.
+       * Spec mục 8: mở hộp thoại xác nhận "vẫn giao?" (task dở giữ nguyên).
+       */
+      if (res.status === 409 && editing) {
+        const details = parseOpenTasksDetails(res.details);
+        if (details) {
+          setOpenTasksWarning({ details, body, milestoneId: editing.id });
+          return;
+        }
+      }
       setFormError(res.error ?? "Không lưu được milestone.");
       return;
     }
@@ -350,6 +406,32 @@ export function MilestonesPage() {
       editing ? "Đã cập nhật milestone" : "Đã tạo milestone",
       res.data.name,
     );
+  }
+
+  /**
+   * Gửi lại cùng body kèm `confirmOpenTasks: true` — giao giai đoạn dù còn
+   * task dở (task dở giữ nguyên). Spec mục 8.
+   */
+  async function confirmDeliverWithOpenTasks() {
+    if (!openTasksWarning || confirmingDelivery) return;
+    setConfirmingDelivery(true);
+    const res = await updateMilestone(openTasksWarning.milestoneId, {
+      ...openTasksWarning.body,
+      confirmOpenTasks: true,
+    });
+    setConfirmingDelivery(false);
+
+    if (!res.ok) {
+      toast.error("Không giao được milestone", res.error ?? undefined);
+      return;
+    }
+    setOpenTasksWarning(null);
+    setMilestones((prev) =>
+      prev.map((m) => (m.id === res.data.id ? res.data : m)),
+    );
+    setFormOpen(false);
+    setEditing(null);
+    toast.success("Đã giao milestone", res.data.name);
   }
 
   async function handleDelete() {
@@ -847,6 +929,89 @@ export function MilestonesPage() {
                     </span>
                   )}
                   <span>Xoá</span>
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+
+      {/* ================= Modal: 409 MILESTONE_HAS_OPEN_TASKS =================
+          Giai đoạn `Delivered` nhưng còn task dở → hỏi xác nhận.
+          Spec `FOCUS_START_STOP_REWORK_FE.md` mục 8. */}
+      {openTasksWarning &&
+        createPortal(
+          <div
+            className="ms-modal-backdrop"
+            onClick={(e) => {
+              if (e.target === e.currentTarget && !confirmingDelivery) {
+                setOpenTasksWarning(null);
+              }
+            }}
+          >
+            <div
+              className="ms-modal ms-modal--confirm"
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="ms-open-tasks-title"
+            >
+              <div className="ms-modal-head">
+                <div>
+                  <span className="ms-modal-eyebrow ms-modal-eyebrow--danger">
+                    <span className="material-symbols-outlined">warning</span>
+                    Vẫn còn task dở
+                  </span>
+                  <h2 className="ms-modal-title" id="ms-open-tasks-title">
+                    Còn {openTasksWarning.details.openTaskCount} task chưa xong
+                  </h2>
+                  <p className="ms-modal-sub">
+                    Giai đoạn này chưa thể giao khi còn task dở. Nếu vẫn giao,
+                    các task đó giữ nguyên trạng thái.
+                  </p>
+                </div>
+              </div>
+
+              {openTasksWarning.details.tasks.length > 0 && (
+                <ul className="ms-open-tasks">
+                  {openTasksWarning.details.tasks.map((t) => (
+                    <li key={t.id} className="ms-open-tasks__item">
+                      <span className="ms-open-tasks__title">{t.title}</span>
+                      <span className="ms-open-tasks__meta">
+                        {prettyStatus(t.status)}
+                        {t.openSubTaskCount > 0
+                          ? ` · ${t.openSubTaskCount} subtask dở`
+                          : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <div className="ms-form-actions">
+                <button
+                  type="button"
+                  className="ms-btn ms-btn--text"
+                  onClick={() => setOpenTasksWarning(null)}
+                  disabled={confirmingDelivery}
+                >
+                  Làm tiếp
+                </button>
+                <button
+                  type="button"
+                  className="ms-btn ms-btn--danger"
+                  onClick={() => void confirmDeliverWithOpenTasks()}
+                  disabled={confirmingDelivery}
+                >
+                  {confirmingDelivery ? (
+                    <span className="material-symbols-outlined ms-spin">
+                      progress_activity
+                    </span>
+                  ) : (
+                    <span className="material-symbols-outlined ms-btn-icon">
+                      check
+                    </span>
+                  )}
+                  <span>Vẫn giao</span>
                 </button>
               </div>
             </div>

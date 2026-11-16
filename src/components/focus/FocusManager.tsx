@@ -8,6 +8,7 @@ import {
   type FocusSelfReportRequest,
   type FocusStartRequest,
   type FocusStopReason,
+  type SubtaskDto,
 } from "../../lib/api-client";
 import { useFocusSession } from "../../hooks/useFocusSession";
 import { CenterToasts, useCenterToast } from "../Toast";
@@ -41,6 +42,9 @@ import "./focus.css";
  *  4. Hộp thoại xác nhận phiên bị hệ thống tự ngắt.
  *  5. Hộp thoại check-in sau khi stop (nếu BE yêu cầu).
  *  6. Hộp thoại self-report (quên bấm Start).
+ *  7. Hộp thoại đánh dấu xong (subtask / task) sau khi Stop `Completed`
+ *     — vì Stop **không** tự đổi trạng thái task/subtask
+ *     (spec `FOCUS_SESSION_FE (1).md` mục 6.2 + 6.3).
  *
  * Các hành động cho trang lịch gọi qua `useFocusActions()` (focus-context).
  * =========================================================== */
@@ -59,13 +63,19 @@ type DialogKind =
   /** Khai báo giờ đã làm việc. */
   | "selfReport"
   /**
-   * Hỏi "Đánh dấu subtask này là xong?" sau khi Stop `Completed`.
+   * Hỏi "Đánh dấu subtask này là xong?" sau khi Stop `Completed` trên phiên
+   * của 1 subtask.
    *
-   * BẮT BUỘC theo spec mục E — Stop `Completed` chỉ làm slot thành `Done`,
-   * KHÔNG đánh dấu task/subtask xong.
+   * ⚠️ Theo spec MỚI (`FOCUS_SESSION_FE (1).md` mục 6.2 + 6.3):
+   *   *"Trạng thái **subtask và task không đổi** sau Stop"*
+   *   ⇒ FE phải tự gọi `PUT /api/subtasks/{id}` (`status: "Done"`).
    */
   | "markSubtaskDone"
-  /** Hỏi "Đánh dấu cả task là xong?" (khi mọi subtask đã xong). */
+  /**
+   * Hỏi "Đánh dấu cả task là xong?" — sau khi đã đánh dấu subtask xong
+   * (và mọi subtask đã xong), hoặc khi task **không có subtask** mà user
+   * dừng phiên với lý do `Completed`.
+   */
   | "markTaskDone";
 
 export interface FocusManagerProps {
@@ -116,13 +126,40 @@ export function FocusManager({
   const [checkInTaskTitle, setCheckInTaskTitle] = useState<string | null>(null);
   const [checkInMinutes, setCheckInMinutes] = useState(0);
   /**
-   * Subtask của phiên vừa dừng với lý do `Completed` (null = phiên task-only).
+   * Lỗi 400 từ server khi Stop (vd: slot/task không hợp lệ).
    *
-   * Cần cho hộp thoại "Đánh dấu subtask này là xong?" (spec mục E).
+   * Khi có lỗi này, phiên **vẫn đang chạy** → giữ hộp thoại Stop mở để
+   * user sửa rồi gửi lại.
    */
-  const [pendingSubTaskId, setPendingSubTaskId] = useState<string | null>(null);
-  /** Task cha của subtask vừa dừng — để hỏi "đánh dấu cả task?" tiếp theo. */
+  const [stopError, setStopError] = useState<string | null>(null);
+  /**
+   * Task của phiên vừa dừng với lý do `Completed`.
+   *
+   * Dùng để hỏi user "Đánh dấu xong?" (cho task hoặc cho subtask).
+   */
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
+  /**
+   * Tên task của phiên vừa dừng.
+   *
+   * ⚠️ Phải lưu riêng: sau khi stop, `focus.session` đã bị xoá (null) → nếu
+   * đọc trực tiếp thì hộp thoại sẽ không có tên task.
+   */
+  const [pendingTaskTitle, setPendingTaskTitle] = useState<string | null>(null);
+  /**
+   * Subtask vừa làm (nếu phiên dừng là của 1 subtask).
+   *
+   * ⚠️ Spec mới (`FOCUS_SESSION_FE (1).md` mục 6.2 + 6.3): Stop **không**
+   * đổi trạng thái subtask → FE hỏi user rồi tự gọi
+   * `PUT /api/subtasks/{id}` (`status: "Done"`).
+   */
+  const [pendingSubTask, setPendingSubTask] = useState<SubtaskDto | null>(
+    null,
+  );
+  /**
+   * Danh sách subtask của task vừa dừng — dùng để tính tiến độ
+   * ("3/4 subtask đã xong") và biết khi nào hỏi "đánh dấu task xong?".
+   */
+  const [pendingSubtasks, setPendingSubtasks] = useState<SubtaskDto[]>([]);
   /**
    * Tên subtask của phiên đang chạy (để hiện trên thanh đồng hồ).
    *
@@ -227,6 +264,8 @@ export function FocusManager({
     [focus, toast],
   );
   const openStopDialog = useCallback(() => {
+    // Reset lỗi 400 của lần trước (VD: slot/task không hợp lệ).
+    setStopError(null);
     setDialog("stop");
   }, []);
 
@@ -304,28 +343,50 @@ export function FocusManager({
   /**
    * Gửi lý do dừng lên BE.
    *
-   * Sau khi stop thành công, theo spec mục E ta hỏi tiếp:
-   *  1. Nếu phiên là của 1 **subtask** → "Đánh dấu subtask này là xong?"
-   *     → `PUT /api/subtasks/{id}` với **đủ** trường (spec mục 6.3).
-   *  2. Nếu mọi subtask của task đã `Done` → "Đánh dấu cả task là xong?"
-   *     → `PUT /api/tasks/{id}` với **đủ** trường.
+   * Sau khi stop thành công, theo spec MỚI (`FOCUS_SESSION_FE (1).md`
+   * mục 6.2 + 6.3):
+   *   *"Trạng thái **subtask và task không đổi** sau Stop"* ⇒ Stop chỉ đóng
+   *   slot, **không** đánh dấu task/subtask xong. FE phải hỏi user rồi tự
+   *   gọi `PUT`.
    *
-   * ⚠️ `checkInRequired` (BE gợi ý hỏi "xong chưa / thấy thế nào") và
-   * hộp thoại đánh dấu xong là 2 việc KHÁC NHAU:
+   * Luồng hỏi (spec mục E — "Khi người dùng nói 'xong hẳn'"):
+   *   1. Phiên là của **subtask** → hỏi "Đánh dấu subtask này là xong?"
+   *      → `PUT /api/subtasks/{id}`.
+   *      Nếu sau đó **mọi** subtask đã `Done` → hỏi tiếp "Đánh dấu cả task
+   *      là xong?" → `PUT /api/tasks/{id}`.
+   *   2. Phiên là của **task không có subtask** → hỏi "Đánh dấu task này là
+   *      xong?" → `PUT /api/tasks/{id}`.
+   *
+   * ⚠️ `checkInRequired` (BE gợi ý hỏi "xong chưa / thấy thế nào") và hộp
+   *   thoại đánh dấu xong là 2 việc KHÁC NHAU:
    *   • check-in = thu thập cảm nhận (BE **chưa** có API lưu → chỉ hiển thị).
    *   • đánh dấu xong = `PUT` thật, có tác động lên DB + AI học K_bias.
    */
   const confirmStop = useCallback(
     async (reason: FocusStopReason, note: string | null) => {
+      /*
+       * ⚠️ Đọc `taskId`/`taskTitle` TRƯỚC khi stop — sau khi stop thành công
+       * hook đã xoá `session` (state = null).
+       */
       const taskTitle = focus.session?.taskTitle ?? null;
       const taskId = focus.session?.taskId ?? null;
       const res = await focus.stop(reason, note);
-      setDialog("none");
       if (res.kind === "error") {
+        // 400 = dữ liệu không hợp lệ → PHIÊN VẪN ĐANG CHẠY.
+        // Giữ hộp thoại mở để user sửa rồi bấm lại.
+        if (res.status === 400) {
+          setDialog("stop");
+          setStopError(res.error);
+          return;
+        }
+        setDialog("none");
         toast.error("Không dừng được phiên", res.error);
         return;
       }
+      setStopError(null);
+      setDialog("none");
       if (res.kind === "alreadyStopped") {
+        // 409 = đã dừng trước đó (bấm 2 lần / 2 tab) → coi như thành công.
         toast.info("Phiên này đã dừng trước đó");
         return;
       }
@@ -336,13 +397,39 @@ export function FocusManager({
       );
 
       /*
-       * Hỏi đánh dấu xong — CHỈ khi lý do là `Completed` và có subtask.
-       * (Spec mục 6.2: "Trạng thái subtask và task không đổi sau Stop".)
+       * Chỉ hỏi "đánh dấu xong" khi lý do là `Completed` — các lý do khác
+       * (tạm dừng / bị chặn / lý do khác) nghĩa là user chưa xong việc.
        */
-      if (reason === "Completed" && res.subTaskId) {
-        setPendingSubTaskId(res.subTaskId);
+      if (reason === "Completed" && taskId) {
+        const subtasks = res.subtasks;
+        // Tìm subtask vừa làm trong danh sách (để lấy đủ field để PUT).
+        const sub = res.subTaskId
+          ? (subtasks.find((s) => s.id === res.subTaskId) ?? null)
+          : null;
+
         setPendingTaskId(taskId);
-        setDialog("markSubtaskDone");
+        setPendingTaskTitle(taskTitle);
+        setPendingSubTask(sub);
+        setPendingSubtasks(subtasks);
+
+        if (sub) {
+          // Phiên là của 1 subtask → hỏi đánh dấu subtask xong trước.
+          setDialog("markSubtaskDone");
+          return;
+        }
+
+        if (subtasks.length > 0) {
+          /*
+           * Task có subtask nhưng phiên vừa dừng là **task-only** (không gắn
+           * subtask nào) → không hỏi đánh dấu subtask; hỏi đánh dấu task
+           * (user tự quyết định có đánh dấu cả task không).
+           */
+          setDialog("markTaskDone");
+          return;
+        }
+
+        // Task không có subtask → hỏi đánh dấu task xong.
+        setDialog("markTaskDone");
         return;
       }
 
@@ -357,27 +444,18 @@ export function FocusManager({
   );
 
   /**
-   * Đánh dấu subtask vừa dừng là `Done` → `PUT /api/subtasks/{id}`.
+   * Đánh dấu **subtask** là `Done` → `PUT /api/subtasks/{id}` (đủ trường).
    *
-   * `PUT` thay thế toàn bộ → ta gửi **đủ** trường (spec mục 6.3), lấy từ
-   * `GET /api/tasks/{taskId}/subtasks`.
+   * Sau khi đánh dấu xong, nếu **mọi** subtask của task đã `Done` → hỏi
+   * tiếp "Đánh dấu cả task là xong?" (spec mục E).
    */
   const confirmMarkSubtaskDone = useCallback(async () => {
-    const subTaskId = pendingSubTaskId;
+    const sub = pendingSubTask;
     const taskId = pendingTaskId;
+    const subtasks = pendingSubtasks;
     setDialog("none");
-    if (!subTaskId || !taskId) return;
+    if (!sub) return;
 
-    const res = await listSubtasks(taskId);
-    if (!res.ok) {
-      toast.error("Không đánh dấu được", res.error);
-      return;
-    }
-    const sub = res.data.find((s) => s.id === subTaskId);
-    if (!sub) {
-      toast.error("Không tìm thấy subtask");
-      return;
-    }
     const put = await markSubtaskDone(sub);
     if (!put.ok) {
       toast.error("Không đánh dấu được subtask", put.error);
@@ -385,20 +463,31 @@ export function FocusManager({
     }
     toast.success("Đã đánh dấu subtask là xong");
 
-    // Nếu mọi subtask của task đã xong → hỏi tiếp "đánh dấu cả task?".
-    const all = res.data.map((s) =>
-      s.id === subTaskId ? { ...s, status: "Done" } : s,
+    /*
+     * Nếu mọi subtask đã xong → hỏi tiếp "Đánh dấu cả task là xong?".
+     *
+     * ⚠️ Spec mục 6.3: "Task `Done` **không** làm subtask tự `Done` (và
+     * ngược lại). FE tự quyết định có hỏi ... hay không."
+     */
+    const allDone = subtasks.every(
+      (s) => s.id === sub.id || s.status === "Done",
     );
-    const allDone = all.every((s) => {
-      const st = (s.status ?? "").toLowerCase();
-      return st === "done" || st === "completed";
-    });
-    if (allDone && all.length > 0) {
+    if (allDone && taskId) {
       setDialog("markTaskDone");
+      return;
     }
-  }, [pendingSubTaskId, pendingTaskId, toast]);
+    setPendingTaskId(null);
+    setPendingTaskTitle(null);
+    setPendingSubTask(null);
+    setPendingSubtasks([]);
+  }, [pendingSubTask, pendingTaskId, pendingSubtasks, toast]);
 
-  /** Đánh dấu cả task là `Done` → `PUT /api/tasks/{id}` (đủ trường). */
+  /**
+   * Đánh dấu cả task là `Done` → `PUT /api/tasks/{id}` (đủ trường).
+   *
+   * ⚠️ `PUT /api/tasks/{id}` **thay thế toàn bộ** → phải `GET` task trước
+   * rồi gửi lại đủ mọi trường, chỉ đổi `status` (spec mục 6.3).
+   */
   const confirmMarkTaskDone = useCallback(async () => {
     const taskId = pendingTaskId;
     setDialog("none");
@@ -414,6 +503,10 @@ export function FocusManager({
       toast.error("Không đánh dấu được task", put.error);
       return;
     }
+    setPendingTaskId(null);
+    setPendingTaskTitle(null);
+    setPendingSubTask(null);
+    setPendingSubtasks([]);
     toast.success("Đã đánh dấu task là xong");
   }, [pendingTaskId, toast]);
 
@@ -480,6 +573,19 @@ export function FocusManager({
   const { session, timer, busy, pendingConfirmation } = focus;
 
   /**
+   * Tiến độ subtask của task vừa dừng — "3/4 subtask đã xong".
+   *
+   * Subtask vừa làm được tính là xong **nếu user đã bấm "Đánh dấu xong"**
+   * (ta đã cập nhật `pendingSubtasks` khi PUT thành công — xem
+   * `confirmMarkSubtaskDone`). Ở đây ta chỉ đếm theo `status` BE trả về.
+   */
+  const subtaskProgress = useMemo(() => {
+    if (pendingSubtasks.length === 0) return null;
+    const done = pendingSubtasks.filter((s) => s.status === "Done").length;
+    return { done, total: pendingSubtasks.length };
+  }, [pendingSubtasks]);
+
+  /**
    * Thanh đồng hồ là `position: fixed` ở đáy màn hình → nó che nội dung
    * trang (VD: các ô lịch ở hàng cuối, nút trong bảng).
    *
@@ -542,8 +648,12 @@ export function FocusManager({
             taskTitle={session?.taskTitle ?? null}
             elapsedSeconds={timer?.elapsedSeconds ?? 0}
             onConfirm={(reason, note) => void confirmStop(reason, note)}
-            onClose={() => setDialog("none")}
+            onClose={() => {
+              setStopError(null);
+              setDialog("none");
+            }}
             busy={busy}
+            serverError={stopError}
           />
         )}
 
@@ -581,32 +691,39 @@ export function FocusManager({
           />
         )}
 
-        {/* ----- Hộp thoại: đánh dấu subtask xong -----
-            BẮT BUỘC theo spec mục E: Stop `Completed` chỉ làm slot thành
-            `Done`, KHÔNG tự đánh dấu task/subtask xong. */}
-        {activeDialog === "markSubtaskDone" && (
+        {/* ----- Hộp thoại: đánh dấu SUBTASK xong -----
+            Stop `Completed` KHÔNG đổi trạng thái subtask (spec mục 6.2)
+            → hỏi user rồi tự gọi `PUT /api/subtasks/{id}`. */}
+        {activeDialog === "markSubtaskDone" && pendingSubTask && (
           <MarkDoneDialog
             kind="subtask"
-            title={focus.session?.taskTitle ?? null}
+            title={pendingSubTask.title}
             onConfirm={() => void confirmMarkSubtaskDone()}
             onSkip={() => {
-              setPendingSubTaskId(null);
               setPendingTaskId(null);
+              setPendingTaskTitle(null);
+              setPendingSubTask(null);
+              setPendingSubtasks([]);
               setDialog("none");
             }}
             busy={busy}
           />
         )}
 
-        {/* ----- Hộp thoại: đánh dấu cả task xong ----- */}
+        {/* ----- Hộp thoại: đánh dấu cả task xong -----
+            Task không có subtask, HOẶC mọi subtask đã xong → hỏi user
+            rồi tự gọi `PUT /api/tasks/{id}`. */}
         {activeDialog === "markTaskDone" && (
           <MarkDoneDialog
             kind="task"
-            title={focus.session?.taskTitle ?? null}
+            title={pendingTaskTitle}
+            progress={subtaskProgress}
             onConfirm={() => void confirmMarkTaskDone()}
             onSkip={() => {
-              setPendingSubTaskId(null);
               setPendingTaskId(null);
+              setPendingTaskTitle(null);
+              setPendingSubTask(null);
+              setPendingSubtasks([]);
               setDialog("none");
             }}
             busy={busy}

@@ -1,0 +1,40 @@
+@startuml
+title MW-05 - AI Task Decomposition
+
+start
+:Open AI Copilot;
+:Select a project and a task;
+:Click "Load";
+
+:Load the chat history and similar past tasks;
+:Display the chat and the suggestion context;
+
+:Pick a quick prompt or type a request;
+:Send the request with the task details;
+
+:Send the request to the AI;
+
+if (AI busy with another task?) then (Yes)
+  :Retry automatically up to 2 times;
+  if (AI free now?) then (Yes)
+    :Analyze the task and propose subtasks;
+    :Estimate durations and show any warning;
+    :Display the draft card;
+  else (No)
+    :Keep waiting and retry;
+    stop
+  endif
+else (No)
+  :Analyze the task and propose subtasks;
+  :Estimate durations and show any warning;
+  :Display the draft card;
+endif
+
+:Review and edit the draft;
+:Click "Accept and apply subtasks";
+
+:Write the real subtasks to the database;
+:Confirm the sync;
+
+stop
+@enduml

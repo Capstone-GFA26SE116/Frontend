@@ -10,6 +10,7 @@ import {
   formatMinutes,
   STOP_REASON_HINTS,
   STOP_REASON_LABELS,
+  stopReasonNeedsNote,
 } from "./focus-logic";
 import "./focus.css";
 
@@ -177,6 +178,7 @@ export function StopReasonDialog({
   onConfirm,
   onClose,
   busy,
+  serverError,
 }: {
   taskTitle: string | null;
   elapsedSeconds: number;
@@ -184,9 +186,12 @@ export function StopReasonDialog({
   onConfirm: (reason: FocusStopReason, note: string | null) => void;
   onClose: () => void;
   busy: boolean;
+  /** Lỗi 400 từ server (vd: thiếu `note`) — phiên vẫn đang chạy. */
+  serverError?: string | null;
 }) {
   const [reason, setReason] = useState<FocusStopReason>("Completed");
   const [note, setNote] = useState("");
+  const [touched, setTouched] = useState(false);
 
   const reasons: FocusStopReason[] = [
     "Completed",
@@ -194,6 +199,17 @@ export function StopReasonDialog({
     "Blocked",
     "Other",
   ];
+
+  /**
+   * `note` là **tuỳ chọn** với mọi lý do dừng
+   * (spec `FOCUS_SESSION_FE (1).md` mục 5.2: "`note` tùy chọn").
+   *
+   * Hàm `stopReasonNeedsNote` được giữ lại để sẵn sàng cho BE đổi luật —
+   * hiện trả về `false` cho mọi lý do.
+   */
+  const noteRequired = stopReasonNeedsNote(reason);
+  const noteMissing = noteRequired && !note.trim();
+  const showNoteError = touched && noteMissing;
 
   return (
     <Dialog
@@ -214,10 +230,12 @@ export function StopReasonDialog({
           <button
             type="button"
             className="fc-btn fc-btn--primary"
-            onClick={() =>
-              onConfirm(reason, note.trim() ? note.trim() : null)
-            }
-            disabled={busy}
+            onClick={() => {
+              setTouched(true);
+              if (noteRequired && !note.trim()) return;
+              onConfirm(reason, note.trim() ? note.trim() : null);
+            }}
+            disabled={busy || (noteRequired && !note.trim())}
           >
             {busy ? "Đang lưu…" : "Dừng phiên"}
           </button>
@@ -242,7 +260,10 @@ export function StopReasonDialog({
             role="radio"
             aria-checked={reason === r}
             className={`fc-reason${reason === r ? " fc-reason--active" : ""}`}
-            onClick={() => setReason(r)}
+            onClick={() => {
+              setReason(r);
+              setTouched(false);
+            }}
             disabled={busy}
           >
             <span className="fc-reason__dot" aria-hidden="true" />
@@ -255,18 +276,46 @@ export function StopReasonDialog({
       </div>
 
       <label className="fc-dialog__label" htmlFor="fc-stop-note">
-        Ghi chú <span className="fc-dialog__optional">(tuỳ chọn)</span>
+        Ghi chú{" "}
+        {noteRequired ? (
+          <span className="fc-dialog__required">(bắt buộc)</span>
+        ) : (
+          <span className="fc-dialog__optional">(tuỳ chọn)</span>
+        )}
       </label>
       <input
         id="fc-stop-note"
         type="text"
-        className="fc-input"
-        placeholder="VD: Đã gửi file cho khách"
+        className={
+          "fc-input" + (showNoteError ? " fc-input--error" : "")
+        }
+        placeholder={
+          noteRequired
+            ? "VD: Chờ khách gửi tài liệu"
+            : "VD: Đã gửi file cho khách"
+        }
         value={note}
-        onChange={(e) => setNote(e.target.value)}
+        onChange={(e) => {
+          setNote(e.target.value);
+          setTouched(true);
+        }}
         disabled={busy}
         maxLength={500}
+        aria-invalid={showNoteError}
       />
+      {showNoteError && (
+        <p className="fc-dialog__field-error" role="alert">
+          <span className="material-symbols-outlined">error</span>
+          Hãy ghi rõ lý do — lý do này bắt buộc phải có ghi chú.
+        </p>
+      )}
+
+      {serverError && (
+        <p className="fc-dialog__field-error" role="alert">
+          <span className="material-symbols-outlined">error</span>
+          {serverError}
+        </p>
+      )}
     </Dialog>
   );
 }
@@ -550,7 +599,7 @@ export function CheckInDialog({
  * 6. Đánh dấu xong sau khi Stop `Completed`
  * ===========================================================
  *
- * ⚠️ BẮT BUỘC theo spec mục 1 + mục E:
+ * ⚠️ BẮT BUỘC theo spec `FOCUS_SESSION_FE (1).md` mục 1 + 6.2 + 6.3:
  *
  *   "Điểm FE hay hiểu sai nhất: **Stop `Completed` chỉ làm slot thành
  *    `Done`**, không đánh dấu task hay subtask xong."
@@ -621,9 +670,17 @@ export function MarkDoneDialog({
         dừng phiên làm việc với lý do <em>Đã xong</em>.
       </p>
       <p className="fc-dialog__hint">
-        Lưu ý: dừng phiên <strong>không tự</strong> đánh dấu{" "}
-        {isSubtask ? "subtask" : "task"} là xong — slot trên lịch mới được
-        chuyển sang <em>Hoàn thành</em>.
+        {isSubtask ? (
+          <>
+            Slot trên lịch đã chuyển sang <em>Hoàn thành</em>. Việc đánh dấu
+            subtask này là xong vẫn cần bạn xác nhận.
+          </>
+        ) : (
+          <>
+            Slot trên lịch đã chuyển sang <em>Hoàn thành</em>. Việc đánh dấu
+            task là xong vẫn cần bạn xác nhận.
+          </>
+        )}
       </p>
       {!isSubtask && progress && progress.total > 0 && (
         <p className="fc-dialog__hint">

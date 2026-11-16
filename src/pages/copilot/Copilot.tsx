@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import "./copilot.css";
 import {
   ProposalBody,
@@ -16,6 +17,7 @@ import {
   getTaskChat,
   listProjects,
   listScheduleSlotsByTask,
+  listSubtasks,
   listTasks,
   sendTaskMessage,
   type AiMessage,
@@ -24,6 +26,7 @@ import {
   type ProjectDto,
   type ScheduleSlotDto,
   type SimilarItem,
+  type SubtaskDto,
   type SummaryResponse,
   type TaskChatResponse,
   type TaskDto,
@@ -223,6 +226,8 @@ export function CopilotPage() {
    * Cùng bộ logic với trang /schedule: Copilot là nơi AI chủ động gợi ý,
    * còn /schedule là nơi người dùng chủ động bấm. */
   const [scheduleSlots, setScheduleSlots] = useState<ScheduleSlotDto[]>([]);
+  /** Subtask của task đang xem — dùng tách slot thành nhóm cấp subtask. */
+  const [scheduleSubtasks, setScheduleSubtasks] = useState<SubtaskDto[]>([]);
   /** Task vừa được phân rã xong — ứng viên xếp lịch nổi bật. */
   const [scheduleHintTaskId, setScheduleHintTaskId] = useState<string | null>(null);
 
@@ -231,15 +236,35 @@ export function CopilotPage() {
     [scheduleSlots],
   );
 
+  /** Subtask đã có schedule slot → task cha vẫn xếp được cho subtask còn lại. */
+  const scheduledSubtaskIds = useMemo(
+    () =>
+      new Set(
+        scheduleSlots.map((s) => s.subTaskId).filter((x): x is string => !!x),
+      ),
+    [scheduleSlots],
+  );
+
   /** Ưu tiên task vừa chat, sau đó mới tới task khác trong cùng project. */
   const schedulableTasks = useMemo(() => {
     const base = tasks.length > 0 ? tasks : [];
-    const pool = collectSchedulableTasks(base, scheduledTaskIds);
+    const pool = collectSchedulableTasks(
+      base,
+      scheduledTaskIds,
+      scheduleSubtasks,
+      scheduledSubtaskIds,
+    );
     if (!scheduleHintTaskId) return pool;
     const hit = pool.find((t) => t.id === scheduleHintTaskId);
     if (!hit) return pool;
     return [hit, ...pool.filter((t) => t.id !== scheduleHintTaskId)];
-  }, [tasks, scheduledTaskIds, scheduleHintTaskId]);
+  }, [
+    tasks,
+    scheduledTaskIds,
+    scheduleSubtasks,
+    scheduledSubtaskIds,
+    scheduleHintTaskId,
+  ]);
 
   /**
    * Task sẽ gửi lên AI khi bấm "Đề xuất lịch".
@@ -265,13 +290,25 @@ export function CopilotPage() {
     return m;
   }, [tasks]);
 
+  /** Bản đồ subtaskId -> subtask (để tách slot thành nhóm cấp subtask). */
+  const scheduleSubtasksById = useMemo(() => {
+    const m = new Map<string, SubtaskDto>();
+    for (const st of scheduleSubtasks) m.set(st.id, st);
+    return m;
+  }, [scheduleSubtasks]);
+
   const proposal = useScheduleProposal({
     scheduledTaskIds,
     tasksById: tasksByIdMap,
+    subtasks: scheduleSubtasks,
+    scheduledSubtaskIds,
     toast,
   });
 
-  const proposalOpen = proposal.proposal !== null || proposal.loading;
+  // Panel mở khi: đang chờ AI, đã có kết quả, hoặc vừa lỗi (để user thấy
+  // lý do thay vì panel biến mất không giải thích).
+  const proposalOpen =
+    proposal.proposal !== null || proposal.loading || proposal.error !== null;
 
   /* RAG panel (right) */
   const [ragItems, setRagItems] = useState<SimilarItem[]>([]);
@@ -381,6 +418,15 @@ export function CopilotPage() {
       setRagError(simRes.error);
     }
     setRagLoading(false);
+
+    // 3) Subtask + slot của task — cần để panel "Đề xuất lịch" tách được
+    // từng subtask thành 1 dòng tick riêng.
+    const [subRes, slotRes] = await Promise.all([
+      listSubtasks(clean),
+      listScheduleSlotsByTask(clean),
+    ]);
+    setScheduleSubtasks(subRes.ok ? subRes.data : []);
+    setScheduleSlots(slotRes.ok ? slotRes.data : []);
   }, []);
 
   function handleLoadTask() {
@@ -475,26 +521,67 @@ export function CopilotPage() {
 
       // Task vừa phân rã xong là ứng viên tốt nhất để xếp lịch → đánh dấu lại.
       setScheduleHintTaskId(taskId);
-      // Nạp slot hiện có của task để loại trừ đúng khi tính đề xuất.
-      const slotRes = await listScheduleSlotsByTask(taskId);
+      // Nạp slot + subtask hiện có của task để loại trừ đúng khi tính đề xuất.
+      // (Subtask mới vừa được tạo → cần nạp lại để panel tách nhóm cấp subtask.)
+      const [slotRes, subRes] = await Promise.all([
+        listScheduleSlotsByTask(taskId),
+        listSubtasks(taskId),
+      ]);
+      const existingSlots = slotRes.ok ? slotRes.data : [];
       if (slotRes.ok) {
         setScheduleSlots((prev) => [
           ...prev.filter((s) => s.taskId !== taskId),
           ...slotRes.data,
         ]);
       }
+      if (subRes.ok) {
+        setScheduleSubtasks((prev) => [
+          ...prev.filter((s) => s.taskId !== taskId),
+          ...subRes.data,
+        ]);
+      }
+
+      // ⚠️ KHÔNG tự xếp lịch ở đây.
+      //
+      // Luồng đúng theo hợp đồng (FR-08b-1 #10 · Workflow.md MW-05 → MW-06):
+      //   ① Accept        → tạo SUBTASK          (đây)
+      //   ② Đề xuất lịch   → AI tính khung giờ    (ở /schedule)
+      //   ③ Apply         → tạo SLOT trong lịch   (ở /schedule)
+      //
+      // Việc chọn khung giờ luôn là quyền của user, nên không được tự mở
+      // panel hay tự ghi vào calendar.
+      toast.success(
+        `Đã tạo ${applied.subtasks.length} subtask`,
+        "Sang tab Lịch → Auto-schedule để chọn khung giờ cho các subtask này.",
+      );
+
+      // Nếu BE đã tự tạo slot khi apply (ngoài spec MW-05), báo rõ cho user
+      // biết để họ tự xử lý (xoá / chỉnh) thay vì tưởng vừa được xếp lịch.
+      if (existingSlots.length > 0) {
+        toast.info(
+          "Task đã có khung giờ trong lịch",
+          `AI service đã tự tạo ${existingSlots.length} khung giờ khi apply. ` +
+            "Bạn có thể xoá hoặc chỉnh trong tab Lịch.",
+        );
+      }
     } finally {
       applyingRef.current = false;
     }
   }
 
-  /** Nạp lại toàn bộ slot của các task đang xem — gọi sau khi duyệt proposal. */
+  /** Nạp lại toàn bộ slot + subtask của các task đang xem — gọi sau khi apply. */
   const refreshSlots = useCallback(async () => {
     if (tasks.length === 0) return;
-    const results = await Promise.all(tasks.map((t) => listScheduleSlotsByTask(t.id)));
-    const merged: ScheduleSlotDto[] = [];
-    for (const r of results) if (r.ok) merged.push(...r.data);
-    setScheduleSlots(merged);
+    const [slotResults, subResults] = await Promise.all([
+      Promise.all(tasks.map((t) => listScheduleSlotsByTask(t.id))),
+      Promise.all(tasks.map((t) => listSubtasks(t.id))),
+    ]);
+    const mergedSlots: ScheduleSlotDto[] = [];
+    for (const r of slotResults) if (r.ok) mergedSlots.push(...r.data);
+    setScheduleSlots(mergedSlots);
+    const mergedSubs: SubtaskDto[] = [];
+    for (const r of subResults) if (r.ok) mergedSubs.push(...r.data);
+    setScheduleSubtasks(mergedSubs);
   }, [tasks]);
 
   return (
@@ -781,7 +868,11 @@ export function CopilotPage() {
 
               {proposalOpen && (
                 <div className="sp-root">
-                  <ProposalBody hook={proposal} tasksById={tasksByIdMap} />
+                  <ProposalBody
+                    hook={proposal}
+                    tasksById={tasksByIdMap}
+                    subtasksById={scheduleSubtasksById}
+                  />
                   <ProposalActions hook={proposal} onDone={() => void refreshSlots()} />
                 </div>
               )}
@@ -992,7 +1083,14 @@ export function CopilotPage() {
                 </li>
                 <li>
                   <span className="cp-howto-num">4</span>
-                  <span>Click <em>Accept &amp; sync</em> to call <code>/chat/tasks/…/apply</code> and write the subtasks.</span>
+                  <span>Click <em>Accept</em> to call <code>/chat/tasks/…/apply</code> and write the subtasks.</span>
+                </li>
+                <li>
+                  <span className="cp-howto-num">5</span>
+                  <span>
+                    Go to <em>Lịch</em> → <em>Auto-schedule</em> to pick time slots for the
+                    subtasks, then <em>Apply</em> to add them to your calendar.
+                  </span>
                 </li>
               </ol>
             </div>
@@ -1159,8 +1257,21 @@ function DraftCard({
             <span className="material-symbols-outlined">
               {applied ? "check_circle" : "auto_awesome"}
             </span>
-            <span>{applied ? "Synced!" : "Accept & apply subtasks"}</span>
+            <span>{applied ? "Synced!" : "Accept"}</span>
           </button>
+          {!applied && (
+            <p className="cp-proposal-hint">
+              Accept sẽ tạo các subtask trong task. Muốn xếp lịch cho chúng? Sang
+              tab <strong>Lịch</strong> → <strong>Auto-schedule</strong> để chọn
+              khung giờ.
+            </p>
+          )}
+          {applied && (
+            <Link to="/schedule" className="cp-btn cp-btn--soft">
+              <span className="material-symbols-outlined">calendar_month</span>
+              Đi tới Lịch → Auto-schedule
+            </Link>
+          )}
         </div>
       </div>
     </div>

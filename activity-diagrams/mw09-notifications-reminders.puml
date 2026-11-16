@@ -1,0 +1,29 @@
+@startuml
+title MW-09 - Notifications and Reminders
+
+start
+:Open the application;
+
+:Open the realtime notification connection;
+:Wait for a reminder event;
+
+if (Any reminder?) then (Yes)
+  :Display the notification;
+  :Update the time slot status;
+  :Update the unread notification counter;
+else (No)
+endif
+
+:Open the inbox;
+:Select "All" or "Unread";
+
+:Load the notification list;
+:Display the list;
+
+:Mark as read or mark all as read;
+
+:Update the read status;
+:Update the unread notification counter;
+
+stop
+@enduml

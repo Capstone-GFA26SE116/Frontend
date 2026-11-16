@@ -1,0 +1,45 @@
+@startuml
+title MW-06 - AI Schedule Proposal and Approval
+
+start
+:Click "Propose schedule";
+
+:Filter the eligible tasks;
+note right
+  Only flexible tasks,
+  no fixed time,
+  no slot yet,
+  not completed.
+end note
+
+if (Any eligible task?) then (No)
+  :Notify that there is nothing to schedule;
+  stop
+endif
+
+:Request a schedule proposal for each task;
+:Receive the proposed slots and warnings for each task;
+
+if (Enough free time for this task?) then (Yes)
+  :Display the proposed time slots;
+else (No)
+  :Display why there is not enough room;
+  :Display the missing minutes;
+  :Skip this task;
+endif
+
+:Tick or untick the individual slots;
+:Click "Add to calendar";
+
+:Write each approved slot to the calendar;
+
+if (Any slot failed?) then (Yes)
+  :Untick the failed slots;
+  :Keep the proposal open for re-approval;
+else (No)
+  :Notify how many slots were added;
+  :Refresh the calendar;
+endif
+
+stop
+@enduml

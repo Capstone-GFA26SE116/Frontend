@@ -1,0 +1,23 @@
+@startuml
+title MW-11 - Daily Briefing
+
+start
+:Click "Daily briefing";
+
+:Aggregate tasks, schedule and productivity profile;
+:Compute suggestions, priority tasks and tasks missing time;
+
+if (Any task missing time?) then (Yes)
+  :Show the group of tasks missing time;
+else (No)
+  :Hide the group of tasks missing time;
+endif
+
+:Show the suggestions and the list of tasks to do;
+:Label the reason for each task;
+:Show today's schedule;
+
+:Read the briefing and decide what to do today;
+
+stop
+@enduml

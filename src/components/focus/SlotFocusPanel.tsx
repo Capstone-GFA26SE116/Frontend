@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { getFocusTimeSummary, type FocusTimeSummaryResponse } from "../../lib/api-client";
-import { formatMinutes } from "./focus-logic";
+import {
+  formatMinutes,
+  isCountedSession,
+  sessionStateLabel,
+  sessionStateTone,
+} from "./focus-logic";
 import { useFocusActions } from "./focus-context";
 import { SlotFocusActions } from "./SlotFocusActions";
 import "./focus.css";
@@ -105,7 +110,14 @@ export function SlotFocusPanel({
           {sessions.length > 0 && (
             <ul className="fc-panel__sessions">
               {sessions.map((s) => (
-                <li key={s.sessionId} className="fc-panel__session">
+                <li
+                  key={s.sessionId}
+                  className={`fc-panel__session${
+                    s.state && !isCountedSession(s.state)
+                      ? " fc-panel__session--muted"
+                      : ""
+                  }`}
+                >
                   <span className="fc-panel__session-time">
                     {new Date(s.startedAt).toLocaleTimeString(undefined, {
                       hour: "2-digit",
@@ -122,6 +134,18 @@ export function SlotFocusPanel({
                         ? "Tự ngắt"
                         : (s.stopReason ?? "")}
                   </span>
+                  {s.state && (
+                    <span
+                      className={`fc-panel__session-state fc-panel__session-state--${sessionStateTone(s.state)}`}
+                      title={
+                        isCountedSession(s.state)
+                          ? sessionStateLabel(s.state)
+                          : `${sessionStateLabel(s.state)} — không tính vào thời gian thực tế`
+                      }
+                    >
+                      {sessionStateLabel(s.state)}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>

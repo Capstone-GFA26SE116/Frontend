@@ -3,6 +3,8 @@ import {
   confirmFocusSession,
   getCurrentFocusSession,
   listPendingFocusConfirmations,
+  listSubtasks,
+  listTaskFocusSessions,
   selfReportFocusSession,
   startFocusSession,
   stopFocusSession,
@@ -14,6 +16,7 @@ import {
   type FocusStartResponse,
   type FocusStopReason,
   type FocusStopResponse,
+  type SubtaskDto,
 } from "../lib/api-client";
 
 /**
@@ -115,15 +118,28 @@ export type StopFocusOutcome =
       /**
        * `subTaskId` của phiên vừa dừng (null nếu phiên task-only).
        *
-       * Cần để hỏi "Đánh dấu subtask này là xong?" sau khi Stop `Completed`
-       * (spec mục E) — vì `/current` không trả `subTaskId` và sau khi stop
-       * thì state đã bị xoá.
+       * Cần để biết phiên vừa dừng làm task hay subtask
+       * (`/current` không trả `subTaskId` và sau khi stop thì state đã bị xoá).
        */
       subTaskId: string | null;
+      /**
+       * Danh sách subtask của task vừa dừng (rỗng nếu task không có subtask
+       * hoặc lý do dừng không phải `Completed`).
+       *
+       * ⚠️ Spec MỚI (`FOCUS_SESSION_FE (1).md` mục 6.2 + 6.3):
+       *   *"Trạng thái **subtask và task không đổi** sau Stop (đã kiểm tra:
+       *   subtask vẫn `ToDo` sau `Completed`)."*
+       *
+       * ⇒ Sau Stop `Completed`, FE phải **tự gọi** `PUT /api/subtasks/{id}`
+       *   (và `PUT /api/tasks/{id}`) nếu user muốn đánh dấu xong.
+       *   Danh sách này giúp biết: subtask nào vừa làm, còn bao nhiêu
+       *   subtask chưa xong.
+       */
+      subtasks: SubtaskDto[];
     }
   /** 409 = đã dừng trước đó (bấm 2 lần / 2 tab) → coi như thành công. */
   | { kind: "alreadyStopped" }
-  | { kind: "error"; error: string };
+  | { kind: "error"; error: string; status?: number };
 
 /** Thông tin đồng hồ đang chạy — nguồn cho mọi UI hiển thị. */
 export interface FocusTimerState {
@@ -410,8 +426,32 @@ export function useFocusSession(enabled: boolean = true): UseFocusSessionResult 
       // khác), trang lịch sẽ `seedPlannedMinutes` bổ sung.
       const stored = readStoredPlannedMinutes(res.data.sessionId);
       if (stored) setPlannedMinutes(stored);
-      // `/current` cũng KHÔNG trả `subTaskId` (spec mục 8.1) → tự nhớ.
-      setCurrentSubTaskId(readStoredSubTaskId(res.data.sessionId));
+
+      /*
+       * `/current` KHÔNG trả `subTaskId` (spec mục 5) → ta tự nhớ.
+       *
+       * Ưu tiên 1: sessionStorage (phiên start ở tab này).
+       * Ưu tiên 2: `GET /api/focus/task/{taskId}/sessions` → phiên `Running`
+       *   có `subTaskId`. Đây là cách duy nhất biết được subtask khi mở lại
+       *   trang / đổi thiết bị (spec mục 5 + mục 10 dòng cuối).
+       */
+      const remembered = readStoredSubTaskId(res.data.sessionId);
+      if (remembered) {
+        setCurrentSubTaskId(remembered);
+      } else if (res.data.taskId) {
+        const sessions = await listTaskFocusSessions(res.data.taskId);
+        if (!alive.current) return;
+        if (sessions.ok) {
+          const running = sessions.data.find((s) => s.state === "Running");
+          const subTaskId = running?.subTaskId ?? null;
+          setCurrentSubTaskId(subTaskId);
+          if (subTaskId) storeSubTaskId(res.data.sessionId, subTaskId);
+        } else {
+          setCurrentSubTaskId(null);
+        }
+      } else {
+        setCurrentSubTaskId(null);
+      }
     } else {
       anchorRef.current = null;
       setElapsedSeconds(0);
@@ -523,12 +563,20 @@ export function useFocusSession(enabled: boolean = true): UseFocusSessionResult 
           // user chọn "Không" (bỏ phiên).
           void refresh();
           setPhase("running");
+          // Phiên ĐÃ được tạo → slot/task cũng đã đổi → cần refetch lịch.
+          slotChangedRef.current?.();
           return { kind: "tooEarly", session: res.data };
         }
         // Đồng hồ dùng `elapsedSeconds` từ server — start trả `startedAt`
         // chứ không có elapsed, nên ta gọi /current cho chuẩn.
         void refresh();
         setPhase("running");
+        /*
+         * Spec mục 5: sau Start phải **tải lại** slot / task / milestone —
+         * FE KHÔNG tự suy ra trạng thái. Start làm slot `InProgress`, task
+         * `InProgress`, giai đoạn `Planned` tự lên `InProgress`.
+         */
+        slotChangedRef.current?.();
         return { kind: "started", data: res.data };
       }
 
@@ -587,6 +635,13 @@ export function useFocusSession(enabled: boolean = true): UseFocusSessionResult 
       const targetId = sessionId ?? session?.sessionId;
       if (!targetId) return { kind: "error", error: "Không có phiên đang chạy." };
 
+      /*
+       * ⚠️ `note` là **tuỳ chọn** với mọi lý do dừng
+       * (spec `FOCUS_SESSION_FE (1).md` mục 5.2: "`note` tùy chọn").
+       *
+       * (Bản spec CŨ bắt buộc `note` cho `Blocked`/`Other` — BE đã bỏ.)
+       */
+
       setPhase("busy");
       setError(null);
       /*
@@ -603,8 +658,8 @@ export function useFocusSession(enabled: boolean = true): UseFocusSessionResult 
       if (!alive.current) return { kind: "error", error: "Đã hủy." };
 
       if (res.ok) {
-        // Slot đã đổi trạng thái (Done nếu Completed, về Due nếu lý do khác)
-        // → các trang lịch cần refetch.
+        // Slot đã đổi trạng thái (Done nếu Completed, Due nếu các lý do còn
+        // lại) → các trang lịch cần refetch.
         slotChangedRef.current?.();
         setSession(null);
         anchorRef.current = null;
@@ -614,10 +669,34 @@ export function useFocusSession(enabled: boolean = true): UseFocusSessionResult 
         clearStoredPlannedMinutes(targetId);
         storeSubTaskId(targetId, null);
         setPhase("idle");
+
+        /*
+         * Lấy danh sách subtask của task vừa dừng.
+         *
+         * ⚠️ Spec MỚI (`FOCUS_SESSION_FE (1).md` mục 6.2 + 6.3):
+         *   *"Trạng thái **subtask và task không đổi** sau Stop"*
+         *   ⇒ Sau Stop `Completed`, FE phải hỏi user rồi tự gọi
+         *     `PUT /api/subtasks/{id}` / `PUT /api/tasks/{id}`.
+         *
+         * Ta cần danh sách này để biết:
+         *   • subtask vừa làm có tồn tại không (hỏi "đánh dấu subtask xong?")
+         *   • còn bao nhiêu subtask chưa xong (hỏi "đánh dấu task xong?")
+         *
+         * Chỉ tra khi lý do là `Completed` — các lý do khác không hỏi
+         * "đánh dấu xong" nên không cần thêm 1 vòng gọi API.
+         */
+        const taskId = session?.taskId ?? "";
+        let subtasks: SubtaskDto[] = [];
+        if (taskId && reason === "Completed") {
+          const subs = await listSubtasks(taskId);
+          if (alive.current && subs.ok) subtasks = subs.data;
+        }
+
         return {
           kind: "stopped",
           data: res.data,
           subTaskId: stoppedSubTaskId,
+          subtasks,
         };
       }
 
@@ -635,9 +714,11 @@ export function useFocusSession(enabled: boolean = true): UseFocusSessionResult 
         return { kind: "alreadyStopped" };
       }
 
+      // 400 = dữ liệu không hợp lệ (VD slot/task không hợp lệ) → PHIÊN VẪN
+      // CHẠY. Giữ `phase = "running"` để thanh đồng hồ vẫn chạy.
       setPhase(session ? "running" : "idle");
       setError(res.error);
-      return { kind: "error", error: res.error };
+      return { kind: "error", error: res.error, status: res.status };
     },
     [enabled, session, currentSubTaskId],
   );

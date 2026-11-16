@@ -495,6 +495,27 @@ function ProjectDetailBody({
         </div>
       </section>
 
+      {/* Kho tài liệu của dự án */}
+      <section className="pd-docs" aria-label="Documents">
+        <div className="pd-section-head">
+          <div>
+            <span className="pd-section-eyebrow">Documents</span>
+            <h2 className="pd-section-title">Project documents</h2>
+            <p className="pd-section-sub">
+              Files and links attached to this project — briefs, contracts and
+              design assets.
+            </p>
+          </div>
+          <Link
+            to={`/projects/${project.id}/documents`}
+            className="pd-ms-view-all"
+          >
+            Open library
+            <span className="material-symbols-outlined">arrow_forward</span>
+          </Link>
+        </div>
+      </section>
+
       {/* Footer metadata */}
       <footer className="pd-foot">
         <div className="pd-foot-card">

@@ -1446,6 +1446,48 @@ select.ms-input {
   flex-wrap: wrap;
 }
 
+/* ---------- Danh sách task dở trong hộp thoại 409 ---------- */
+
+.ms-open-tasks {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0.5rem;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--ms-line, rgba(148, 163, 184, 0.22));
+  border-radius: 0.75rem;
+  background: var(--ms-low, rgba(148, 163, 184, 0.08));
+}
+
+.ms-open-tasks__item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 0.5rem;
+}
+
+.ms-open-tasks__item + .ms-open-tasks__item {
+  border-top: 1px solid var(--ms-line, rgba(148, 163, 184, 0.14));
+}
+
+.ms-open-tasks__title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--ms-text, #e2e8f0);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ms-open-tasks__meta {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  color: var(--ms-text-dim, #94a3b8);
+}
+
 /* ===========================================================
  * 8. Animations
  * =========================================================== */

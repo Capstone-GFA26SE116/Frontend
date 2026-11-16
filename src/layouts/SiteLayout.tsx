@@ -149,6 +149,15 @@ export function SiteLayout() {
                 <span>Projects</span>
               </NavLink>
               <NavLink
+                to="/documents"
+                className={({ isActive }) =>
+                  "site-nav-link" + (isActive ? " site-nav-link--active" : "")
+                }
+              >
+                <span className="material-symbols-outlined site-nav-icon" aria-hidden="true">folder_open</span>
+                <span>Documents</span>
+              </NavLink>
+              <NavLink
                 to="/schedule"
                 className={({ isActive }) =>
                   "site-nav-link" + (isActive ? " site-nav-link--active" : "")

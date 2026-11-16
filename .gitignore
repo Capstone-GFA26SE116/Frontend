@@ -25,3 +25,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Activity diagram tooling
+activity-diagrams/plantuml.jar
+activity-diagrams/*.png

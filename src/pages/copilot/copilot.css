@@ -683,6 +683,17 @@
   padding-top: 12px;
   border-top: 1px solid var(--cp-hairline);
 }
+.cp-proposal-hint {
+  flex: 1 1 220px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--cp-mute);
+}
+.cp-proposal-hint strong {
+  color: var(--cp-body);
+  font-weight: 600;
+}
 .cp-btn {
   display: inline-flex;
   align-items: center;
@@ -712,6 +723,20 @@
   background: var(--cp-primary);
   border-color: var(--cp-primary);
   color: var(--cp-on-primary);
+}
+/* button-soft — nút phụ (điều hướng, hành động phụ) */
+.cp-btn--soft {
+  flex: 0 0 auto;
+  background: transparent;
+  border-color: var(--cp-hairline);
+  color: var(--cp-body);
+  font-size: 14px;
+  font-weight: 500;
+}
+.cp-btn--soft:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--cp-mute);
+  color: #fff;
 }
 .cp-btn--primary:hover:not(:disabled) {
   background: var(--cp-primary-soft);

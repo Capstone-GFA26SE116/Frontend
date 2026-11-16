@@ -1,0 +1,46 @@
+@startuml
+title MW-08 - Focus Session Execution
+
+start
+:Click "Start" on a time slot;
+
+if (A session is already running?) then (Yes)
+  :Switch to the running session display;
+  :Continue the current session;
+else (No)
+  :Create the work session;
+  :Start the timer;
+endif
+
+:Work on the task;
+
+if (End time reached?) then (Yes)
+  :Show the overtime warning;
+endif
+
+:Click "Stop";
+:Select a stop reason and add a note;
+
+:Record the actual elapsed time;
+
+if (Stop reason is "Completed"?) then (Yes)
+  :Mark the time slot as completed;
+else (No)
+  :Return the time slot to the pending state;
+endif
+
+if (The session has subtasks?) then (Yes)
+  :Confirm which subtasks are done;
+  :Update the subtask status;
+  if (All subtasks done?) then (Yes)
+    :Confirm the parent task is done;
+    :Update the task status;
+  else (No)
+  endif
+else (No)
+endif
+
+:Move to the next subtask or time slot;
+
+stop
+@enduml

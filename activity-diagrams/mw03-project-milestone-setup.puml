@@ -1,0 +1,34 @@
+@startuml
+title MW-03 - Project and Milestone Setup
+
+start
+:Open the project list;
+
+:Load projects and clients;
+:Display the project grid and the key metrics;
+
+:Click "New project";
+:Select an existing client or create a new one;
+:Enter name, start date, deadline and description;
+
+:Check that the deadline is after the start date;
+
+if (Valid?) then (Yes)
+  :Create the project;
+  :Compute the project progress;
+else (No)
+  :Return a validation error;
+  :Re-enter the project information;
+  stop
+endif
+
+:Open the milestone page;
+:Click "New milestone";
+:Enter name, order and due date;
+
+:Create the milestone;
+
+:Continue with the project planning;
+
+stop
+@enduml

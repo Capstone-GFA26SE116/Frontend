@@ -1,0 +1,36 @@
+@startuml
+title MW-07 - Calendar View and Google Calendar Sync
+
+start
+:Open the calendar page;
+
+:Load the events, tasks and slots;
+:Display the week / month view;
+
+if (Action?) then (Sync)
+  :Click "Sync with Google";
+  :Connect or reuse the Google account;
+  :Pull the Google events;
+  :Pull the Google tasks;
+  :Pull the Google task lists;
+  :Pull the Google event colors;
+  :Pull the Google task list colors;
+  :Pull the Google calendar metadata;
+  :Merge the Google data into the local data;
+  :Sync the tasks and tasksets;
+  :Sync the tasksets and tasks;
+  :Sync the events and colors;
+  :Sync the events and colors;
+  :Notify the sync result;
+  if (Any error?) then (Yes)
+    :Return an error message;
+    stop
+  endif
+else (View)
+  :Select a day or a slot;
+  :Select a slot;
+  :Display the slot details and the related task;
+endif
+
+stop
+@enduml

@@ -6,6 +6,7 @@ import {
 } from "../../components/ScheduleProposal";
 import { useScheduleProposal } from "../../components/schedule-proposal-logic";
 import { CenterToasts, useCenterToast } from "../../components/Toast";
+import { GoogleCalendarSyncDialog } from "../../components/GoogleCalendarSyncDialog";
 import { SlotFocusPanel } from "../../components/focus/SlotFocusPanel";
 import { SlotFocusActions } from "../../components/focus/SlotFocusActions";
 import { useFocusActions } from "../../components/focus/focus-context";
@@ -21,6 +22,7 @@ import {
   listSubtasks,
   listTasks,
   type CalendarItemDto,
+  type GoogleCalendarSyncDirection,
   type ProjectDto,
   type ScheduleSlotDto,
   type SubtaskDto,
@@ -800,11 +802,36 @@ export function SchedulePage() {
     [scheduleSlots],
   );
 
+  /** Subtask đã có schedule slot. */
+  const scheduledSubtaskIds = useMemo(
+    () =>
+      new Set(
+        scheduleSlots.map((s) => s.subTaskId).filter((x): x is string => !!x),
+      ),
+    [scheduleSlots],
+  );
+
+  /**
+   * Task còn subtask CHƯA có lịch.
+   *
+   * Task cha đã có 1 slot vẫn xếp được cho các subtask còn lại — vì AI service
+   * tính slot theo từng subtask (trả `subtask_id` cho mỗi slot).
+   */
+  const pendingSubtaskTaskIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const st of subtasks) {
+      if (scheduledSubtaskIds.has(st.id)) continue;
+      ids.add(st.taskId);
+    }
+    return ids;
+  }, [subtasks, scheduledSubtaskIds]);
+
   /** Đếm task Flexible còn xếp được — dùng để bật/tắt nút Auto-schedule. */
   const schedulableCount = useMemo(() => {
     let n = 0;
     for (const t of tasks) {
-      if (scheduledTaskIds.has(t.id)) continue;
+      // Task đã có slot vẫn xếp được nếu còn subtask chưa có lịch.
+      if (scheduledTaskIds.has(t.id) && !pendingSubtaskTaskIds.has(t.id)) continue;
       if (t.fixedStart || t.fixedEnd) continue;
       if ((t.taskType ?? "").toLowerCase() !== "flexible") continue;
       const st = (t.status ?? "").toLowerCase();
@@ -812,13 +839,23 @@ export function SchedulePage() {
       n += 1;
     }
     return n;
-  }, [tasks, scheduledTaskIds]);
+  }, [tasks, scheduledTaskIds, pendingSubtaskTaskIds]);
 
   /* ---------- AI schedule proposal ---------- */
   const [proposalOpen, setProposalOpen] = useState(false);
+
+  /** Bản đồ subtaskId -> subtask, dùng tách slot thành nhóm cấp subtask. */
+  const subtasksById = useMemo(() => {
+    const m = new Map<string, SubtaskDto>();
+    for (const st of subtasks) m.set(st.id, st);
+    return m;
+  }, [subtasks]);
+
   const proposal = useScheduleProposal({
     scheduledTaskIds,
     tasksById: tasksByIdMap,
+    subtasks,
+    scheduledSubtaskIds,
     toast,
   });
 
@@ -1532,11 +1569,11 @@ export function SchedulePage() {
               title={
                 schedulableCount === 0
                   ? "Không còn task flexible nào chưa có lịch"
-                  : `AI sẽ xếp lịch cho ${schedulableCount} task flexible${
+                  : `AI sẽ đề xuất khung giờ cho ${schedulableCount} task flexible${
                       workHours.workDayStart && workHours.workDayEnd
                         ? ` trong khung giờ làm việc ${workHours.workDayStart}–${workHours.workDayEnd}`
                         : ""
-                    }`
+                    } — bạn tick rồi bấm Apply mới ghi vào lịch`
               }
             >
               <span className="material-symbols-outlined sch-icon-18">auto_awesome</span>
@@ -1792,6 +1829,7 @@ export function SchedulePage() {
         <ProposalDialog
           hook={proposal}
           tasksById={tasksByIdMap}
+          subtasksById={subtasksById}
           onClose={() => setProposalOpen(false)}
           onDone={handleProposalDone}
         />
@@ -2397,8 +2435,22 @@ function GoogleCalendarCard({
   toast: ReturnType<typeof useCenterToast>[1];
   onSynced?: () => void;
 }) {
-  const { isConnected, status, loading, busy, error, connect, disconnect, sync } =
-    useGoogleCalendar();
+  const {
+    isConnected,
+    status,
+    loading,
+    busy,
+    error,
+    connect,
+    disconnect,
+    sync,
+    reconnectRequired,
+  } = useGoogleCalendar();
+
+  /** Mở hộp thoại chọn hướng + khoảng ngày. */
+  const [syncOpen, setSyncOpen] = useState(false);
+  /** Lỗi 400 từ server khi sync (VD: `to` trước `from`). */
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   /** Định dạng `tokenExpiresAt` -> chuỗi ngắn gọn cho user đọc. */
   const tokenExpiresAt = status?.tokenExpiresAt ?? null;
@@ -2419,18 +2471,80 @@ function GoogleCalendarCard({
     setExpiresLabel(compute());
   }, [tokenExpiresAt]);
 
-  async function handleSync() {
-    const res = await sync();
-    if (res.ok) {
-      toast.success(
-        "Google Calendar synced",
-        `${res.data.added} added · ${res.data.updated} updated · ${res.data.cancelled} cancelled`,
-      );
-      // Nạp lại lịch để thấy sự kiện vừa kéo về.
-      onSynced?.();
-    } else {
-      toast.error("Sync failed", res.error);
+  /**
+   * Mở hộp thoại đồng bộ (chọn hướng + khoảng ngày).
+   *
+   * Theo spec `GOOGLE_CALENDAR_SYNC_FE.md` mục 5: phải hỏi rõ hướng vì
+   * chiều đẩy lên sẽ **ghi vào lịch Google thật** của user.
+   */
+  function openSyncDialog() {
+    setSyncError(null);
+    setSyncOpen(true);
+  }
+
+  /**
+   * Gửi sync với hướng + khoảng ngày đã chọn.
+   *
+   * Sau khi thành công → đóng hộp thoại, báo kết quả (kéo về + đẩy lên) và
+   * nạp lại lịch (spec mục 5: "Sau khi đồng bộ xong hãy tải lại
+   * `GET /api/calendar` cho khoảng đang xem").
+   */
+  async function handleSync(options: {
+    from: string | null;
+    to: string | null;
+    direction: GoogleCalendarSyncDirection;
+  }) {
+    const res = await sync({
+      from: options.from,
+      to: options.to,
+      direction: options.direction,
+    });
+    if (!res.ok) {
+      // 400 = `to` trước `from` / chưa kết nối / sai định dạng.
+      // 409 = kết nối hết hạn → gợi ý kết nối lại. 502 = Google lỗi/mất mạng.
+      if (res.status === 409 && res.errorCode === "GOOGLE_RECONNECT_REQUIRED") {
+        setSyncError(
+          "Kết nối Google Calendar đã hết hạn hoặc bị thu hồi. Hãy kết nối lại Google Calendar rồi thử đồng bộ lần nữa.",
+        );
+        return;
+      }
+      if (res.status === 502) {
+        setSyncError(
+          "Google Calendar đang lỗi hoặc mất mạng. Vui lòng thử lại sau.",
+        );
+        return;
+      }
+      setSyncError(res.error);
+      return;
     }
+    setSyncError(null);
+    setSyncOpen(false);
+
+    const { added, updated, cancelled } = res.data;
+    const pushFailed = res.data.pushFailed ?? 0;
+    const pushed = res.data.pushedCreated ?? 0;
+
+    const parts = [`${added} mới`, `${updated} cập nhật`, `${cancelled} huỷ`];
+    if (pushed > 0 || pushFailed > 0) {
+      parts.push(`${pushed} đẩy lên`);
+    }
+    // Chế độ BE đã dùng (spec mục 3): `Range` = lấy đầy đủ trong khoảng,
+    // `Incremental` = chỉ lấy phần thay đổi theo `syncToken`.
+    if (res.data.mode === "Range") {
+      parts.push("theo khoảng ngày");
+    }
+
+    if (pushFailed > 0) {
+      toast.error(
+        "Đồng bộ xong nhưng có lỗi",
+        `Một số slot chưa đồng bộ được, thử lại sau. · ${parts.join(" · ")}`,
+      );
+    } else {
+      toast.success("Đã đồng bộ Google Calendar", parts.join(" · "));
+    }
+
+    // Nạp lại lịch để thấy sự kiện vừa kéo về / slot vừa đẩy lên.
+    onSynced?.();
   }
 
   async function handleDisconnect() {
@@ -2478,11 +2592,11 @@ function GoogleCalendarCard({
             <button
               type="button"
               className="sch-btn sch-btn--primary sch-gcal__btn"
-              onClick={handleSync}
+              onClick={openSyncDialog}
               disabled={busy !== null}
             >
               <span className="material-symbols-outlined sch-icon-18">sync</span>
-              {busy === "sync" ? "Syncing…" : "Sync now"}
+              {busy === "sync" ? "Syncing…" : "Đồng bộ"}
             </button>
             <button
               type="button"
@@ -2519,6 +2633,24 @@ function GoogleCalendarCard({
       )}
 
       {error && <p className="sch-gcal__error">{error}</p>}
+
+      {/* Hộp thoại đồng bộ — chọn hướng + khoảng ngày */}
+      {syncOpen && (
+        <GoogleCalendarSyncDialog
+          busy={busy === "sync"}
+          serverError={syncError}
+          needsReconnect={reconnectRequired}
+          onReconnect={() => {
+            setSyncOpen(false);
+            void connect();
+          }}
+          onSubmit={(opts) => void handleSync(opts)}
+          onClose={() => {
+            setSyncOpen(false);
+            setSyncError(null);
+          }}
+        />
+      )}
     </div>
   );
 }

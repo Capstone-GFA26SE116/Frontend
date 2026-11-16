@@ -79,8 +79,12 @@ export function RegisterPage() {
       // Mock fallback
       const res = await loginWithGoogle("mock_token");
       setGoogleLoading(false);
-      if (res.ok) navigate(getPostLoginPath(undefined), { replace: true });
-      else setError("Chế độ phát triển: Google OAuth chưa được cấu hình. Vui lòng thêm VITE_GOOGLE_CLIENT_ID vào .env");
+      if (res.ok) {
+        // Admin đăng ký/đăng nhập Google → vào thẳng /admin.
+        navigate(getPostLoginPath(undefined, res.session.user), { replace: true });
+      } else {
+        setError("Chế độ phát triển: Google OAuth chưa được cấu hình. Vui lòng thêm VITE_GOOGLE_CLIENT_ID vào .env");
+      }
     }
   }
 

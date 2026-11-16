@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
+import { MetanoiaLogo } from "../../components/MetanoiaLogo";
 import {
   GOAL_OPTIONS,
   ROLE_OPTIONS,
@@ -89,17 +90,25 @@ export function OnboardingPage() {
     [user?.name],
   );
 
+  /**
+   * Tiến trình 3 bước — bước đang làm = 1, các bước đã trả lời trước đó = 2.
+   * Dùng để user biết còn bao nhiêu việc phía trước.
+   */
+  const completedSteps = useMemo(() => {
+    let count = 0;
+    if (role) count += 1;
+    if (sectors.size > 0) count += 1;
+    if (goals.size > 0) count += 1;
+    return count;
+  }, [role, sectors.size, goals.size]);
+
   return (
     <div className="onboarding">
       {/* HEADER cố định */}
       <header className="onboarding-header">
         <div className="onboarding-header-inner">
           <div className="onboarding-brand">
-            <img
-              alt="METANOIA logo"
-              className="onboarding-brand-logo"
-              src="https://lh3.googleusercontent.com/aida/AEtjO1WgnNz4wnvDpVMPhalEUeKHDxcYm1v4t6rE9Wh4sLYs2jVFFpDVmZbmXmpwWUuULuwCTwEEu-la12sWMZbb5gwBBSipZMFaLqvsf2MqubCWhG4PQ1UrfaqQ8EgTAJpPoa9YxjVSM6M8HIlwd9Mhj_XjGS-FWhiauIWLS0LOFc90XsJnC6Uh5Py6BoElkJS2thk2C4AmBkyjDT6sCTU-InWWeUNXv3B1CtNyxP_FQjIN7yZga11XS-Gh4b9V"
-            />
+            <MetanoiaLogo size={30} tone="dark" />
             <span className="onboarding-brand-name">METANOIA</span>
           </div>
 
@@ -108,19 +117,19 @@ export function OnboardingPage() {
             aria-label="Tiến trình onboarding"
           >
             <span className="onboarding-stepnav-item onboarding-stepnav-item--active">
-              01 Vai trò &amp; Mục tiêu
+              01 · Vai trò &amp; Mục tiêu
             </span>
             <span className="onboarding-stepnav-sep" aria-hidden="true">
               /
             </span>
             <span className="onboarding-stepnav-item onboarding-stepnav-item--muted">
-              02 Nhịp độ Tư duy
+              02 · Nhịp độ Tư duy
             </span>
             <span className="onboarding-stepnav-sep" aria-hidden="true">
               /
             </span>
             <span className="onboarding-stepnav-item onboarding-stepnav-item--muted">
-              03 Đồng bộ Không gian
+              03 · Đồng bộ Không gian
             </span>
           </nav>
 
@@ -133,11 +142,20 @@ export function OnboardingPage() {
               Bỏ qua
             </button>
             <span className="onboarding-divider" aria-hidden="true" />
-            <img
-              alt="Profile"
-              className="onboarding-avatar"
-              src="https://lh3.googleusercontent.com/aida/AEtjO1WwZGgMBVZcdQX0fNL4k2n2SI70nfwjZCsJF75szec0Hw-MI9-maOmXDJMdzVYiw-oZmt1csY0DUKD2m5brfN5rFjM3Vwz-58yvOeuiYCzqJdOCR0zJa-3Sf5fL0uSfHZ8kOqN85PBOsDIwWZxBM1gqnyMgNg1NV_yotCU0OvyKne4RRr9cwvZGSsUpemZaKyykc9hsCBjQ3SZ0swbFatkFEp9UYU5o5Y7HHbaZjJCwiZhxjNHmJn8CuHA"
-            />
+            {user?.avatarUrl ? (
+              <img
+                alt={user.name ?? "Profile"}
+                className="onboarding-avatar"
+                src={user.avatarUrl}
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).style.display = "none";
+                }}
+              />
+            ) : (
+              <span className="onboarding-avatar onboarding-avatar--fallback" aria-hidden="true">
+                <span className="material-symbols-outlined">person</span>
+              </span>
+            )}
           </div>
         </div>
       </header>
@@ -145,19 +163,44 @@ export function OnboardingPage() {
       {/* MAIN */}
       <main className="onboarding-main">
         <div className="onboarding-shell">
-          {/* Ambient glow */}
-          <div className="onboarding-glow onboarding-glow--top" aria-hidden="true" />
-          <div
-            className="onboarding-glow onboarding-glow--side"
-            aria-hidden="true"
-          />
-
           <div className="onboarding-card">
+            {/* Tiến trình 3 bước */}
+            <div
+              className="onboarding-progress"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={3}
+              aria-valuenow={completedSteps}
+              aria-label="Tiến trình thiết lập"
+            >
+              {["Vai trò", "Lĩnh vực", "Mục tiêu"].map((label, i) => (
+                <div
+                  key={label}
+                  className={
+                    "onboarding-progress__step" +
+                    (i === completedSteps
+                      ? " onboarding-progress__step--active"
+                      : "")
+                  }
+                >
+                  <span
+                    className={
+                      "onboarding-progress__bar" +
+                      (i < completedSteps
+                        ? " onboarding-progress__bar--done"
+                        : "")
+                    }
+                  />
+                  <span className="onboarding-progress__label">{label}</span>
+                </div>
+              ))}
+            </div>
+
             {/* Header intro */}
             <div className="onboarding-intro">
               <span className="onboarding-badge">
                 <span className="onboarding-badge-dot" />
-                Chào mừng {greeting} đến với METANOIA
+                Chào mừng {greeting}
               </span>
               <h1 className="onboarding-title">
                 Hãy cá nhân hoá không gian làm việc nhận thức của bạn
@@ -413,7 +456,7 @@ export function OnboardingPage() {
             <span>METANOIA Cognitive Protocol v2.4</span>
           </div>
           <div className="onboarding-footer-right">
-            © 2025 Metanoia Intelligence. Quyền riêng tư &amp; Tối giản nhận
+            © 2025 Metanoia Intelligence · Quyền riêng tư &amp; Tối giản nhận
             thức.
           </div>
         </div>

@@ -9,6 +9,8 @@
  * Khi user thực sự mở Landing (effect component Landing chạy) thì set = true.
  */
 
+import { isAdminUser, type User } from "./types";
+
 const STORAGE_KEY = "metanoia.hasSeenLanding";
 
 export function hasSeenLanding(): boolean {
@@ -40,9 +42,19 @@ export function resetLandingFlag(): void {
 
 /**
  * Trả về path nên navigate sau khi login thành công.
- * Ưu tiên: from > first-time-landing > /dashboard.
+ *
+ * Ưu tiên:
+ *  1. Admin (`role = Admin`)  -> `/admin` (vào thẳng khu vực quản trị).
+ *  2. Deep-link `from`        -> quay lại đúng trang user đang muốn vào.
+ *  3. Lần đầu chưa xem Landing -> `/`.
+ *  4. Còn lại                 -> `/dashboard`.
  */
-export function getPostLoginPath(from: string | undefined): string {
+export function getPostLoginPath(
+  from: string | undefined,
+  user?: Pick<User, "role"> | null,
+): string {
+  // Tài khoản quản trị luôn vào thẳng /admin — không qua onboarding.
+  if (isAdminUser(user)) return "/admin";
   if (from && from !== "/login" && from !== "/register") return from;
   if (!hasSeenLanding()) return "/";
   return "/dashboard";

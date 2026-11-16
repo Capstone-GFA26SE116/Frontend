@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { isAdminUser } from "../auth/types";
 import { MetanoiaLogo } from "../components/MetanoiaLogo";
 import { useGoogleCalendar } from "../hooks/useGoogleCalendar";
 import { listProjects, listTasks } from "../lib/api-client";
@@ -299,6 +300,23 @@ export function SiteLayout() {
                         </span>
                         <span>Profile</span>
                       </Link>
+                      {/* Khu vực quản trị — chỉ hiện với role Admin */}
+                      {isAdminUser(user) && (
+                        <Link
+                          to="/admin"
+                          className="site-user-menu-item"
+                          role="menuitem"
+                          onClick={() => setMenuOpen(false)}
+                        >
+                          <span
+                            className="material-symbols-outlined"
+                            aria-hidden="true"
+                          >
+                            shield_person
+                          </span>
+                          <span>Admin console</span>
+                        </Link>
+                      )}
                       <button
                         type="button"
                         className="site-user-menu-item site-user-menu-item--gcal"

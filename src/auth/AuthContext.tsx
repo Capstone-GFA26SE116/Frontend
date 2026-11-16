@@ -99,6 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             name: res.data.fullName ?? "Người dùng",
             createdAt: new Date().toISOString(),
             avatarUrl: res.data.avatarUrl ?? undefined,
+            role: res.data.role ?? null,
           };
           setUser(u);
           setToken(token);
@@ -136,6 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       name: dto.fullName ?? "Người dùng",
       createdAt: new Date().toISOString(),
       avatarUrl: dto.avatarUrl ?? undefined,
+      role: dto.role ?? null,
     };
     // Lưu vào localStorage để mock code vẫn hoạt động nếu cần
     saveSession({ token: dto.accessToken, email: u.email });

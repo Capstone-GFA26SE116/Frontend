@@ -1859,12 +1859,20 @@ export async function syncGoogleCalendar(
   // (kèm query `direction`/`from`/`to`) ra console. Tắt lại sau khi xong.
   const debug = import.meta.env.VITE_DEBUG_GCAL_SYNC === "true";
   if (debug) {
-    console.log("[gcal-sync] POST", `${BASE_URL}${url}`, options ?? {});
+    console.log(
+      "[gcal-sync] POST",
+      `${BASE_URL}${url}`,
+      JSON.stringify(options ?? {}),
+    );
   }
 
   const res = await post<GoogleCalendarSyncResultDto>(url, {});
   if (debug) {
-    console.log("[gcal-sync] ←", res.ok ? res.data : res);
+    // Log dạng 1 dòng JSON cho dễ copy vào chat.
+    console.log(
+      "[gcal-sync] RES",
+      res.ok ? JSON.stringify(res.data) : JSON.stringify(res),
+    );
   }
   return res;
 }

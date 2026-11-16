@@ -13,6 +13,16 @@ export interface User {
   createdAt: string;
   /** URL ảnh đại diện (từ Google cho OAuth user). */
   avatarUrl?: string;
+  /**
+   * Vai trò tài khoản do BE trả về (`/api/me`).
+   * `Admin` → được phép vào khu vực quản trị. Các giá trị khác = user thường.
+   */
+  role?: string | null;
+}
+
+/** Kiểm tra user có vai trò Admin hay không (không phân biệt hoa thường). */
+export function isAdminUser(user: Pick<User, "role"> | null | undefined): boolean {
+  return (user?.role ?? "").trim().toLowerCase() === "admin";
 }
 
 export interface StoredCredentials {

@@ -1,150 +1,207 @@
-/* ===========================================================
- * Onboarding — Khảo sát & Cá nhân hoá sau đăng nhập
- * Dark cognitive minimalist, scope `.onboarding-*`.
+/* ================================================================
+ * ONBOARDING — Khảo sát & Cá nhân hoá sau đăng nhập
+ * ------------------------------------------------------------
+ * Tuân thủ `DESIGN.md` (Voltagent design language):
  *
- * Tailwind tokens (khớp với thiết kế tham khảo):
- *   surface                    #0f131c
- *   surface-container-low      #181c24
- *   surface-container          #1c2028
- *   surface-container-high     #262a33
- *   surface-container-highest  #31353e
- *   surface-container-lowest   #0a0e16
- *   surface-bright             #353942
- *   on-surface                 #dfe2ee
- *   on-surface-variant         #c7c4d7
- *   outline                    #908fa0
- *   outline-variant            #464554
- *   primary                    #c0c1ff
- *   primary-container          #8083ff
- *   on-primary-container       #0d0096
- *   secondary                  #4edea3
- * =========================================================== */
+ *   colors:
+ *     canvas       #101010   nền trang (duy nhất — không có light mode)
+ *     canvas-soft  #1a1a1a   input / chip / card nhấn
+ *     hairline     #3d3a39   viền 1px — hệ thống elevation chính
+ *     ink          #f2f2f2   text mặc định
+ *     ink-strong   #ffffff   headline
+ *     body         #bdbdbd   text phụ
+ *     mute         #8b949e   caption / fine print
+ *     primary      #00d992   accent DUY NHẤT — CTA + live dot + active
+ *     primary-soft #2fd6a1   ghost button, focus ring
+ *
+ *   typography:
+ *     Inter  → tiêu đề, nhãn, nội dung
+ *     SF Mono → eyebrow uppercase, số liệu, caption kỹ thuật
+ *     Eyebrow: Inter 600, uppercase, tracking 2.52px
+ *
+ *   Shape:
+ *     button 6px (rounded.sm) · card 8px (rounded.md) · pill 9999px
+ *
+ *   Elevation:
+ *     Card dùng HAIRLINE 1px — KHÔNG dùng drop shadow.
+ *     Hover dùng Level 2 (inset glow 0 0 15px rgba(92,88,85,.2)).
+ *
+ *   Don'ts đã tránh:
+ *     ✗ ambient glow blob / gradient mesh  (brand là flat, không atmosphere)
+ *     ✗ drop shadow cho card               (hairline IS elevation)
+ *     ✗ accent tím/lavender                 (chỉ 1 accent: #00d992)
+ *     ✗ primary làm body-text fill          (chỉ CTA / status / active)
+ * ================================================================ */
 
 .onboarding {
+  --ob-canvas: #101010;
+  --ob-canvas-soft: #1a1a1a;
+  --ob-canvas-raised: #141414;
+  --ob-hairline: #3d3a39;
+  --ob-hairline-soft: #b8b3b0;
+  --ob-ink: #f2f2f2;
+  --ob-ink-strong: #ffffff;
+  --ob-body: #bdbdbd;
+  --ob-mute: #8b949e;
+  --ob-primary: #00d992;
+  --ob-primary-soft: #2fd6a1;
+  --ob-primary-wash: rgba(0, 217, 146, 0.1);
+  --ob-glow: 0 0 15px rgba(92, 88, 85, 0.2);
+
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  background-color: #0f131c; /* surface */
-  color: #dfe2ee; /* on-surface */
-  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--ob-canvas);
+  color: var(--ob-ink);
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ===================== HEADER ===================== */
+.onboarding ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.onboarding ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.onboarding ::-webkit-scrollbar-thumb {
+  background: var(--ob-hairline);
+  border: 3px solid var(--ob-canvas);
+  border-radius: 9999px;
+}
+
+.onboarding ::-webkit-scrollbar-thumb:hover {
+  background: var(--ob-hairline-soft);
+}
+
+/* ================================================================
+ * HEADER — sticky, canvas + hairline
+ * ================================================================ */
+
 .onboarding-header {
-  position: fixed;
+  position: sticky;
   top: 0;
-  left: 0;
-  right: 0;
   z-index: 50;
-  background-color: rgba(15, 19, 28, 0.8); /* surface/80 */
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.04);
+  background: rgba(16, 16, 16, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--ob-hairline);
 }
 
 .onboarding-header-inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  max-width: 80rem;
+  gap: 20px;
+  max-width: 1280px;
   margin: 0 auto;
-  height: 4rem;
-  padding: 0 2rem;
+  min-height: 68px;
+  padding: 12px 32px;
 }
 
 .onboarding-brand {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 10px;
 }
 
 .onboarding-brand-logo {
-  height: 2rem;
+  height: 30px;
   width: auto;
   object-fit: contain;
 }
 
 .onboarding-brand-name {
-  font-size: 1.125rem;
-  letter-spacing: -0.015em;
-  font-weight: 600;
-  color: #dfe2ee;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  color: var(--ob-ink-strong);
 }
+
+/* ---------- Step nav (eyebrow) ---------- */
 
 .onboarding-stepnav {
   display: none;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.25rem 0.5rem;
-  background-color: #181c24;
-  border-radius: 0.5rem;
+  gap: 6px;
+  padding: 4px;
+  background: var(--ob-canvas-soft);
+  border: 1px solid var(--ob-hairline);
+  border-radius: 8px;
 }
 
-@media (min-width: 768px) {
+@media (min-width: 900px) {
   .onboarding-stepnav {
     display: flex;
   }
 }
 
 .onboarding-stepnav-item {
-  font-family: "JetBrains Mono", "Inter", monospace;
-  font-size: 0.6875rem;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  padding: 0.1875rem 0.75rem;
-  border-radius: 0.5rem;
-  transition: color 150ms ease, background-color 150ms ease;
+  padding: 6px 12px;
+  border-radius: 6px;
+  color: var(--ob-mute);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  transition: background 140ms ease, color 140ms ease;
 }
 
 .onboarding-stepnav-item--active {
-  background-color: #8083ff;
-  color: #0d0096;
-}
-
-.onboarding-stepnav-item--muted {
-  color: #c7c4d7;
+  background: var(--ob-primary-wash);
+  color: var(--ob-primary);
 }
 
 .onboarding-stepnav-item--muted:hover {
-  color: #dfe2ee;
+  color: var(--ob-ink);
 }
 
 .onboarding-stepnav-sep {
-  color: #464554;
-  font-size: 0.75rem;
+  color: var(--ob-hairline);
+  font-size: 14px;
   user-select: none;
 }
+
+/* ---------- Header right ---------- */
 
 .onboarding-header-right {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 14px;
 }
 
 .onboarding-skip {
-  font-family: "JetBrains Mono", "Inter", monospace;
-  font-size: 0.8125rem;
+  font-family: inherit;
+  font-size: 14px;
   font-weight: 500;
-  letter-spacing: -0.01em;
-  color: #c7c4d7;
+  color: var(--ob-mute);
   background: transparent;
   border: none;
-  padding: 0;
+  padding: 8px 4px;
   cursor: pointer;
-  transition: color 150ms ease;
+  transition: color 140ms ease;
 }
 
 .onboarding-skip:hover {
-  color: #dfe2ee;
+  color: var(--ob-primary-soft);
+}
+
+.onboarding-skip:focus-visible {
+  outline: 2px solid var(--ob-primary-soft);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .onboarding-divider {
   display: none;
-  height: 1rem;
+  height: 18px;
   width: 1px;
-  background-color: #262a33;
+  background: var(--ob-hairline);
 }
 
 @media (min-width: 640px) {
@@ -154,188 +211,158 @@
 }
 
 .onboarding-avatar {
-  width: 2rem;
-  height: 2rem;
+  width: 34px;
+  height: 34px;
   border-radius: 9999px;
   object-fit: cover;
-  box-shadow: 0 0 0 1px rgba(70, 69, 84, 0.3);
+  background: var(--ob-canvas-soft);
+  border: 1px solid var(--ob-hairline);
 }
 
-/* ===================== MAIN ===================== */
+.onboarding-avatar--fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ob-primary-soft);
+}
+
+.onboarding-avatar--fallback .material-symbols-outlined {
+  font-size: 20px;
+}
+
+/* ================================================================
+ * MAIN
+ * ================================================================ */
+
 .onboarding-main {
   flex: 1;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  padding-top: 4rem; /* bù cho header cố định */
-  background-color: #0f131c;
+  align-items: center;
+  padding: 48px 32px 64px;
 }
 
 .onboarding-shell {
-  position: relative;
   width: 100%;
-  overflow: hidden;
+  max-width: 900px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem 1rem;
+  gap: 28px;
 }
 
-@media (min-width: 768px) {
-  .onboarding-shell {
-    padding: 2rem;
-  }
-}
+/* ================================================================
+ * HERO INTRO — eyebrow + display headline
+ * ================================================================ */
 
-/* ambient glow */
-.onboarding-glow {
-  position: absolute;
-  border-radius: 9999px;
-  filter: blur(48px);
-  pointer-events: none;
-  z-index: -1;
-}
-
-.onboarding-glow--top {
-  top: 2.5rem;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 620px;
-  height: 280px;
-  background-color: rgba(128, 131, 255, 0.1);
-}
-
-.onboarding-glow--side {
-  top: 12rem;
-  right: 25%;
-  width: 340px;
-  height: 200px;
-  background-color: rgba(78, 222, 163, 0.05);
-  filter: blur(32px);
-}
-
-.onboarding-card {
-  position: relative;
-  z-index: 10;
-  width: 100%;
-  max-width: 48rem; /* max-w-3xl */
-  display: flex;
-  flex-direction: column;
-  gap: 2rem;
-}
-
-/* ----- intro ----- */
 .onboarding-intro {
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 0.5rem;
+  gap: 14px;
 }
 
+/* Eyebrow pill — accent DUY NHẤT cho live dot + nhãn */
 .onboarding-badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.25rem 0.75rem;
+  gap: 8px;
+  padding: 5px 14px;
+  border: 1px solid var(--ob-hairline);
   border-radius: 9999px;
-  background-color: #262a33;
-  color: #c0c1ff;
-  font-family: "JetBrains Mono", "Inter", monospace;
-  font-size: 0.6875rem;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  background: var(--ob-canvas-soft);
+  color: var(--ob-primary-soft);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
 }
 
 .onboarding-badge-dot {
-  width: 0.5rem;
-  height: 0.5rem;
+  width: 7px;
+  height: 7px;
   border-radius: 9999px;
-  background-color: #4edea3;
-  animation: onboarding-pulse 1.4s ease-in-out infinite;
+  background: var(--ob-primary);
+  box-shadow: 0 0 0 3px var(--ob-primary-wash);
+  animation: onboarding-pulse 2.2s ease-in-out infinite;
 }
 
 @keyframes onboarding-pulse {
   0%,
   100% {
     opacity: 1;
-    transform: scale(1);
+    box-shadow: 0 0 0 3px var(--ob-primary-wash);
   }
   50% {
-    opacity: 0.6;
-    transform: scale(0.85);
+    opacity: 0.65;
+    box-shadow: 0 0 0 6px rgba(0, 217, 146, 0.04);
   }
 }
 
 .onboarding-title {
-  font-size: 1.875rem;
-  line-height: 2.25rem;
-  letter-spacing: -0.03em;
+  max-width: 22ch;
+  margin: 0;
+  color: var(--ob-ink-strong);
+  font-size: 40px;
   font-weight: 600;
-  color: #dfe2ee;
-  max-width: 32rem;
-  margin: 0.5rem 0 0;
+  letter-spacing: -0.8px;
+  line-height: 1.15;
 }
 
-@media (min-width: 768px) {
+@media (max-width: 767px) {
   .onboarding-title {
-    font-size: 2.5rem;
-    line-height: 3rem;
+    font-size: 30px;
+    letter-spacing: -0.5px;
   }
 }
 
 .onboarding-subtitle {
-  font-size: 1rem;
-  line-height: 1.5;
-  letter-spacing: -0.01em;
-  color: #c7c4d7;
-  max-width: 36rem;
-  margin: 0.5rem 0 0;
+  max-width: 62ch;
+  margin: 0;
+  color: var(--ob-body);
+  font-size: 16px;
+  line-height: 1.65;
 }
 
-/* rhythm bars */
+/* ---------- rhythm bars (code-ish accent) ---------- */
+
 .onboarding-rhythm {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding-top: 0.5rem;
+  gap: 12px;
+  margin-top: 4px;
 }
 
 .onboarding-rhythm-label {
-  font-family: "JetBrains Mono", "Inter", monospace;
-  font-size: 0.6875rem;
-  color: #908fa0;
+  color: var(--ob-mute);
+  font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
 }
 
 .onboarding-rhythm-bars {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
-  height: 0.75rem;
-  padding: 0 0.5rem;
+  gap: 4px;
+  height: 18px;
+  padding: 0 10px;
+  background: var(--ob-canvas-soft);
+  border: 1px solid var(--ob-hairline);
   border-radius: 9999px;
-  background-color: #181c24;
 }
 
 .onboarding-rhythm-bar {
-  width: 0.25rem;
-  background-color: #c0c1ff;
+  width: 3px;
+  background: var(--ob-primary);
   border-radius: 9999px;
-  animation: onboarding-bounce 1s ease-in-out infinite;
-}
-
-.onboarding-rhythm-bar:nth-child(2) {
-  background-color: #4edea3;
+  animation: onboarding-bounce 1.1s ease-in-out infinite;
 }
 
 .onboarding-rhythm-bar:nth-child(3) {
-  background-color: #8083ff;
+  background: var(--ob-primary-soft);
 }
 
 .onboarding-rhythm-bar:nth-child(4) {
-  background-color: #6ffbbe;
+  background: var(--ob-hairline-soft);
 }
 
 @keyframes onboarding-bounce {
@@ -348,70 +375,148 @@
   }
 }
 
-/* ----- step sections ----- */
+/* ================================================================
+ * CARD — hairline chrome (Level 1)
+ * ================================================================ */
+
+.onboarding-card {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  padding: 36px;
+  background: var(--ob-canvas);
+  border: 1px solid var(--ob-hairline);
+  border-radius: 8px;
+}
+
+@media (max-width: 640px) {
+  .onboarding-card {
+    padding: 22px 18px;
+    gap: 26px;
+  }
+}
+
+/* ================================================================
+ * PROGRESS — 3 bước, dùng hairline + primary cho phần đã điền
+ * ================================================================ */
+
+.onboarding-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.onboarding-progress__step {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.onboarding-progress__bar {
+  height: 3px;
+  background: var(--ob-hairline);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.onboarding-progress__bar--done {
+  background: var(--ob-primary);
+}
+
+.onboarding-progress__label {
+  color: var(--ob-mute);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+}
+
+.onboarding-progress__step--active .onboarding-progress__label {
+  color: var(--ob-primary);
+}
+
+/* ================================================================
+ * STEPS
+ * ================================================================ */
+
 .onboarding-steps {
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  gap: 36px;
 }
 
 .onboarding-step {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 16px;
+}
+
+/* Divider giữa các bước — hairline, không dùng shadow */
+.onboarding-step + .onboarding-step {
+  padding-top: 36px;
+  border-top: 1px solid var(--ob-hairline);
 }
 
 .onboarding-step-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 16px;
   flex-wrap: wrap;
 }
 
 .onboarding-step-title {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 12px;
 }
 
 .onboarding-step-number {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border: 1px solid var(--ob-primary);
   border-radius: 9999px;
-  background-color: #8083ff;
-  color: #0d0096;
-  font-family: "JetBrains Mono", "Inter", monospace;
-  font-size: 0.6875rem;
+  background: var(--ob-primary-wash);
+  color: var(--ob-primary);
+  font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
   font-weight: 600;
 }
 
 .onboarding-step h2 {
-  font-size: 1.125rem;
-  line-height: 1.625rem;
-  font-weight: 500;
-  letter-spacing: -0.015em;
-  color: #dfe2ee;
   margin: 0;
+  color: var(--ob-ink-strong);
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  line-height: 1.4;
 }
 
 .onboarding-step-hint {
-  font-family: "JetBrains Mono", "Inter", monospace;
-  font-size: 0.6875rem;
-  color: #908fa0;
+  padding: 4px 10px;
+  border: 1px solid var(--ob-hairline);
+  border-radius: 9999px;
+  color: var(--ob-mute);
+  font-size: 12px;
+  font-weight: 500;
 }
 
-/* ----- role cards (4 ô) ----- */
+/* ================================================================
+ * ROLE CARDS — feature-card chrome
+ * ================================================================ */
+
 .onboarding-role-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 0.75rem;
+  gap: 14px;
 }
 
-@media (min-width: 768px) {
+@media (min-width: 700px) {
   .onboarding-role-grid {
     grid-template-columns: 1fr 1fr;
   }
@@ -420,27 +525,43 @@
 .onboarding-role-card {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 14px;
   text-align: left;
-  padding: 1rem;
-  border-radius: 0.75rem;
-  background-color: #181c24;
-  border: 1px solid transparent;
+  padding: 20px;
+  border: 1px solid var(--ob-hairline);
+  border-radius: 8px;
+  background: var(--ob-canvas);
   cursor: pointer;
-  transition: background-color 200ms ease, border-color 200ms ease,
-    box-shadow 200ms ease, transform 200ms ease;
   font-family: inherit;
   color: inherit;
+  transition: border-color 160ms ease, box-shadow 160ms ease,
+    background 160ms ease, transform 160ms ease;
 }
 
 .onboarding-role-card:hover:not(.onboarding-role-card--active) {
-  background-color: #1c2028;
+  border-color: var(--ob-hairline-soft);
+  box-shadow: var(--ob-glow);
+  transform: translateY(-1px);
 }
 
+.onboarding-role-card:focus-visible {
+  outline: 2px solid var(--ob-primary-soft);
+  outline-offset: 2px;
+}
+
+/* Active — 2px primary border (green-divider-band motif) */
 .onboarding-role-card--active {
-  background-color: #262a33;
-  border-color: rgba(128, 131, 255, 0.4);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+  border-color: var(--ob-primary);
+  background: linear-gradient(
+    180deg,
+    var(--ob-primary-wash) 0%,
+    var(--ob-canvas) 60%
+  );
+}
+
+.onboarding-role-card--active:hover {
+  border-color: var(--ob-primary);
+  box-shadow: 0 0 15px rgba(0, 217, 146, 0.15);
 }
 
 .onboarding-role-top {
@@ -454,38 +575,40 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 0.5rem;
-  background-color: #31353e;
-  color: #c7c4d7;
-  transition: transform 200ms ease, background-color 200ms ease,
-    color 200ms ease;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--ob-hairline);
+  border-radius: 8px;
+  background: var(--ob-canvas-soft);
+  color: var(--ob-body);
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
 }
 
 .onboarding-role-icon .material-symbols-outlined {
-  font-size: 1.375rem;
+  font-size: 24px;
 }
 
 .onboarding-role-card:hover .onboarding-role-icon:not(.onboarding-role-icon--active) {
-  color: #c0c1ff;
+  border-color: var(--ob-hairline-soft);
+  color: var(--ob-ink);
 }
 
 .onboarding-role-icon--active {
-  background-color: rgba(128, 131, 255, 0.2);
-  color: #c0c1ff;
-  transform: scale(1.05);
+  border-color: var(--ob-primary);
+  background: var(--ob-primary-wash);
+  color: var(--ob-primary);
 }
 
+/* Check indicator — primary fill */
 .onboarding-role-check {
   display: none;
   align-items: center;
   justify-content: center;
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 24px;
+  height: 24px;
   border-radius: 9999px;
-  background-color: #c0c1ff;
-  color: #1000a9;
+  background: var(--ob-primary);
+  color: #101010;
 }
 
 .onboarding-role-check--active {
@@ -493,66 +616,78 @@
 }
 
 .onboarding-role-check .material-symbols-outlined {
-  font-size: 0.875rem;
+  font-size: 16px;
   font-weight: 700;
 }
 
 .onboarding-role-title {
-  font-size: 1.125rem;
-  line-height: 1.625rem;
-  letter-spacing: -0.015em;
-  font-weight: 600;
-  color: #dfe2ee;
   margin: 0;
+  color: var(--ob-ink-strong);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  line-height: 1.4;
 }
 
 .onboarding-role-desc {
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-  letter-spacing: -0.005em;
-  color: #c7c4d7;
-  margin: 0.25rem 0 0;
+  margin: 6px 0 0;
+  color: var(--ob-body);
+  font-size: 14px;
+  line-height: 1.6;
 }
 
-/* ----- sector pills ----- */
+/* ================================================================
+ * SECTOR PILLS — button-pill-tag
+ * ================================================================ */
+
 .onboarding-tagcloud {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 10px;
 }
 
 .onboarding-tag {
-  padding: 0.5rem 1rem;
+  padding: 9px 16px;
+  border: 1px solid var(--ob-hairline);
   border-radius: 9999px;
-  background-color: #181c24;
-  color: #c7c4d7;
-  font-size: 0.875rem;
+  background: var(--ob-canvas);
+  color: var(--ob-body);
+  font-family: inherit;
+  font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  border: 1px solid transparent;
-  transition: background-color 150ms ease, color 150ms ease,
-    box-shadow 150ms ease;
-  font-family: inherit;
+  transition: border-color 140ms ease, color 140ms ease, background 140ms ease;
 }
 
 .onboarding-tag:hover:not(.onboarding-tag--active) {
-  background-color: #1c2028;
+  border-color: var(--ob-hairline-soft);
+  background: var(--ob-canvas-soft);
+  color: var(--ob-ink);
+}
+
+.onboarding-tag:focus-visible {
+  outline: 2px solid var(--ob-primary-soft);
+  outline-offset: 2px;
 }
 
 .onboarding-tag--active {
-  background-color: #8083ff;
-  color: #0d0096;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  border-color: var(--ob-primary);
+  background: var(--ob-primary-wash);
+  color: var(--ob-primary);
+  font-weight: 600;
 }
 
-/* ----- goal cards ----- */
+/* ================================================================
+ * GOAL CARDS — checkbox rows
+ * ================================================================ */
+
 .onboarding-goal-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 0.75rem;
+  gap: 12px;
 }
 
-@media (min-width: 768px) {
+@media (min-width: 700px) {
   .onboarding-goal-grid {
     grid-template-columns: 1fr 1fr;
   }
@@ -561,80 +696,92 @@
 .onboarding-goal {
   display: flex;
   align-items: flex-start;
-  gap: 0.75rem;
-  padding: 1rem;
-  border-radius: 0.75rem;
-  background-color: #181c24;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--ob-hairline);
+  border-radius: 8px;
+  background: var(--ob-canvas);
   cursor: pointer;
   user-select: none;
-  transition: background-color 200ms ease, box-shadow 200ms ease;
-  border: 1px solid transparent;
+  transition: border-color 160ms ease, box-shadow 160ms ease,
+    background 160ms ease;
 }
 
 .onboarding-goal:hover:not(.onboarding-goal--active) {
-  background-color: #1c2028;
+  border-color: var(--ob-hairline-soft);
+  box-shadow: var(--ob-glow);
 }
 
 .onboarding-goal--active {
-  background-color: #262a33;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  border-color: var(--ob-primary);
+  background: linear-gradient(
+    180deg,
+    var(--ob-primary-wash) 0%,
+    var(--ob-canvas) 70%
+  );
 }
 
 .onboarding-goal:focus-visible {
-  outline: 2px solid #8083ff;
+  outline: 2px solid var(--ob-primary-soft);
   outline-offset: 2px;
 }
 
 .onboarding-goal-box {
   flex-shrink: 0;
-  margin-top: 0.125rem;
-  width: 1.25rem;
-  height: 1.25rem;
-  border-radius: 0.25rem;
-  background-color: #31353e;
-  color: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background-color 150ms ease, color 150ms ease;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border: 1px solid var(--ob-hairline);
+  border-radius: 6px;
+  background: var(--ob-canvas-soft);
+  color: transparent;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
 }
 
 .onboarding-goal-box--active {
-  background-color: #c0c1ff;
-  color: #1000a9;
+  border-color: var(--ob-primary);
+  background: var(--ob-primary);
+  color: #101010;
 }
 
 .onboarding-goal-check {
-  font-size: 0.875rem;
+  font-size: 15px;
   font-weight: 700;
 }
 
 .onboarding-goal-text {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .onboarding-goal-title {
-  font-size: 1rem;
-  line-height: 1.5rem;
-  letter-spacing: -0.01em;
-  font-weight: 500;
-  color: #dfe2ee;
+  color: var(--ob-ink-strong);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
 }
 
 .onboarding-goal-desc {
-  font-size: 0.75rem;
-  line-height: 1.125rem;
-  color: #c7c4d7;
-  margin-top: 0.125rem;
+  margin-top: 4px;
+  color: var(--ob-mute);
+  font-size: 13px;
+  line-height: 1.55;
 }
 
-/* ===================== ACTIONS ===================== */
+/* ================================================================
+ * ACTIONS
+ * ================================================================ */
+
 .onboarding-actions {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  padding-top: 1rem;
+  gap: 14px;
+  padding-top: 28px;
+  border-top: 1px solid var(--ob-hairline);
 }
 
 .onboarding-actions-row {
@@ -642,8 +789,7 @@
   flex-direction: column-reverse;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  padding-top: 0.25rem;
+  gap: 12px;
 }
 
 @media (min-width: 640px) {
@@ -652,83 +798,99 @@
   }
 }
 
+/* Ghost-green tertiary action */
 .onboarding-skip-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-  color: #c7c4d7;
-  background: transparent;
+  min-height: 44px;
+  padding: 11px 18px;
   border: none;
-  padding: 0.75rem 1rem;
-  border-radius: 0.5rem;
-  cursor: pointer;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ob-primary-soft);
   font-family: inherit;
-  transition: color 150ms ease, background-color 150ms ease;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
 }
 
 .onboarding-skip-action:hover {
-  color: #dfe2ee;
-  background-color: #181c24;
+  background: var(--ob-primary-wash);
+  color: var(--ob-primary);
 }
 
+.onboarding-skip-action:focus-visible {
+  outline: 2px solid var(--ob-primary-soft);
+  outline-offset: 2px;
+}
+
+/* Primary CTA — accent DUY NHẤT */
 .onboarding-cta {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  padding: 0.75rem 2rem;
-  border-radius: 0.5rem;
-  background-color: #8083ff;
-  color: #0d0096;
-  font-size: 1.125rem;
-  line-height: 1.625rem;
-  font-weight: 600;
-  letter-spacing: -0.015em;
+  gap: 10px;
+  min-height: 52px;
+  padding: 13px 28px;
   border: none;
-  cursor: pointer;
-  box-shadow: 0 10px 25px -5px rgba(128, 131, 255, 0.2);
-  transition: background-color 150ms ease, transform 100ms ease;
+  border-radius: 6px;
+  background: var(--ob-primary);
+  color: #101010;
   font-family: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+  letter-spacing: -0.1px;
+  cursor: pointer;
+  transition: background 140ms ease, transform 100ms ease;
 }
 
 .onboarding-cta:hover {
-  background-color: rgba(128, 131, 255, 0.9);
+  background: var(--ob-primary-soft);
 }
 
 .onboarding-cta:active {
-  transform: scale(0.98);
+  transform: scale(0.985);
+}
+
+.onboarding-cta:focus-visible {
+  outline: 2px solid var(--ob-primary-soft);
+  outline-offset: 3px;
 }
 
 .onboarding-cta-icon {
-  font-size: 1.125rem;
+  font-size: 20px;
 }
 
 .onboarding-reassure {
-  font-size: 0.75rem;
-  line-height: 1.125rem;
-  color: #908fa0;
-  text-align: center;
   margin: 0;
+  color: var(--ob-mute);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
 }
 
-/* ===================== FOOTER ===================== */
+/* ================================================================
+ * FOOTER
+ * ================================================================ */
+
 .onboarding-footer {
-  background-color: #0a0e16; /* surface-container-lowest */
-  padding: 1rem 0;
-  box-shadow: 0 -1px 8px rgba(0, 0, 0, 0.02);
+  padding: 18px 0;
+  background: var(--ob-canvas);
+  border-top: 1px solid var(--ob-hairline);
 }
 
 .onboarding-footer-inner {
-  max-width: 80rem;
-  margin: 0 auto;
-  padding: 0 2rem;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: 8px;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 32px;
 }
 
 @media (min-width: 640px) {
@@ -741,22 +903,21 @@
 .onboarding-footer-right {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  color: #c7c4d7;
-  font-family: "JetBrains Mono", "Inter", monospace;
-  font-size: 0.6875rem;
-  font-weight: 500;
-  letter-spacing: 0.02em;
+  gap: 8px;
+  color: var(--ob-mute);
+  font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .onboarding-footer-dot {
-  width: 0.375rem;
-  height: 0.375rem;
+  width: 6px;
+  height: 6px;
   border-radius: 9999px;
-  background-color: #4edea3;
+  background: var(--ob-primary);
 }
 
 .onboarding-footer-right {
-  font-size: 0.75rem;
-  font-weight: 400;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
 }

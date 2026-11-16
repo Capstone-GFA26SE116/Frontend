@@ -62,8 +62,12 @@ export function LoginPage() {
   /**
    * Đích đi sau login: ưu tiên `from` > Landing (lần đầu) > Dashboard.
    * `from` là deep-link user muốn tới trước khi bị redirect về /login.
+   *
+   * Riêng tài khoản Admin → luôn vào thẳng `/admin` (xem `getPostLoginPath`).
+   * Vì `user` trong context chỉ cập nhật sau re-render, mỗi flow login sẽ
+   * gọi lại `getPostLoginPath(from, res.session.user)` với user chính xác
+   * từ response BE.
    */
-  const postLoginPath = getPostLoginPath(from);
 
   // Initialize Google Identity Services (GIS) — tạo nút đăng nhập Google thật.
   // Dùng accounts.id (Sign In With Google) thay vì initTokenClient vì BE expect idToken (JWT),
@@ -111,8 +115,11 @@ export function LoginPage() {
           // response.credential chính là idToken (JWT) — gửi cho BE để verify.
           const res = await loginWithGoogle(response.credential);
           setGoogleLoading(false);
-          if (res.ok) navigate(postLoginPath, { replace: true });
-          else setError(mapError(res.error));
+          if (res.ok) {
+            navigate(getPostLoginPath(from, res.session.user), { replace: true });
+          } else {
+            setError(mapError(res.error));
+          }
         },
         auto_select: false,
         cancel_on_tap_outside: true,
@@ -132,7 +139,7 @@ export function LoginPage() {
       }
     };
     document.head.appendChild(script);
-  }, [loginWithGoogle, navigate, postLoginPath]);
+  }, [loginWithGoogle, navigate, from]);
 
   function dismissSuccessBanner() {
     setShowSuccessBanner(false);
@@ -149,7 +156,8 @@ export function LoginPage() {
     const res = await login(email, password);
     setSubmitting(false);
     if (res.ok) {
-      navigate(postLoginPath, { replace: true });
+      // Dùng user từ response để quyết định đích: Admin → /admin.
+      navigate(getPostLoginPath(from, res.session.user), { replace: true });
     } else {
       setError(mapError(res.error));
     }
@@ -164,8 +172,11 @@ export function LoginPage() {
       // Mock fallback: gọi loginWithGoogle với placeholder token
       const res = await loginWithGoogle("mock_token");
       setGoogleLoading(false);
-      if (res.ok) navigate(postLoginPath, { replace: true });
-      else setError("Chế độ phát triển: Google OAuth chưa được cấu hình. Vui lòng thêm VITE_GOOGLE_CLIENT_ID vào .env");
+      if (res.ok) {
+        navigate(getPostLoginPath(from, res.session.user), { replace: true });
+      } else {
+        setError("Chế độ phát triển: Google OAuth chưa được cấu hình. Vui lòng thêm VITE_GOOGLE_CLIENT_ID vào .env");
+      }
       return;
     }
     // Có Client ID → forward click xuống nút GIS chính chủ đã được renderButton()

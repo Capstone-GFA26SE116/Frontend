@@ -1,6 +1,7 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
 import { useAuth } from "../auth/AuthContext";
+import { isAdminUser } from "../auth/types";
 import { readOnboarding } from "../pages/onboarding/storage";
 
 /**
@@ -13,7 +14,7 @@ import { readOnboarding } from "../pages/onboarding/storage";
  *   (Cho phép user vào thẳng /onboarding hoặc /logout khi đang ở trong này.)
  */
 export function ProtectedRoute({ children }: { children?: ReactNode }) {
-  const { isAuthenticated, isReady } = useAuth();
+  const { user, isAuthenticated, isReady } = useAuth();
   const location = useLocation();
 
   if (!isReady) {
@@ -43,10 +44,15 @@ export function ProtectedRoute({ children }: { children?: ReactNode }) {
   // và không thấy kết quả thanh toán.
   const isPaymentResult = location.pathname.startsWith("/payment/");
 
+  // ⚠️ Admin KHÔNG bị gate onboarding: tài khoản quản trị đi thẳng vào
+  // /admin và không cần thiết lập lịch cá nhân.
+  const isAdmin = isAdminUser(user);
+
   if (
     !location.pathname.startsWith("/onboarding") &&
     !location.pathname.startsWith("/logout") &&
     !isPaymentResult &&
+    !isAdmin &&
     readOnboarding() === null
   ) {
     return <Navigate to="/onboarding" replace />;
@@ -58,15 +64,52 @@ export function ProtectedRoute({ children }: { children?: ReactNode }) {
 }
 
 /**
+ * Bảo vệ khu vực quản trị — chỉ tài khoản có role `Admin`.
+ *
+ * BE cũng chặn ở tầng API (403 với user thường), nhưng FE chặn sớm để
+ * không lộ UI admin cho user không có quyền.
+ */
+export function AdminRoute({ children }: { children?: ReactNode }) {
+  const { user, isAuthenticated, isReady } = useAuth();
+  const location = useLocation();
+
+  if (!isReady) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">
+        Đang tải...
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{ from: location.pathname + location.search }}
+      />
+    );
+  }
+
+  if (!isAdminUser(user)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return children ? <>{children}</> : <Outlet />;
+}
+
+/**
  * Đã đăng nhập rồi thì không cho vào lại /login hoặc /register
  * -> tự chuyển sang /dashboard.
+ *
+ * Riêng tài khoản Admin -> chuyển thẳng sang /admin.
  */
 export function RedirectIfAuthenticated({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { isAuthenticated, isReady } = useAuth();
+  const { user, isAuthenticated, isReady } = useAuth();
   if (!isReady) {
     return (
       <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">
@@ -75,7 +118,9 @@ export function RedirectIfAuthenticated({
     );
   }
   if (isAuthenticated) {
-    return <Navigate to="/dashboard" replace />;
+    return (
+      <Navigate to={isAdminUser(user) ? "/admin" : "/dashboard"} replace />
+    );
   }
   return <>{children}</>;
 }

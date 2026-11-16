@@ -25,7 +25,16 @@ import {
 import { ProfilePage } from "./pages/profile/Profile";
 import { NotificationsPage } from "./pages/notifications/Notifications";
 import { GoogleCalendarCallbackPage } from "./pages/auth/GoogleCalendarCallback";
+import { AdminLayout } from "./pages/admin/AdminLayout";
+import { AdminOverview } from "./pages/admin/AdminOverview";
+import { AdminRevenue } from "./pages/admin/AdminRevenue";
+import { AdminUsers } from "./pages/admin/AdminUsers";
+import { AdminPlans } from "./pages/admin/AdminPlans";
+import { AdminTransactions } from "./pages/admin/AdminTransactions";
+import { AdminAuditLogs } from "./pages/admin/AdminAuditLogs";
+import { AdminMaintenance } from "./pages/admin/AdminMaintenance";
 import {
+  AdminRoute,
   ProtectedRoute,
   RedirectIfAuthenticated,
 } from "./router/ProtectedRoute";
@@ -51,6 +60,7 @@ function guarded(label: string, node: ReactNode) {
  *  /login             -> Trang đăng nhập (nếu đã login -> /dashboard)
  *  /register          -> Trang đăng ký (nếu đã login -> /dashboard)
  *  /onboarding        -> Cần đăng nhập; lần đầu sẽ được ProtectedRoute đẩy vào đây
+ *                       (trang fullscreen, KHÔNG dùng SiteLayout — có header/footer riêng)
  *  /dashboard         -> Cần đăng nhập + đã hoàn tất onboarding (Lịch ngày)
  *  /projects          -> Cần đăng nhập + đã hoàn tất onboarding (Không gian dự án)
  *  /projects/:id/milestones -> Quản lý milestone của dự án
@@ -61,6 +71,14 @@ function guarded(label: string, node: ReactNode) {
  *  /copilot           -> Cần đăng nhập + đã hoàn tất onboarding (AI Schedule Coordinator)
  *  /profile           -> Cần đăng nhập + đã hoàn tất onboarding (Hồ sơ người dùng)
  *  /notifications     -> Cần đăng nhập + đã hoàn tất onboarding (Hộp thư thông báo)
+ *
+ *  /admin             -> Khu vực quản trị — CHỈ role Admin (AdminRoute)
+ *  /admin/revenue     -> Báo cáo doanh thu
+ *  /admin/users       -> Quản lý người dùng
+ *  /admin/plans       -> Quản lý gói đăng ký
+ *  /admin/transactions-> Giao dịch & Hoá đơn
+ *  /admin/audit-logs  -> Nhật ký thao tác Admin
+ *  /admin/maintenance -> Đồng bộ trạng thái dữ liệu cũ
  *
  * Mọi route khác đều fallback về Landing.
  */
@@ -117,7 +135,18 @@ function App() {
         />
       </Route>
 
-      {/* Dashboard + Onboarding: cần auth, vẫn dùng SiteLayout để có
+      {/* Onboarding — trang khảo sát có header/footer RIÊNG (fullscreen, không
+          dùng SiteLayout để tránh trùng nav + header). Vẫn cần đăng nhập. */}
+      <Route
+        path="/onboarding"
+        element={
+          <ProtectedRoute>
+            {guarded("Thiết lập", <OnboardingPage />)}
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Dashboard + các trang trong app: cần auth, dùng SiteLayout để có
           header/footer chuẩn + nav active. ProtectedRoute bọc ngoài. */}
       <Route
         element={
@@ -126,7 +155,6 @@ function App() {
           </ProtectedRoute>
         }
       >
-        <Route path="/onboarding" element={guarded("Thiết lập", <OnboardingPage />)} />
         <Route path="/dashboard" element={guarded("Lịch ngày", <DashboardPage />)} />
         {/* Briefing hôm nay — AI service gộp task + lịch + khung giờ tập trung */}
         <Route
@@ -177,6 +205,43 @@ function App() {
         <Route
           path="/auth/google/callback"
           element={guarded("Google Calendar", <GoogleCalendarCallbackPage />)}
+        />
+      </Route>
+
+      {/* ============ Khu vực quản trị ============
+          Chỉ tài khoản role = Admin mới vào được (AdminRoute).
+          BE cũng chặn ở tầng API (403 với user thường). */}
+      <Route
+        element={
+          <AdminRoute>
+            <AdminLayout />
+          </AdminRoute>
+        }
+      >
+        <Route path="/admin" element={guarded("Tổng quan quản trị", <AdminOverview />)} />
+        <Route
+          path="/admin/revenue"
+          element={guarded("Báo cáo doanh thu", <AdminRevenue />)}
+        />
+        <Route
+          path="/admin/users"
+          element={guarded("Quản lý người dùng", <AdminUsers />)}
+        />
+        <Route
+          path="/admin/plans"
+          element={guarded("Gói đăng ký", <AdminPlans />)}
+        />
+        <Route
+          path="/admin/transactions"
+          element={guarded("Giao dịch & Hoá đơn", <AdminTransactions />)}
+        />
+        <Route
+          path="/admin/audit-logs"
+          element={guarded("Nhật ký thao tác", <AdminAuditLogs />)}
+        />
+        <Route
+          path="/admin/maintenance"
+          element={guarded("Bảo trì dữ liệu", <AdminMaintenance />)}
         />
       </Route>
 

@@ -29,6 +29,7 @@
   /* ---- Accent (single) ---- */
   --sch-primary: #00d992;
   --sch-primary-c: #00d992;
+  --sch-on-primary: #101010;         /* chữ trên nền primary */
   --sch-primary-soft: rgba(0, 217, 146, 0.1);
   --sch-primary-glow: rgba(0, 217, 146, 0.45);
   --sch-secondary: #2fd6a1;       /* primary-soft */
@@ -71,7 +72,8 @@
 
 .sch-container {
   position: relative;
-  width: min(1360px, 100% - 64px);
+  /* Lịch cần chiều ngang rộng để mỗi task card đủ chỗ hiện tên + subtask. */
+  width: min(1600px, 100% - 64px);
   margin: 0 auto;
   z-index: 1;
 }
@@ -483,6 +485,32 @@
   font-weight: 600;
 }
 
+/* Toggle cuối tuần — có icon + badge số việc đang ẩn */
+.sch-chip--toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.sch-chip--toggle .sch-icon-14 {
+  font-size: 15px !important;
+  opacity: 0.75;
+}
+.sch-chip__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 9999px;
+  background: var(--sch-primary);
+  color: var(--sch-on-primary, #101010);
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ===========================================================
  * Loading / error state
  * =========================================================== */
@@ -683,29 +711,84 @@
 .sch-ai__actions { display: flex; gap: 8px; flex-shrink: 0; }
 
 /* ===========================================================
- * Board layout (main + sidebar)
+ * Board layout (full width — không còn sidebar)
  * =========================================================== */
 .sch-board {
   display: grid;
   grid-template-columns: 1fr;
   gap: 20px;
 }
-@media (min-width: 1280px) {
-  .sch-board { grid-template-columns: minmax(0, 1fr) 320px; }
-}
 .sch-board__main { min-width: 0; }
-.sch-board__side {
+
+/*
+ * Dải công cụ ngang phía trên lịch (Google Calendar connect/sync).
+ * Trước đây nằm ở sidebar 320px → nay trải ngang để lịch rộng hết.
+ */
+.sch-board__toolbar {
   display: flex;
-  flex-direction: column;
-  gap: 16px;
+  align-items: stretch;
+  gap: 12px;
+  min-width: 0;
+}
+.sch-board__toolbar > .sch-gcal {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/*
+ * Dải ngang: card Google Calendar được bố trí 1 hàng — tiêu đề + trạng
+ * thái ở trái, nút hành động ở phải.
+ */
+.sch-board__toolbar .sch-gcal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "head  actions"
+    "body  actions";
+  align-items: center;
+  column-gap: 16px;
+  row-gap: 4px;
+  padding: 12px 14px;
+}
+.sch-board__toolbar .sch-gcal .sch-card__head {
+  grid-area: head;
+  margin-bottom: 0;
+}
+.sch-board__toolbar .sch-gcal .sch-card__title,
+.sch-board__toolbar .sch-gcal .sch-card__hint,
+.sch-board__toolbar .sch-gcal .sch-gcal__note,
+.sch-board__toolbar .sch-gcal .sch-gcal__error,
+.sch-board__toolbar .sch-gcal .sch-side-meta {
+  grid-area: body;
+  margin: 0;
+}
+.sch-board__toolbar .sch-gcal .sch-gcal__actions {
+  grid-area: actions;
+  flex-direction: row;
+  margin-top: 0;
+  align-items: center;
+}
+.sch-board__toolbar .sch-gcal .sch-gcal__btn {
+  width: auto;
+}
+.sch-board__toolbar .sch-gcal .sch-gcal__btn--full {
+  margin-top: 0;
+}
+.sch-board__toolbar .sch-gcal .sch-gcal__note,
+.sch-board__toolbar .sch-gcal .sch-gcal__error {
+  grid-area: body;
 }
 
 /* ===========================================================
- * Week board — 7 day columns
+ * Week board — 5 ngày làm việc (T2–T6) hoặc 7 ngày
+ *
+ * Số cột do `--sch-week-cols` điều khiển (set inline từ React theo
+ * trạng thái `showWeekend`). 5 cột → mỗi task card rộng gấp đôi so với
+ * 7 cột, tên subtask hiện đủ, không bị cắt.
  * =========================================================== */
 .sch-week {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--sch-week-cols, 5), minmax(0, 1fr));
   gap: 1px;
   background: var(--sch-line);
   border: 1px solid var(--sch-line);
@@ -718,7 +801,9 @@
   flex-direction: column;
   min-width: 0;
   min-height: 380px;
-  padding: 12px;
+  /* Padding rộng hơn → mỗi task card có "không gian thở" riêng, không dính
+     vào mép cột hay nhau. */
+  padding: 14px 14px 16px;
   background: var(--sch-bg);
   cursor: pointer;
   transition: background-color 160ms ease;
@@ -926,9 +1011,35 @@
 .sch-week__events {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  /*
+   * Khoảng cách giữa các task card trong cùng 1 ngày.
+   *
+   * 14px + 1 đường kẻ mảnh phân cách → mỗi card là 1 "vùng đọc" riêng biệt,
+   * mắt không bị rối khi lịch dày nhiều task.
+   */
+  gap: 14px;
   flex: 1;
   min-height: 0;
+}
+
+/*
+ * Đường kẻ phân cách giữa 2 task card liền kề (không vẽ sau card cuối).
+ *
+ * Chỉ 1 đoạn ngắn ở giữa (60px) → gợi ranh giới mà không chia khúc ngang
+ * cả cột, tránh cảm giác "bị cắt".
+ */
+.sch-week__events > * + * {
+  position: relative;
+}
+.sch-week__events > * + *::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: -8px;
+  width: 56px;
+  height: 1px;
+  background: var(--sch-line);
 }
 .sch-week__empty {
   font-size: 14px;
@@ -936,6 +1047,302 @@
   color: var(--sch-text-3);
   text-align: center;
   padding: 24px 0;
+}
+
+/* ===========================================================
+ * TaskCard — ô vuông lớn cho mỗi task trên lịch tuần
+ *
+ * Bố cục (theo yêu cầu):
+ *   ┌─────────────────────────┐
+ *   │ ▍ Tên task              │  ← tên task luôn ở trên
+ *   │   09:00 – 10:30 · Task  │  ← ngày giờ / nguồn
+ *   │   • Subtask 1  10:00–10:45│  ← subtask + khung giờ (nếu có)
+ *   │   • Subtask 2  11:00–12:00│
+ *   └─────────────────────────┘
+ *
+ * Chrome theo DESIGN.md: canvas-soft surface, hairline border,
+ * rounded-md (8px), shadow-free (Level 1 — Hairline).
+ * =========================================================== */
+.sch-card-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+.sch-card-wrap > .sch-tcard {
+  flex: 1;
+  min-width: 0;
+}
+.sch-card-wrap > .fc-slot-btn {
+  flex-shrink: 0;
+}
+
+/*
+ * ── TaskCard ──────────────────────────────────────────────
+ * Thiết kế: "1 task = 1 khối gọn", đọc theo thứ tự từ trên xuống:
+ *
+ *   ┌──────────────────────────────────────┐
+ *   │▍ Viết tài liệu API          [2]     │  ← tên task (đậm) + số việc con
+ *   │  08:00 – 10:30                       │  ← 1 dòng meta tối giản
+ *   │  ┆                                   │
+ *   │  ├ 08:00  Thiết kế endpoint          │  ← subtask: giờ · tên
+ *   │  └ 09:30  Viết OpenAPI spec         │
+ *   └──────────────────────────────────────┘
+ *
+ * Nguyên tắc chống rối mắt:
+ *   • 1 accent duy nhất (dải trái 2px) — không thêm dot/badge màu rác.
+ *   • Chỉ 1 dòng meta, không chip tròn rải rác.
+ *   • Subtask dạng timeline dọc: giờ căn trái (mono tabular), tên bên
+ *     phải, đường kẻ dọc nối các mốc → mắt quét theo 1 đường thẳng.
+ *   • Padding + gap rộng rãi để mỗi card là 1 "vùng đọc" riêng biệt.
+ */
+.sch-tcard {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+  padding: 13px 14px 13px 16px;
+  border: 1px solid var(--sch-line);
+  border-radius: var(--sch-r-sm);
+  background: var(--sch-low);
+  color: var(--sch-text);
+  font-family: var(--sch-sans);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+.sch-tcard:hover {
+  background: var(--sch-high);
+  border-color: var(--sch-bright);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+}
+.sch-tcard:focus-visible {
+  outline: 2px solid var(--sch-primary);
+  outline-offset: 2px;
+}
+
+/* Dải accent trạng thái ở mép trái — tín hiệu duy nhất, 2px */
+.sch-tcard__accent {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  border-radius: var(--sch-r-sm) 0 0 var(--sch-r-sm);
+  background: var(--sch-primary);
+}
+.sch-tcard__accent[data-tone="primary"] { background: var(--sch-primary); }
+.sch-tcard__accent[data-tone="secondary"] { background: var(--sch-sky); }
+.sch-tcard__accent[data-tone="tertiary"] { background: var(--sch-tertiary); }
+.sch-tcard__accent[data-tone="error"] { background: var(--sch-error); }
+.sch-tcard__accent[data-tone="muted"] { background: var(--sch-text-3); }
+.sch-tcard__accent[data-tone="sky"] { background: var(--sch-sky); }
+
+/* Task đang chạy → nhấp nháy nhẹ bằng dải accent (không đổi layout) */
+.sch-tcard[data-tone="primary"] {
+  border-color: rgba(0, 217, 146, 0.35);
+  background: linear-gradient(
+    90deg,
+    rgba(0, 217, 146, 0.06) 0%,
+    rgba(0, 217, 146, 0) 55%
+  );
+}
+
+.sch-tcard__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+/* ---------- Header: tên task + chip + số việc con ---------- */
+.sch-tcard__head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Tên task — 14px, weight 600, tối đa 2 dòng */
+.sch-tcard__title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 19px;
+  color: var(--sch-text);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-width: 0;
+  flex: 1;
+}
+
+/* Số việc con — chỉ 1 con số nhỏ, không viền (đỡ rối) */
+.sch-tcard__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 9999px;
+  background: var(--sch-primary-soft);
+  color: var(--sch-primary);
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 600;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Dấu đã hoàn thành — icon ✓ nhỏ, đặt cuối header */
+.sch-tcard__done {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--sch-primary);
+  align-self: center;
+}
+.sch-tcard__done .sch-icon-12 {
+  font-size: 14px !important;
+}
+
+/* ---------- Meta: 1 dòng tối giản ---------- */
+.sch-tcard__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--sch-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.sch-tcard__time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--sch-text-2);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.sch-tcard__time .sch-icon-12 {
+  font-size: 13px !important;
+  color: var(--sch-text-3);
+}
+
+/* Chip — chỉ dùng cho taskType / nguồn, viền rất nhạt */
+.sch-tcard__tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  border-radius: var(--sch-r-pill);
+  border: 1px solid var(--sch-line);
+  color: var(--sch-text-3);
+  font-size: 10px;
+  line-height: 15px;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+  align-self: center;
+}
+.sch-tcard__tag--muted {
+  color: var(--sch-text-3);
+  opacity: 0.75;
+}
+
+/* ---------- Subtask: timeline dọc ---------- */
+.sch-tcard__subs {
+  list-style: none;
+  margin: 3px 0 0;
+  padding: 7px 0 0;
+  border-top: 1px solid var(--sch-line-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/*
+ * Mỗi subtask = 1 dòng: [giờ] │ [tên]
+ *   - Cột giờ cố định 42px, mono tabular → các mốc thẳng hàng dọc.
+ *   - Đường kẻ dọc mảnh nối các mốc → mắt quét theo 1 đường.
+ */
+.sch-tcard__sub {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  position: relative;
+  padding-left: 9px;
+}
+
+/* Đường kẻ dọc nối các mốc subtask */
+.sch-tcard__sub::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--sch-line);
+}
+.sch-tcard__sub:last-child::before {
+  bottom: auto;
+  height: 9px;
+}
+
+/* Chấm đầu mốc trên đường kẻ */
+.sch-tcard__sub::after {
+  content: "";
+  position: absolute;
+  left: -3px;
+  top: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: var(--sch-text-3);
+  box-shadow: 0 0 0 3px var(--sch-low);
+}
+
+/* Giờ subtask — cột trái cố định, tabular */
+.sch-tcard__sub-time {
+  font-size: 11px;
+  line-height: 17px;
+  color: var(--sch-text-3);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.1px;
+}
+
+/* Tên subtask — ĐỦ TÊN, wrap tối đa 2 dòng (không cắt ngang) */
+.sch-tcard__sub-title {
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--sch-text-2);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* Task đã xong → mờ + gạch ngang (giữ hành vi cũ) */
+.sch-tcard--done { opacity: 0.5; }
+.sch-tcard--done .sch-tcard__title {
+  text-decoration: line-through;
+  text-decoration-color: var(--sch-text-3);
+}
+.sch-tcard--done .sch-tcard__sub::after {
+  background: var(--sch-line);
 }
 
 /* single-accent bar ở đáy cell */
@@ -1049,6 +1456,62 @@
   color: var(--sch-text-3);
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
+}
+
+/* ===========================================================
+ * Chip gộp: 1 task có nhiều subtask → hiển thị 1 ô duy nhất,
+ * tên task ở trên, bên dưới là từng việc con + khung giờ.
+ * =========================================================== */
+.sch-chip-event--grouped {
+  align-items: flex-start;
+  padding: 8px 10px;
+}
+
+/* Danh sách việc con bên dưới tên task. */
+.sch-chip-event__subs {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0 0 0 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border-left: 1px solid var(--sch-line);
+  padding-left: 8px;
+}
+
+.sch-chip-event__sub {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.sch-chip-event__sub-title {
+  color: var(--sch-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.sch-chip-event__sub-meta {
+  font-family: var(--sch-mono);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--sch-text-3);
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Việc con đã xong → mờ + gạch ngang (giống task đã xong). */
+.sch-chip-event__sub--done .sch-chip-event__sub-title {
+  color: var(--sch-text-3);
+  text-decoration: line-through;
+  text-decoration-color: var(--sch-text-3);
 }
 
 /* ===========================================================
@@ -2363,4 +2826,26 @@
   }
   .sch-month__dow { font-size: 11px; letter-spacing: 0.4px; }
   .sch-month__cell { min-height: 84px; padding: 6px; }
+}
+
+/* ===========================================================
+ * Task card — lưới tuần co lại ở màn hình nhỏ
+ *
+ * Mặc định lịch tuần chỉ hiện 5 ngày làm việc (T2–T6) → 5 cột. Ở màn
+ * hình nhỏ ta co còn 3 cột (rồi 2 cột) để task card vẫn đủ rộng đọc dễ.
+ *
+ * Lưu ý: `grid-template-columns` ở đây sẽ GHI ĐÈ giá trị inline
+ * `--sch-week-cols`; khi bật "Cuối tuần" (7 ngày) ở màn hình nhỏ thì vẫn
+ * dùng số cột theo breakpoint — chấp nhận hẹp hơn.
+ * =========================================================== */
+@media (max-width: 1100px) {
+  .sch-week {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .sch-week__day { min-height: 300px; }
+}
+@media (max-width: 900px) {
+  .sch-week {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }

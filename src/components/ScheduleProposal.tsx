@@ -42,6 +42,11 @@ const WARNING_LABELS: Record<string, string> = {
   past_deadline: "Đã quá hạn",
   no_free_slot: "Hết khung giờ trống",
   insufficient_time: "Không đủ thời gian trống",
+  // ⚠️ Thêm theo spec BE (Nov 2026) — chỉ cần hiện `message`, label chỉ để
+  // phân loại khi `message` rỗng.
+  day_overloaded: "Ngày này quá tải",
+  beyond_window: "Việc hạn xa hơn 7 ngày chưa xếp hết",
+  calendar_not_synced: "Google Calendar chưa đồng bộ",
 };
 
 /**
@@ -379,6 +384,14 @@ export function ProposalBody({
 
   return (
     <>
+      {/* Câu tóm tắt của AI về cả đợt xếp lịch (spec BE). */}
+      {proposal.explanation && (
+        <p className="sp-explanation">
+          <span className="material-symbols-outlined sp-icon-16">auto_awesome</span>
+          <span>{proposal.explanation}</span>
+        </p>
+      )}
+
       <SummaryChips
         groups={groups}
         activeFilter={filter}

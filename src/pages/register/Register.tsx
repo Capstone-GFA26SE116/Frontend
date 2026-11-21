@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import type { AuthError } from "../../auth/types";
 import { getPostLoginPath } from "../../auth/post-login-redirect";
+import { useGoogleIdentity } from "../../auth/useGoogleIdentity";
 import "./register.css";
 
 /**
@@ -70,21 +71,65 @@ export function RegisterPage() {
     }
   }
 
-  async function handleGoogle() {
-    setError(null);
-    setGoogleLoading(true);
-    // Nếu đã init GIS (có Client ID) → nút bấm sẽ trigger requestAccessToken
-    const clientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string) || "";
-    if (!clientId || clientId === "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com") {
-      // Mock fallback
-      const res = await loginWithGoogle("mock_token");
+  /*
+   * Google Identity Services — dùng chung hook với trang Login.
+   * Hook tự bắt lỗi 403 (origin chưa whitelist / thiếu Client ID) và báo
+   * rõ để user biết dùng form email thay vì bấm nút chết.
+   */
+  const google = useGoogleIdentity({
+    hostId: "register-google-signin-host",
+    onCredential: async (idToken: string) => {
+      setGoogleLoading(true);
+      const res = await loginWithGoogle(idToken);
       setGoogleLoading(false);
       if (res.ok) {
         // Admin đăng ký/đăng nhập Google → vào thẳng /admin.
         navigate(getPostLoginPath(undefined, res.session.user), { replace: true });
       } else {
-        setError("Chế độ phát triển: Google OAuth chưa được cấu hình. Vui lòng thêm VITE_GOOGLE_CLIENT_ID vào .env");
+        setError(mapError(res.error));
       }
+    },
+  });
+
+  const googleBroken =
+    google.status === "failed" || google.status === "unconfigured";
+  const googleReady = google.status === "ready";
+
+  async function handleGoogle() {
+    setError(null);
+
+    if (google.status === "unconfigured") {
+      setError(
+        "Đăng ký bằng Google chưa được cấu hình trên môi trường này. Vui lòng dùng email & mật khẩu.",
+      );
+      return;
+    }
+
+    if (google.status === "failed") {
+      setError(
+        google.message ??
+          "Đăng ký bằng Google đang lỗi. Vui lòng dùng email & mật khẩu.",
+      );
+      return;
+    }
+
+    if (google.status !== "ready") {
+      setError("Đang tải Google Sign-In, vui lòng thử lại sau giây lát.");
+      return;
+    }
+
+    // Forward click xuống nút GIS chính chủ đã render trong host.
+    setGoogleLoading(true);
+    const host = document.getElementById("register-google-signin-host");
+    const innerBtn = host?.querySelector<HTMLElement>(
+      'div[role="button"], button, iframe',
+    );
+    if (innerBtn) {
+      innerBtn.click();
+      window.setTimeout(() => setGoogleLoading(false), 800);
+    } else {
+      setGoogleLoading(false);
+      setError("Đang tải Google Sign-In, vui lòng thử lại sau giây lát.");
     }
   }
 
@@ -105,21 +150,55 @@ export function RegisterPage() {
 
       {/* Google SSO */}
       <div className="register-sso">
-        <button
-          type="button"
-          onClick={handleGoogle}
-          disabled={googleLoading || submitting}
-          className="metanoia-google-btn register-google-btn"
-        >
-          <GoogleIcon />
-          <span>
-            {googleLoading ? "Đang kết nối Google..." : "Đăng ký với Google"}
-          </span>
-        </button>
-        <div className="register-sso-hint">
-          <span className="register-sso-dot" aria-hidden="true" />
-          <span>Đồng bộ tức thì Google Calendar</span>
-        </div>
+        {/*
+          ⚠️ Host PHẢI luôn tồn tại trong DOM — hook renderButton vào đó.
+          Nếu ẩn luôn host, hook sẽ báo nhầm "không tìm thấy nút" thay vì
+          lỗi thật (403 / thiếu Client ID).
+        */}
+        <div
+          id="register-google-signin-host"
+          className="register-google-gis-host"
+          hidden={googleBroken}
+        />
+        {!googleBroken && (
+          <>
+            <button
+              type="button"
+              onClick={handleGoogle}
+              disabled={googleLoading || submitting || !googleReady}
+              className="metanoia-google-btn register-google-btn"
+            >
+              <GoogleIcon />
+              <span>
+                {googleLoading
+                  ? "Đang kết nối Google..."
+                  : googleReady
+                    ? "Đăng ký với Google"
+                    : "Đang tải Google Sign-In…"}
+              </span>
+            </button>
+            <div className="register-sso-hint">
+              <span className="register-sso-dot" aria-hidden="true" />
+              <span>Đồng bộ tức thì Google Calendar</span>
+            </div>
+          </>
+        )}
+
+        {googleBroken && (
+          <div className="register-banner register-banner--warning" role="status">
+            <span className="material-symbols-outlined register-banner-icon">
+              info
+            </span>
+            <div className="register-banner-body">
+              <strong>Đăng ký bằng Google đang không khả dụng</strong>
+              <span className="register-banner-text">
+                {google.message ??
+                  "Đăng ký bằng Google chưa được cấu hình trên môi trường này."}{" "}
+                Bạn vẫn có thể đăng ký bằng email &amp; mật khẩu bên dưới.
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Divider */}

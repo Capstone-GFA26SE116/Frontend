@@ -437,6 +437,25 @@ export function CopilotPage() {
     if (id) void loadTask(id);
   }
 
+  /**
+   * Mở trực tiếp 1 task từ URL `?task=<id>`.
+   *
+   * Dùng bởi trang Lịch sử chat: bấm 1 chat chia nhỏ task → điều hướng
+   * `/copilot?task=...` → Copilot tự nạp chat + RAG của task đó.
+   */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const wanted = params.get("task")?.trim();
+    if (!wanted) return;
+    if (wanted === taskId) return;
+    // Bọc async để setState chỉ chạy SAU await → không vi phạm
+    // react-hooks/set-state-in-effect.
+    void (async () => {
+      await loadTask(wanted);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadTask]);
+
   function handleSend(text?: string) {
     const raw = (text ?? draft).trim();
     if (!raw || !taskId) return;

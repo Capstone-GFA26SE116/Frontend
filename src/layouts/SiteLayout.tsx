@@ -177,6 +177,15 @@ export function SiteLayout() {
                 <span>AI Copilot</span>
               </NavLink>
               <NavLink
+                to="/analytics"
+                className={({ isActive }) =>
+                  "site-nav-link" + (isActive ? " site-nav-link--active" : "")
+                }
+              >
+                <span className="material-symbols-outlined site-nav-icon" aria-hidden="true">query_stats</span>
+                <span>Analytics</span>
+              </NavLink>
+              <NavLink
                 to="/pricing"
                 className={({ isActive }) =>
                   "site-nav-link" + (isActive ? " site-nav-link--active" : "")
@@ -299,6 +308,36 @@ export function SiteLayout() {
                           account_circle
                         </span>
                         <span>Profile</span>
+                      </Link>
+                      {/* Lịch sử chat — mọi cuộc chat (dự án + task) */}
+                      <Link
+                        to="/chat-history"
+                        className="site-user-menu-item"
+                        role="menuitem"
+                        onClick={() => setMenuOpen(false)}
+                      >
+                        <span
+                          className="material-symbols-outlined"
+                          aria-hidden="true"
+                        >
+                          forum
+                        </span>
+                        <span>Chat history</span>
+                      </Link>
+                      {/* Giờ hiệu quả — khung giờ tập trung tốt nhất */}
+                      <Link
+                        to="/productive-hours"
+                        className="site-user-menu-item"
+                        role="menuitem"
+                        onClick={() => setMenuOpen(false)}
+                      >
+                        <span
+                          className="material-symbols-outlined"
+                          aria-hidden="true"
+                        >
+                          bolt
+                        </span>
+                        <span>Giờ hiệu quả</span>
                       </Link>
                       {/* Khu vực quản trị — chỉ hiện với role Admin */}
                       {isAdminUser(user) && (

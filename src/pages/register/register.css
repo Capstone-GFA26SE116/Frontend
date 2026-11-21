@@ -166,6 +166,67 @@
   background-color: var(--voltagent-primary);
 }
 
+/* Host ẩn chứa button GIS (renderButton) — overlay tuyệt đối trên nút
+   primary. `pointer-events: none` để click đi xuống nút primary, nút primary
+   forward click sang nút GIS thật bên trong. */
+.register-google-gis-host {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  opacity: 0;
+  pointer-events: none;
+  z-index: -1;
+  width: 100%;
+  overflow: hidden;
+}
+.register-sso {
+  position: relative;
+}
+
+/* Cảnh báo: Google Sign-In không khả dụng (403 / thiếu Client ID). */
+.register-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: var(--voltagent-radius-sm);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  color: var(--voltagent-body);
+  margin-top: 0.25rem;
+}
+.register-banner--warning {
+  background-color: rgba(240, 180, 41, 0.1);
+  border: 1px solid rgba(240, 180, 41, 0.4);
+  color: var(--voltagent-canvas-text-soft, #f5f6f7);
+}
+.register-banner-icon {
+  color: #f0b429;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+  margin-top: 0.0625rem;
+}
+.register-banner-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  flex: 1;
+  min-width: 0;
+}
+.register-banner-body strong {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #f0b429;
+  letter-spacing: -0.005em;
+}
+.register-banner-text {
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  color: var(--voltagent-body);
+}
+
 /* ---------- Divider ---------- */
 .register-divider {
   position: relative;

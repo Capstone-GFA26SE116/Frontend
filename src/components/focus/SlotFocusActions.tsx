@@ -11,6 +11,7 @@ import {
   slotPhaseLabel,
   toSlotPhase,
 } from "./focus-logic";
+import { OverrunDialog } from "./OverrunDialog";
 import "./focus.css";
 
 /**
@@ -65,6 +66,8 @@ export interface SlotFocusActionsProps {
   compact?: boolean;
   /** Callback sau khi slot đổi trạng thái → refetch lịch. */
   onChanged?: () => void;
+  /** Tên task — hiện trong dialog "Cần thêm phút". */
+  taskTitle?: string | null;
 }
 
 export function SlotFocusActions({
@@ -76,9 +79,13 @@ export function SlotFocusActions({
   blockedByOtherSession,
   compact,
   onChanged,
+  taskTitle,
 }: SlotFocusActionsProps) {
   const { start, openStopDialog, busy } = useFocusActions();
   const phase = toSlotPhase(status);
+
+  /** Mở dialog "Cần thêm X phút" (spec BE bước 8). */
+  const [overrunOpen, setOverrunOpen] = useState(false);
 
   /*
    * Trạng thái task (và subtask của slot) — dùng để ẩn nút Start khi
@@ -163,16 +170,41 @@ export function SlotFocusActions({
 
   if (running) {
     return (
-      <button
-        type="button"
-        className={`fc-slot-btn fc-slot-btn--stop${compact ? " fc-slot-btn--compact" : ""}`}
-        onClick={handleStop}
-        disabled={busy}
-        title={phase === "Overrun" ? "Đã quá giờ — bấm để dừng" : "Dừng phiên làm việc"}
-      >
-        <span className="material-symbols-outlined">stop_circle</span>
-        <span>{phase === "Overrun" ? "Quá giờ — Dừng" : "Dừng"}</span>
-      </button>
+      <>
+        <button
+          type="button"
+          className={`fc-slot-btn fc-slot-btn--stop${compact ? " fc-slot-btn--compact" : ""}`}
+          onClick={handleStop}
+          disabled={busy}
+          title={phase === "Overrun" ? "Đã quá giờ — bấm để dừng" : "Dừng phiên làm việc"}
+        >
+          <span className="material-symbols-outlined">stop_circle</span>
+          <span>{phase === "Overrun" ? "Quá giờ — Dừng" : "Dừng"}</span>
+        </button>
+
+        {/* Spec BE bước 8: "Đang làm mà trễ giờ → Cần thêm X phút". */}
+        <button
+          type="button"
+          className={`fc-slot-btn fc-slot-btn--overrun${compact ? " fc-slot-btn--compact" : ""}`}
+          onClick={() => setOverrunOpen(true)}
+          disabled={busy}
+          title="Chưa xong — cần thêm thời gian"
+        >
+          <span className="material-symbols-outlined">more_time</span>
+          <span>Thêm phút</span>
+        </button>
+
+        <OverrunDialog
+          /* `key` gồm cả cờ mở → mỗi lần mở lại là 1 instance mới,
+             state (phút đã chọn, kết quả AI) không bị giữ lại từ lần trước. */
+          key={`${slotId}-${overrunOpen ? "open" : "closed"}`}
+          slotId={overrunOpen ? slotId : null}
+          taskTitle={taskTitle}
+          plannedMinutes={plannedMinutes}
+          onClose={() => setOverrunOpen(false)}
+          onApplied={onChanged}
+        />
+      </>
     );
   }
 

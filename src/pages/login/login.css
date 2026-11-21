@@ -901,6 +901,19 @@
   color: var(--voltagent-canvas-text-soft, #f5f6f7);
 }
 
+/* Cảnh báo: Google Sign-In không khả dụng (403 / thiếu Client ID). */
+.login-banner--warning {
+  background-color: rgba(240, 180, 41, 0.1);
+  border-color: rgba(240, 180, 41, 0.4);
+  color: var(--voltagent-canvas-text-soft, #f5f6f7);
+}
+.login-banner--warning .login-banner-icon {
+  color: #f0b429;
+}
+.login-banner--warning .login-banner-title {
+  color: #f0b429;
+}
+
 .login-banner-icon {
   color: var(--voltagent-primary);
   font-size: 1.25rem;

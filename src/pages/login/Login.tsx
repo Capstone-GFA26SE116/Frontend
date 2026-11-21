@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import type { AuthError } from "../../auth/types";
 import { getPostLoginPath } from "../../auth/post-login-redirect";
+import { useGoogleIdentity } from "../../auth/useGoogleIdentity";
 import "./login.css";
 
 /**
@@ -26,7 +27,6 @@ export function LoginPage() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { login, loginWithGoogle } = useAuth();
-  const initialized = useRef(false);
 
   const registeredFlag = searchParams.get("registered") === "1";
   // Trim để chắc chắn không có khoảng trắng thừa do URL encode sai.
@@ -69,77 +69,31 @@ export function LoginPage() {
    * từ response BE.
    */
 
-  // Initialize Google Identity Services (GIS) — tạo nút đăng nhập Google thật.
-  // Dùng accounts.id (Sign In With Google) thay vì initTokenClient vì BE expect idToken (JWT),
-  // còn initTokenClient chỉ trả access_token (chỉ dùng gọi Google API).
-  useEffect(() => {
-    if (initialized.current) return;
-    initialized.current = true;
-
-    const clientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string) || "";
-    if (!clientId || clientId === "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com") {
-      // Chưa có Client ID → giữ nút mock, không làm gì
-      return;
-    }
-
-    // Load GIS script
-    const script = document.createElement("script");
-    script.src = "https://accounts.google.com/gsi/client";
-    script.async = true;
-    script.defer = true;
-    script.onload = () => {
-      if (typeof window === "undefined") return;
-      const w = window as unknown as { google?: unknown };
-      if (!w.google) return;
-      const g = w.google as {
-        accounts: {
-          id: {
-            initialize: (config: Record<string, unknown>) => {
-              prompt: (opts?: Record<string, unknown>) => void;
-            };
-            renderButton: (
-              parent: HTMLElement,
-              options: Record<string, unknown>,
-            ) => void;
-          };
-        };
-      };
-      g.accounts.id.initialize({
-        client_id: clientId,
-        callback: async (response: { credential?: string; error?: string }) => {
-          if (response.error || !response.credential) {
-            setError("Đăng nhập Google thất bại. Vui lòng thử lại.");
-            setGoogleLoading(false);
-            return;
-          }
-          // response.credential chính là idToken (JWT) — gửi cho BE để verify.
-          const res = await loginWithGoogle(response.credential);
-          setGoogleLoading(false);
-          if (res.ok) {
-            navigate(getPostLoginPath(from, res.session.user), { replace: true });
-          } else {
-            setError(mapError(res.error));
-          }
-        },
-        auto_select: false,
-        cancel_on_tap_outside: true,
-      });
-
-      // Render nút Google chính chủ vào host đã có trong JSX.
-      const host = document.getElementById("google-signin-host");
-      if (host) {
-        g.accounts.id.renderButton(host, {
-          type: "standard",
-          theme: "outline",
-          size: "large",
-          text: "continue_with",
-          shape: "pill",
-          width: 320,
-        });
+  /*
+   * Google Identity Services (GIS) — dùng `accounts.id` (Sign In With Google)
+   * vì BE cần idToken (JWT), còn `initTokenClient` chỉ trả access_token.
+   *
+   * Hook tự lo: nạp script, render nút, và **bắt lỗi 403 từ Google** (origin
+   * chưa whitelist / Client ID sai) → trả về `status` + `message` để hiện
+   * hướng dẫn thay vì im lặng.
+   */
+  const google = useGoogleIdentity({
+    onCredential: async (idToken: string) => {
+      setGoogleLoading(true);
+      const res = await loginWithGoogle(idToken);
+      setGoogleLoading(false);
+      if (res.ok) {
+        navigate(getPostLoginPath(from, res.session.user), { replace: true });
+      } else {
+        setError(mapError(res.error));
       }
-    };
-    document.head.appendChild(script);
-  }, [loginWithGoogle, navigate, from]);
+    },
+  });
+
+  /** Google lỗi → ưu tiên dùng form email & mật khẩu. */
+  const googleBroken = google.status === "failed" || google.status === "unconfigured";
+  /** Nút Google có dùng được không (đã render xong). */
+  const googleReady = google.status === "ready";
 
   function dismissSuccessBanner() {
     setShowSuccessBanner(false);
@@ -165,28 +119,43 @@ export function LoginPage() {
 
   async function handleGoogle() {
     setError(null);
-    setGoogleLoading(true);
-    // Nếu chưa có Client ID → fallback về mock.
-    const clientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string) || "";
-    if (!clientId || clientId === "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com") {
-      // Mock fallback: gọi loginWithGoogle với placeholder token
-      const res = await loginWithGoogle("mock_token");
-      setGoogleLoading(false);
-      if (res.ok) {
-        navigate(getPostLoginPath(from, res.session.user), { replace: true });
-      } else {
-        setError("Chế độ phát triển: Google OAuth chưa được cấu hình. Vui lòng thêm VITE_GOOGLE_CLIENT_ID vào .env");
-      }
+
+    // Chưa cấu hình Client ID → báo rõ, cho user dùng form email.
+    if (google.status === "unconfigured") {
+      setError(
+        "Đăng nhập Google chưa được cấu hình trên môi trường này. Vui lòng dùng email & mật khẩu.",
+      );
       return;
     }
-    // Có Client ID → forward click xuống nút GIS chính chủ đã được renderButton()
-    // trong useEffect. Forwarding click (thay vì gọi prompt() trực tiếp) đảm bảo:
-    //   1. GIS popup OAuth mở đúng cách cho cả user chưa có session Google
-    //      (One Tap prompt() fail với "Not signed in" trong trường hợp này).
-    //   2. Toàn bộ flow OAuth (popup, callback id_token) do GIS xử lý — không bị
-    //      custom logic can thiệp.
-    //   3. Mọi error từ GIS sẽ bị catch bởi callback 'error' đã đăng ký trong
-    //      initialize() → hiển thị qua setError(...).
+
+    // Script/asset lỗi (403 do origin chưa whitelist, network fail) → báo rõ.
+    if (google.status === "failed") {
+      setError(
+        google.message ??
+          "Đăng nhập Google đang lỗi. Vui lòng dùng email & mật khẩu.",
+      );
+      return;
+    }
+
+    // Script chưa xong → bấm lại sau.
+    if (google.status !== "ready") {
+      setError("Đang tải Google Sign-In, vui lòng thử lại sau giây lát.");
+      return;
+    }
+
+    setGoogleLoading(true);
+    /*
+     * Có Client ID + script đã load → forward click xuống nút GIS chính chủ
+     * đã được renderButton().
+     *
+     * Forwarding click (thay vì gọi prompt() trực tiếp) đảm bảo:
+     *   1. GIS popup OAuth mở đúng cách cho cả user chưa có session Google
+     *      (One Tap prompt() fail với "Not signed in" trong trường hợp này).
+     *   2. Toàn bộ flow OAuth (popup, callback id_token) do GIS xử lý — không bị
+     *      custom logic can thiệp.
+     *   3. Mọi error từ GIS sẽ bị catch bởi callback 'error' đã đăng ký trong
+     *      initialize() → hiển thị qua setError(...).
+     */
     const host = document.getElementById("google-signin-host");
     const innerBtn = host?.querySelector<HTMLElement>(
       'div[role="button"], button, iframe',
@@ -252,25 +221,62 @@ export function LoginPage() {
 
       {/* Google SSO */}
       <div className="login-sso">
-        {/* Button primary hiển thị */}
-        <button
-          type="button"
-          id="google-signin-btn"
-          onClick={handleGoogle}
-          disabled={googleLoading || submitting}
-          className="metanoia-google-btn login-google-btn"
-        >
-          <GoogleIcon />
-          <span>
-            {googleLoading ? "Đang kết nối Google..." : "Tiếp tục với Google"}
-          </span>
-        </button>
-        {/* Host cho GIS renderButton — absolute overlay trên button primary */}
-        <div id="google-signin-host" className="login-google-gis-host" />
-        <div className="login-sso-hint">
-          <span className="login-sso-dot" aria-hidden="true" />
-          <span>Đồng bộ tức thì Google Calendar</span>
-        </div>
+        {/*
+          Nút primary chỉ hiện khi Google **dùng được** (đã render xong).
+          Khi Google lỗi (403 do origin chưa whitelist / thiếu Client ID) →
+          ẩn nút để user không bấm vào nút chết, kèm cảnh báo rõ nguyên nhân.
+
+          ⚠️ Host `google-signin-host` PHẢI luôn tồn tại trong DOM — hook
+          renderButton vào đó. Nếu ẩn luôn host, hook sẽ báo nhầm "không tìm
+          thấy nút" thay vì lỗi thật (403 / thiếu Client ID).
+        */}
+        <div
+          id="google-signin-host"
+          className="login-google-gis-host"
+          hidden={googleBroken}
+        />
+        {!googleBroken && (
+          <>
+            {/* Button primary hiển thị */}
+            <button
+              type="button"
+              id="google-signin-btn"
+              onClick={handleGoogle}
+              disabled={googleLoading || submitting || !googleReady}
+              className="metanoia-google-btn login-google-btn"
+            >
+              <GoogleIcon />
+              <span>
+                {googleLoading
+                  ? "Đang kết nối Google..."
+                  : googleReady
+                    ? "Tiếp tục với Google"
+                    : "Đang tải Google Sign-In…"}
+              </span>
+            </button>
+            <div className="login-sso-hint">
+              <span className="login-sso-dot" aria-hidden="true" />
+              <span>Đồng bộ tức thì Google Calendar</span>
+            </div>
+          </>
+        )}
+
+        {/* Cảnh báo khi Google không dùng được → hướng dẫn cụ thể. */}
+        {googleBroken && (
+          <div className="login-banner login-banner--warning" role="status">
+            <span className="material-symbols-outlined login-banner-icon">
+              info
+            </span>
+            <div className="login-banner-body">
+              <strong>Đăng nhập Google đang không khả dụng</strong>
+              <span className="login-banner-text">
+                {google.message ??
+                  "Đăng nhập Google chưa được cấu hình trên môi trường này."}{" "}
+                Bạn vẫn có thể đăng nhập bằng email &amp; mật khẩu bên dưới.
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Divider */}

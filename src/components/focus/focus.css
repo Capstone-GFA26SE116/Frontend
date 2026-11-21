@@ -863,6 +863,17 @@ button.fc-bar__task:hover {
   border-color: rgba(255, 107, 107, 0.65);
 }
 
+/* Nút "Thêm phút" (spec BE bước 8 — POST /schedule/overrun). */
+.fc-slot-btn--overrun {
+  border-color: rgba(240, 180, 41, 0.4);
+  background: rgba(240, 180, 41, 0.1);
+  color: var(--fc-warn);
+}
+.fc-slot-btn--overrun:hover:not(:disabled) {
+  background: rgba(240, 180, 41, 0.18);
+  border-color: rgba(240, 180, 41, 0.65);
+}
+
 .fc-slot-btn--compact {
   padding: 5px 10px;
   font-size: 12px;

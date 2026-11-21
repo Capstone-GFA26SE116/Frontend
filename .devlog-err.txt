@@ -1,0 +1,37 @@
+3:11:07 PM [vite] (client) [console.error] [2026-11-21T08:11:07.057Z] Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:11:07 PM [vite] (client) [console.error] [2026-11-21T08:11:07.057Z] Error: Failed to start the connection: Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:11:16 PM [vite] (client) [console.error] [2026-11-21T08:11:16.735Z] Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:11:16 PM [vite] (client) [console.error] [2026-11-21T08:11:16.735Z] Error: Failed to start the connection: Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:11:29 PM [vite] (client) [console.error] [2026-11-21T08:11:29.153Z] Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:11:29 PM [vite] (client) [console.error] [2026-11-21T08:11:29.154Z] Error: Failed to start the connection: Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:11:31 PM [vite] (client) [console.error] [2026-11-21T08:11:31.814Z] Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:11:31 PM [vite] (client) [console.error] [2026-11-21T08:11:31.814Z] Error: Failed to start the connection: Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:11:45 PM [vite] (client) [console.error] [2026-11-21T08:11:45.611Z] Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:11:45 PM [vite] (client) [console.error] [2026-11-21T08:11:45.611Z] Error: Failed to start the connection: Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:12:05 PM [vite] (client) [Unhandled error] Error: ResizeObserver loop completed with undelivered notifications.
+ > ../@vite/client:363:50
+
+3:12:05 PM [vite] (client) [console.error] [2026-11-21T08:12:05.972Z] Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:12:05 PM [vite] (client) [console.error] [2026-11-21T08:12:05.973Z] Error: Failed to start the connection: Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:12:06 PM [vite] (client) [console.error] [Projects] API error: { ok: false, error: "Không kết nối được máy chủ. Vui lòng kiểm tra mạng và thử lại. (Failed to fetch)" }
+3:12:07 PM [vite] (client) [console.error] [2026-11-21T08:12:07.941Z] Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:12:07 PM [vite] (client) [console.error] [2026-11-21T08:12:07.941Z] Error: Failed to start the connection: Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:12:10 PM [vite] (client) [console.error] [2026-11-21T08:12:10.091Z] Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:12:10 PM [vite] (client) [console.error] [2026-11-21T08:12:10.092Z] Error: Failed to start the connection: Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:12:10 PM [vite] (client) [console.error] [Projects] API error: { ok: false, error: "Không kết nối được máy chủ. Vui lòng kiểm tra mạng và thử lại. (Failed to fetch)" }
+3:12:12 PM [vite] (client) [console.error] [2026-11-21T08:12:12.292Z] Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:12:12 PM [vite] (client) [console.error] [2026-11-21T08:12:12.292Z] Error: Failed to start the connection: Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:12:12 PM [vite] (client) [console.error] [Projects] API error: { ok: false, error: "Không kết nối được máy chủ. Vui lòng kiểm tra mạng và thử lại. (Failed to fetch)" }
+3:12:14 PM [vite] (client) [console.error] [2026-11-21T08:12:14.119Z] Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:12:14 PM [vite] (client) [console.error] [Projects] API error: { ok: false, error: "Không kết nối được máy chủ. Vui lòng kiểm tra mạng và thử lại. (Failed to fetch)" }
+3:12:14 PM [vite] (client) [console.error] [2026-11-21T08:12:14.121Z] Error: Failed to start the connection: Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:12:42 PM [vite] (client) [console.error] [2026-11-21T08:12:42.043Z] Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:12:42 PM [vite] (client) [console.error] [2026-11-21T08:12:42.043Z] Error: Failed to start the connection: Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:13:12 PM [vite] (client) [console.error] [2026-11-21T08:13:12.096Z] Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:13:12 PM [vite] (client) [console.error] [2026-11-21T08:13:12.096Z] Error: Failed to start the connection: Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:13:27 PM [vite] (client) [console.error] [2026-11-21T08:13:27.103Z] Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:13:27 PM [vite] (client) [console.error] [Projects] API error: { ok: false, error: "Không kết nối được máy chủ. Vui lòng kiểm tra mạng và thử lại. (Failed to fetch)" }
+3:13:27 PM [vite] (client) [console.error] [2026-11-21T08:13:27.103Z] Error: Failed to start the connection: Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:13:28 PM [vite] (client) [console.error] [2026-11-21T08:13:28.971Z] Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:13:28 PM [vite] (client) [console.error] [2026-11-21T08:13:28.971Z] Error: Failed to start the connection: Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:13:29 PM [vite] (client) [console.error] [Projects] API error: { ok: false, error: "Không kết nối được máy chủ. Vui lòng kiểm tra mạng và thử lại. (Failed to fetch)" }

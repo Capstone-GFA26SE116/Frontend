@@ -878,10 +878,419 @@
 }
 .pac-context-list strong { color: var(--pac-ink); font-weight: 600; }
 
+/* ============================================================
+ * BỔ SUNG — theo spec BE "API AI cho màn hình"
+ *  - notes panel (Đã rõ / Còn thiếu / Nên hỏi / Rủi ro)
+ *  - nút Sao chép + nút Lên kế hoạch
+ *  - đính kèm file trong composer
+ *  - việc con (subtasks) + reason của milestone
+ *  - đề xuất lịch + lỗi xếp lịch + nhãn "đã thêm vào cột mốc"
+ * ============================================================ */
+
+/* ====== Nhãn "Đã áp dụng" trên draft card ====== */
+.pac-card-badge-applied {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--pac-primary-glow);
+  border-radius: var(--pac-r-xs);
+  background: var(--pac-primary-wash);
+  color: var(--pac-primary);
+  font-family: var(--pac-sans);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.pac-card-badge-applied .material-symbols-outlined { font-size: 13px !important; }
+
+/* ====== Nội dung AI + nút sao chép ====== */
+.pac-ai-content { position: relative; }
+.pac-bubble--ai { white-space: pre-line; }
+.pac-copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--pac-hairline);
+  border-radius: var(--pac-r-xs);
+  background: var(--pac-canvas);
+  color: var(--pac-mute);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+.pac-ai-content:hover .pac-copy-btn,
+.pac-copy-btn:focus-visible { opacity: 1; }
+.pac-copy-btn:hover { color: var(--pac-primary); border-color: var(--pac-primary); }
+.pac-copy-btn--done { opacity: 1; color: var(--pac-primary); border-color: var(--pac-primary); }
+.pac-copy-btn .material-symbols-outlined { font-size: 14px !important; }
+
+/* ====== Bảng ghi chú bên phải ====== */
+.pac-notes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+.pac-notes-group {
+  padding: 10px 12px;
+  border: 1px solid var(--pac-hairline);
+  border-radius: var(--pac-r-xs);
+  background: var(--pac-canvas);
+}
+.pac-notes-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--pac-mute);
+  margin-bottom: 6px;
+}
+.pac-notes-group-icon { font-size: 14px !important; }
+.pac-notes-group-count {
+  margin-left: auto;
+  font-family: var(--pac-mono);
+  font-size: 11px;
+  color: var(--pac-mute);
+}
+.pac-notes-group-list {
+  margin: 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--pac-body);
+}
+.pac-notes-group--clear { border-color: var(--pac-primary-glow); }
+.pac-notes-group--clear .pac-notes-group-head { color: var(--pac-primary); }
+.pac-notes-group--missing .pac-notes-group-head { color: var(--pac-primary-soft); }
+.pac-notes-group--questions .pac-notes-group-head { color: var(--pac-primary-soft); }
+.pac-notes-group--risks .pac-notes-group-head { color: var(--pac-error); }
+
+/* ====== Nút Lên kế hoạch (ready_to_plan) ====== */
+.pac-plan-btn { margin-top: 10px; align-self: flex-start; }
+.pac-btn--ready {
+  border-color: var(--pac-primary);
+  color: var(--pac-primary);
+  background: var(--pac-primary-wash);
+}
+.pac-btn--ready:hover:not(:disabled) {
+  background: var(--pac-primary);
+  color: var(--pac-on-primary);
+}
+
+/* ====== Đính kèm file ====== */
+.pac-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.pac-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 8px;
+  border: 1px solid var(--pac-hairline);
+  border-radius: var(--pac-r-xs);
+  background: var(--pac-canvas);
+  font-size: 12px;
+  color: var(--pac-body);
+  max-width: 240px;
+}
+.pac-attachment .material-symbols-outlined { font-size: 14px !important; }
+.pac-attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pac-attachment-remove {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--pac-mute);
+  cursor: pointer;
+}
+.pac-attachment-remove:hover { color: var(--pac-error); }
+.pac-attachment-remove .material-symbols-outlined { font-size: 14px !important; }
+
+.pac-attach-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 12px 16px;
+  border: 1px solid var(--pac-hairline);
+  border-radius: var(--pac-r-sm);
+  background: var(--pac-canvas);
+  color: var(--pac-ink);
+  font-family: var(--pac-sans);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+  cursor: pointer;
+  transition: border-color 150ms ease, color 150ms ease;
+}
+.pac-attach-btn:hover { border-color: var(--pac-primary); color: var(--pac-primary); }
+.pac-attach-btn .material-symbols-outlined { font-size: 18px !important; }
+.pac-attach-input { display: none; }
+
+/* ====== Reason của milestone ====== */
+.pac-ms-reason {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding: 0 12px 8px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--pac-mute);
+}
+.pac-ms-reason .material-symbols-outlined { font-size: 14px !important; flex-shrink: 0; }
+
+/* ====== Việc con (subtasks) ====== */
+.pac-task-subs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding-top: 6px;
+  margin-top: 2px;
+  border-top: 1px dashed var(--pac-hairline);
+}
+.pac-task-subs-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pac-mute);
+}
+.pac-task-subs-head .material-symbols-outlined { font-size: 14px !important; }
+.pac-task-subs-clear {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: var(--pac-mute);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.pac-task-subs-clear:hover { color: var(--pac-error); }
+.pac-subtask {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 14px;
+}
+.pac-subtask-icon { font-size: 14px !important; color: var(--pac-mute); flex-shrink: 0; }
+.pac-subtask-title {
+  flex: 1 1 8rem;
+  min-width: 6rem;
+  background: var(--pac-canvas);
+  border: 1px solid var(--pac-hairline);
+  border-radius: var(--pac-r-xs);
+  color: var(--pac-body);
+  font-family: var(--pac-sans);
+  font-size: 12px;
+  line-height: 18px;
+  padding: 5px 7px;
+  outline: 0;
+}
+.pac-subtask-title:focus { border-color: var(--pac-primary); }
+.pac-subtask-mins {
+  width: 62px;
+  background: var(--pac-canvas);
+  border: 1px solid var(--pac-hairline);
+  border-radius: var(--pac-r-xs);
+  color: var(--pac-body);
+  font-family: var(--pac-mono);
+  font-size: 12px;
+  line-height: 18px;
+  padding: 5px 6px;
+  outline: 0;
+}
+.pac-subtask-mins:focus { border-color: var(--pac-primary); }
+.pac-subtask-unit { font-size: 11px; color: var(--pac-mute); }
+.pac-task-subs-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--pac-mute);
+  font-family: var(--pac-sans);
+  font-size: 12px;
+  cursor: pointer;
+}
+.pac-task-subs-add:hover { color: var(--pac-primary); }
+.pac-task-subs-add .material-symbols-outlined { font-size: 14px !important; }
+
+/* ====== Nhãn "Đã thêm vào cột mốc" (reused) ====== */
+.pac-result-reused {
+  margin-left: 8px;
+  padding: 2px 6px;
+  border: 1px solid var(--pac-primary-glow);
+  border-radius: var(--pac-r-xs);
+  background: var(--pac-primary-wash);
+  color: var(--pac-primary);
+  font-family: var(--pac-sans);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* ====== Đề xuất lịch ====== */
+.pac-schedule {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--pac-primary-glow);
+  border-radius: var(--pac-r-xs);
+  background: var(--pac-primary-wash);
+}
+.pac-schedule-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pac-primary);
+}
+.pac-schedule-head .material-symbols-outlined { font-size: 16px !important; }
+.pac-schedule-explain {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--pac-body);
+}
+.pac-schedule-infeasible {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--pac-primary-soft);
+}
+.pac-schedule-slots {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pac-schedule-slots li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border: 1px solid var(--pac-hairline);
+  border-radius: var(--pac-r-xs);
+  background: var(--pac-canvas);
+}
+.pac-schedule-slot-time {
+  font-family: var(--pac-mono);
+  font-size: 12px;
+  color: var(--pac-primary);
+  white-space: nowrap;
+}
+.pac-schedule-slot-mins {
+  font-family: var(--pac-mono);
+  font-size: 11px;
+  color: var(--pac-mute);
+  white-space: nowrap;
+}
+.pac-schedule-slot-why {
+  flex: 1 1 12rem;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--pac-body);
+}
+
+/* ====== Lỗi xếp lịch ====== */
+.pac-schedule-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 107, 107, 0.3);
+  border-radius: var(--pac-r-xs);
+  background: var(--pac-error-wash);
+}
+.pac-schedule-error > .material-symbols-outlined {
+  font-size: 18px !important;
+  color: var(--pac-error);
+  flex-shrink: 0;
+}
+.pac-schedule-error-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 12rem;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--pac-body);
+}
+.pac-schedule-error-body strong { color: var(--pac-error); font-weight: 600; }
+
+/* ===========================================================
+ * ✅ Thông báo thành công — "Tạo và xếp lịch thành công"
+ * Hiện sau khi bấm "Áp dụng & xếp lịch" và không có `schedule_error`.
+ * =========================================================== */
+.pac-success {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(0, 217, 146, 0.35);
+  border-radius: var(--pac-r-xs);
+  background: rgba(0, 217, 146, 0.1);
+}
+.pac-success-icon {
+  font-size: 18px !important;
+  color: var(--pac-primary);
+  flex-shrink: 0;
+}
+.pac-success-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 12rem;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--pac-body);
+}
+.pac-success-body strong {
+  color: var(--pac-primary);
+  font-weight: 600;
+}
+.pac-btn--sm { padding: 6px 10px; min-height: 28px; font-size: 13px; }
+
 /* ====== Responsive ====== */
 @media (max-width: 640px) {
   .pac-container { padding: 20px 16px 0; }
   .pac-subbar-inner { padding: 12px 16px; }
   .pac-numbers { grid-template-columns: 1fr; }
   .pac-stream-h1 { font-size: 20px; }
+  .pac-notes { grid-template-columns: 1fr; }
+  .pac-composer-actions { flex-wrap: wrap; }
+  .pac-copy-btn { opacity: 1; }
 }

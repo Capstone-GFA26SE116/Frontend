@@ -10,6 +10,10 @@ import { OnboardingPage } from "./pages/onboarding/Onboarding";
 import { PricingPage } from "./pages/pricing/Pricing";
 import { ProjectsPage } from "./pages/projects/Projects";
 import { ProjectAiChatPage } from "./pages/project-ai-chat/ProjectAiChat";
+import { ProjectImportPage } from "./pages/project-import/ProjectImport";
+import { ChatHistoryPage } from "./pages/chat-history/ChatHistory";
+import { AnalyticsPage } from "./pages/analytics/Analytics";
+import { ProductiveHoursPage } from "./pages/productive-hours/ProductiveHours";
 import { ClientsPage } from "./pages/clients/Clients";
 import { ProjectDetailPage } from "./pages/project-detail/ProjectDetail";
 import { PlanningPage } from "./pages/planning/Planning";
@@ -162,6 +166,11 @@ function App() {
           element={guarded("Briefing hôm nay", <BriefingPage />)}
         />
         <Route path="/projects" element={guarded("Dự án", <ProjectsPage />)} />
+        {/* Nhập từ file → nhiều dự án (AI service: /projects/import/*) */}
+        <Route
+          path="/projects/import"
+          element={guarded("Nhập từ file", <ProjectImportPage />)}
+        />
         <Route path="/clients" element={guarded("Khách hàng", <ClientsPage />)} />
         <Route
           path="/projects/:projectId"
@@ -196,6 +205,18 @@ function App() {
         />
         <Route path="/schedule" element={guarded("Lịch tuần & tháng", <SchedulePage />)} />
         <Route path="/copilot" element={guarded("AI Copilot", <CopilotPage />)} />
+        {/* Lịch sử chat — GET /chat/conversations?q= */}
+        <Route
+          path="/chat-history"
+          element={guarded("Lịch sử chat", <ChatHistoryPage />)}
+        />
+        {/* Thống kê — GET /analytics/overview + /analytics/breakdown */}
+        <Route path="/analytics" element={guarded("Thống kê", <AnalyticsPage />)} />
+        {/* Giờ hiệu quả — GET/PUT /profile/productive-hours */}
+        <Route
+          path="/productive-hours"
+          element={guarded("Giờ hiệu quả", <ProductiveHoursPage />)}
+        />
         <Route path="/profile" element={guarded("Hồ sơ", <ProfilePage />)} />
         <Route
           path="/notifications"

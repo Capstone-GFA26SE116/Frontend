@@ -406,15 +406,18 @@ export function slotKey(slot: ProposedSlotDto): string {
 }
 
 /**
- * Gộp nhiều proposal (mỗi proposal ứng với 1 task) thành 1 để UI hiển thị chung.
+ * Chuẩn hoá response của `POST /schedule/propose` thành 1 object để UI dùng.
  *
- * Quan trọng: mỗi task có `proposal_id` riêng. Hàm này trả kèm
- * `proposalIdBySlot` để khi duyệt, ta gửi đúng `scheduleProposalId` của task
- * đó — dùng chung 1 id sẽ bị backend từ chối.
+ * ⚠️ Hiện luôn gọi với **1 request duy nhất** chứa tất cả task đã chọn
+ * (xem `run()` bên dưới) → `list` luôn có đúng 1 phần tử. Hàm vẫn nhận
+ * mảng để giữ API ổn định và dễ test.
  *
- * - `is_feasible`: true chỉ khi mọi proposal đều feasible.
- * - `missing_minutes`: tổng số phút thiếu của các proposal không feasible.
- * - `slots` / `warnings`: nối lại, giữ nguyên thứ tự.
+ * - `proposalIdBySlot`: map slot → `proposal_id` của request sinh ra nó. Khi
+ *   duyệt, ta gửi đúng `scheduleProposalId` tương ứng (dùng chung 1 id sẽ
+ *   bị backend từ chối).
+ * - `is_feasible` / `missing_minutes`: giữ nguyên theo response của BE. Lưu ý
+ *   cờ `is_feasible = false` chỉ áp cho **cả request**, không nên dùng nó để
+ *   báo "còn thiếu" cho toàn bộ danh sách — phải báo theo `warning.task_id`.
  */
 export function mergeProposals(
   list: ProposeScheduleResponse[],
@@ -533,28 +536,17 @@ export function useScheduleProposal(opts: {
   );
 
   /**
-   * Gọi AI đề xuất lịch cho 1 task.
-   *
-   * ⚠️ Gửi **đúng 1 task** mỗi lần. Nếu gom nhiều task vào 1 request, một
-   * task không xếp được (vd: quá hạn, hoặc `estimatedMinutes = 0`) sẽ kéo theo
-   * cả những task còn lại: AI trả `is_feasible: false` cho cả request và UI báo
-   * "Còn thiếu Xh so với ước lượng" dù các task kia hoàn toàn ổn. Tách từng
-   * task để một task hỏng không ảnh hưởng task khác.
-   */
-  const runOne = useCallback(
-    async (taskId: string): Promise<ProposeScheduleResponse | null> => {
-      const res = await proposeSchedule({ task_ids: [taskId], language: "vi" });
-      return res.ok ? res.data : null;
-    },
-    [],
-  );
-
-  /**
    * Gọi AI đề xuất lịch cho 1 danh sách task.
    *
-   * Mỗi task 1 request riêng, chạy song song → 1 proposal riêng cho mỗi task,
-   * rồi gộp lại để UI hiện chung. Task nào không xếp được sẽ không làm hỏng
-   * các task còn lại.
+   * ⚠️ Gửi **1 request duy nhất** chứa TẤT CẢ task đã chọn.
+   *
+   * Lý do (xác nhận từ BE — đọc DB, chỉ SELECT):
+   *   - Gọi song song mỗi task 1 request (`Promise.all`) → các request không
+   *     thấy nhau, cùng thấy 1 khung giờ trống nên **cùng chọn khung đó** →
+   *     slot trùng giờ. (BE đã thử 2 task trong 1 lần gọi → không trùng.)
+   *   - Tốn N lượt quota thay vì 1.
+   *   - Request sau tự đánh dấu proposal trước là `Superseded` → đề xuất cũ
+   *     đã được duyệt vẫn còn slot trong DB.
    *
    * `taskIds` bỏ trống → tự lấy mọi task Flexible chưa có lịch.
    */
@@ -583,33 +575,40 @@ export function useScheduleProposal(opts: {
       setExcluded(new Set());
       setCandidates(pool);
 
-      // Song song, 1 task = 1 request → kết quả tách bạch theo từng task.
-      const responses = await Promise.all(pool.map((t) => runOne(t.id)));
+      // ── 1 request gộp TẤT CẢ task ──────────────────────────────
+      // `try/finally` để `inFlight` luôn được reset, kể cả khi request throw
+      // → không bị kẹt ở trạng thái "đang chạy" sau khi lỗi mạng.
+      let res: Awaited<ReturnType<typeof proposeSchedule>>;
+      try {
+        res = await proposeSchedule({
+          task_ids: pool.map((t) => t.id),
+          language: "vi",
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Lỗi mạng khi gọi AI xếp lịch.";
+        setError(msg);
+        toast.error("Không lấy được đề xuất", msg);
+        return;
+      } finally {
+        inFlight.current = false;
+        setLoading(false);
+      }
 
-      inFlight.current = false;
-      setLoading(false);
-
-      const okList = responses.filter(Boolean) as ProposeScheduleResponse[];
-      const failedCount = pool.length - okList.length;
-
-      if (okList.length === 0) {
-        const msg = "Không gọi được AI cho bất kỳ task nào.";
+      if (!res.ok) {
+        // KHÔNG fallback gọi từng task riêng — đó chính là nguồn gây trùng
+        // giờ + tốn quota. Báo lỗi và để user thử lại.
+        const msg = res.error || "Không gọi được AI để xếp lịch.";
         setError(msg);
         toast.error("Không lấy được đề xuất", msg);
         return;
       }
 
-      const merged = mergeProposals(okList);
+      const merged = mergeProposals([res.data]);
       setProposal(merged);
 
       if (merged.slots.length === 0) {
         // Cảnh báo vẫn được giữ trong `merged.warnings` → UI hiện lý do cụ thể.
         toast.info("AI chưa tìm được chỗ trống", merged.explanation ?? undefined);
-      } else if (failedCount > 0) {
-        toast.info(
-          "Một số task không lấy được đề xuất",
-          `${okList.length}/${pool.length} task thành công.`,
-        );
       }
     },
     [
@@ -618,7 +617,6 @@ export function useScheduleProposal(opts: {
       subtasks,
       scheduledSubtaskIds,
       toast,
-      runOne,
     ],
   );
 

@@ -23,6 +23,7 @@
   --ink-strong: #ffffff;
   --body: #bdbdbd;
   --mute: #8b949e;
+  --danger: #ff6b6b;
   --font-sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: "SFMono-Regular", "JetBrains Mono", Menlo, Monaco, Consolas, monospace;
 
@@ -2015,6 +2016,23 @@
   min-height: 72px;
   line-height: 1.55;
 }
+/* Inline validation error — dòng chữ đỏ ngay dưới field. */
+.proj-cf__error {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  color: var(--danger);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: 0.01em;
+}
+.proj-cf__error .material-symbols-outlined {
+  font-size: 14px;
+  flex-shrink: 0;
+}
 
 /* --- Footer actions --- */
 .proj-cf__actions {
@@ -2372,6 +2390,23 @@
   flex-direction: column;
   gap: 6px;
 }
+/* Inline validation error — dòng chữ đỏ ngay dưới field. */
+.proj-field-error {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: -2px;
+  color: var(--danger);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: 0.01em;
+}
+.proj-field-error .material-symbols-outlined {
+  font-size: 14px;
+  flex-shrink: 0;
+}
 .proj-field-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -2406,6 +2441,17 @@
 }
 .proj-input:focus {
   border-color: var(--primary);
+}
+/* Input đang có lỗi validation → viền đỏ (đi kèm dòng chữ đỏ bên dưới). */
+.proj-input--error,
+.proj-input--error:focus {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px rgba(255, 107, 107, 0.14);
+}
+.proj-cf__input--error,
+.proj-cf__input--error:focus {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px rgba(255, 107, 107, 0.14);
 }
 .proj-input--textarea {
   resize: none;

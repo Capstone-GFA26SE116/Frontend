@@ -451,6 +451,25 @@
   line-height: 20px;
 }
 
+/* Câu tóm tắt của AI về cả đợt xếp lịch (spec BE). */
+.sp-explanation {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 11px 14px;
+  border-left: 2px solid var(--sp-primary);
+  border-radius: 0 var(--sp-r-sm) var(--sp-r-sm) 0;
+  background: var(--sp-primary-wash);
+  color: var(--sp-text);
+  font-size: 14px;
+  line-height: 20px;
+}
+.sp-explanation .material-symbols-outlined {
+  color: var(--sp-primary);
+  flex: 0 0 auto;
+}
+
 /* ---------- Slot list ---------- */
 .sp-check {
   display: inline-flex;

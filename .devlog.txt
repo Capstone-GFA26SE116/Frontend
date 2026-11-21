@@ -1,0 +1,28 @@
+
+> metanoia@0.0.0 dev
+> vite
+
+
+  VITE v8.3.3  ready in 467 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+3:10:16 PM [vite] (client) page reload public/preview-validation.html
+3:11:13 PM [vite] (client) page reload public/preview-validation.html
+3:11:26 PM [vite] (client) page reload public/preview-validation.html
+3:11:43 PM [vite] (client) page reload public/preview-validation.html
+3:12:03 PM [vite] (client) page reload public/preview-validation.html
+3:12:22 PM [vite] (client) page reload public/preview-validation.html
+3:13:25 PM [vite] (client) hmr update /src/pages/copilot/Copilot.tsx, /src/index.css
+3:13:25 PM [vite] (client) hmr update /src/index.css, /src/pages/copilot/Copilot.tsx, /src/pages/schedule/Schedule.tsx, /src/components/ScheduleProposal.tsx
+3:13:25 PM [vite] (client) hmr update /src/layouts/SiteLayout.tsx, /src/index.css
+3:13:25 PM [vite] (client) hmr update /src/auth/AuthContext.tsx, /src/layouts/SiteLayout.tsx, /src/pages/briefing/Briefing.tsx, /src/pages/dashboard/Dashboard.tsx, /src/pages/projects/Projects.tsx, /src/pages/pricing/Pricing.tsx, /src/pages/project-ai-chat/ProjectAiChat.tsx, /src/pages/project-import/ProjectImport.tsx, /src/pages/analytics/Analytics.tsx, /src/pages/chat-history/ChatHistory.tsx, /src/pages/productive-hours/ProductiveHours.tsx, /src/pages/clients/Clients.tsx, /src/pages/planning/Planning.tsx and 24 more
+3:13:25 PM [vite] (client) hmr update /src/index.css, /src/pages/project-ai-chat/project-ai-chat.css
+3:13:25 PM [vite] (client) hmr update /src/pages/login/Login.tsx, /src/index.css
+3:13:25 PM [vite] (client) hmr update /src/pages/register/Register.tsx, /src/index.css
+3:13:25 PM [vite] (client) hmr update /src/index.css, /src/pages/schedule/schedule.css
+3:13:25 PM [vite] (client) hmr update /src/App.tsx, /src/index.css
+3:13:25 PM [vite] (client) hmr update /src/pages/projects/Projects.tsx, /src/index.css
+3:13:25 PM [vite] (client) hmr update /src/pages/project-ai-chat/ProjectAiChat.tsx, /src/index.css
+3:13:25 PM [vite] (client) hmr update /src/index.css, /src/pages/login/login.css
+3:13:25 PM [vite] (client) hmr update /src/index.css, /src/components/ScheduleProposal.tsx

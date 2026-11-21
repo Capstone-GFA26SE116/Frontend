@@ -235,6 +235,11 @@ export function ProjectsPage() {
   >(null);
   const [clientBrowserSearch, setClientBrowserSearch] = useState("");
   const projectFormRef = useRef<HTMLFormElement | null>(null);
+  /**
+   * Lỗi validation hiển thị **inline (dòng chữ đỏ) ngay dưới mỗi field**.
+   * Key = tên field (`name` | `startDate` | `deadline` | `clientName`).
+   */
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [toast, setToast] = useState<{
     visible: boolean;
@@ -438,6 +443,41 @@ export function ProjectsPage() {
     setSearch("");
   }
 
+  /**
+   * Tạo props cho field để hiển thị thông báo lỗi **riêng cho từng field**
+   * ngay bên dưới input (dòng chữ đỏ), thay cho tooltip mặc định của
+   * browser ("Vui lòng điền vào trường này.").
+   *
+   * Cách sửa: `onInvalid` chặn lỗi mặc định, set message vào state để
+   * render inline. Khi user nhập lại → `onInput` xoá lỗi để lần submit sau
+   * không còn báo lỗi cũ.
+   */
+  const fieldValidation = useMemo(
+    () =>
+      (fieldName: string, message: string) => ({
+        onInvalid: (
+          e: FormEvent<HTMLInputElement | HTMLTextAreaElement>,
+        ) => {
+          // Chặn tooltip mặc định của browser.
+          e.preventDefault();
+          e.currentTarget.setCustomValidity("");
+          setFieldErrors((prev) => ({ ...prev, [fieldName]: message }));
+        },
+        onInput: (
+          e: FormEvent<HTMLInputElement | HTMLTextAreaElement>,
+        ) => {
+          e.currentTarget.setCustomValidity("");
+          setFieldErrors((prev) => {
+            if (!(fieldName in prev)) return prev;
+            const next = { ...prev };
+            delete next[fieldName];
+            return next;
+          });
+        },
+      }),
+    [],
+  );
+
   function showToast(
     text: string,
     icon = "check_circle",
@@ -460,19 +500,19 @@ export function ProjectsPage() {
 
     // Validate client — match BE schema (name required, dates required, clientId UUID)
     if (!name) {
-      showToast("Project name is required.", "error", "error");
+      showToast("Vui lòng nhập tên dự án.", "error", "error");
       return;
     }
     if (!startDate) {
-      showToast("Please pick a start date.", "error", "error");
+      showToast("Vui lòng chọn ngày bắt đầu.", "error", "error");
       return;
     }
     if (!deadline) {
-      showToast("Please pick a deadline.", "error", "error");
+      showToast("Vui lòng chọn ngày hạn.", "error", "error");
       return;
     }
     if (new Date(deadline) < new Date(startDate)) {
-      showToast("Deadline must be after the start date.", "error", "error");
+      showToast("Ngày hạn phải sau ngày bắt đầu.", "error", "error");
       return;
     }
     // clientId là optional — nếu rỗng thì gửi null (dự án nội bộ).
@@ -495,11 +535,7 @@ export function ProjectsPage() {
 
     if (!res.ok) {
       // res.error is a string error code from BE; show a friendly message
-      showToast(
-        `Failed to create project: ${res.error}`,
-        "error",
-        "error",
-      );
+      showToast(`Không tạo được dự án: ${res.error}`, "error", "error");
       return;
     }
 
@@ -510,8 +546,9 @@ export function ProjectsPage() {
     form.reset();
     setSelectedClientId("");
     setClientInlineOpen(false);
+    setFieldErrors({});
     showToast(
-      `Project "${res.data.name}" has been created!`,
+      `Đã tạo dự án "${res.data.name}"!`,
       "check_circle",
       "success",
     );
@@ -537,7 +574,7 @@ export function ProjectsPage() {
       const notes = (fd.get("notes") as string)?.trim() ?? "";
 
       if (!name) {
-        showToast("Client name is required.", "error", "error");
+        showToast("Vui lòng nhập tên khách hàng.", "error", "error");
         return;
       }
 
@@ -716,6 +753,17 @@ export function ProjectsPage() {
               </span>
               <span>New project</span>
             </button>
+            {/* Nhập từ file → nhiều dự án (AI service) */}
+            <Link
+              to="/projects/import"
+              className="proj-btn proj-btn--ghost proj-btn--with-label"
+              title="Upload file để AI đọc ra nhiều dự án"
+            >
+              <span className="material-symbols-outlined proj-btn-icon">
+                upload_file
+              </span>
+              <span>Import from file</span>
+            </Link>
             <button
               type="button"
               className="proj-btn proj-btn--ghost proj-btn--with-label"
@@ -1331,7 +1379,10 @@ export function ProjectsPage() {
               <button
                 type="button"
                 className="proj-modal-close"
-                onClick={() => setModalOpen(false)}
+                onClick={() => {
+                  setModalOpen(false);
+                  setFieldErrors({});
+                }}
                 aria-label="Close"
               >
                 <span className="material-symbols-outlined">close</span>
@@ -1351,11 +1402,20 @@ export function ProjectsPage() {
                   id="proj-f-name"
                   name="name"
                   type="text"
-                  className="proj-input"
+                  className={
+                    "proj-input" + (fieldErrors.name ? " proj-input--error" : "")
+                  }
                   placeholder="e.g. AI Copilot Workflow, Redesign B2B Portal…"
                   required
                   autoFocus
+                  {...fieldValidation("name", "Please enter a project name.")}
                 />
+                {fieldErrors.name && (
+                  <span className="proj-field-error">
+                    <span className="material-symbols-outlined">error</span>
+                    {fieldErrors.name}
+                  </span>
+                )}
               </div>
 
               <div className="proj-field">
@@ -1499,11 +1559,28 @@ export function ProjectsPage() {
                             id="client-f-name"
                             name="clientName"
                             type="text"
-                            className="proj-cf__input"
+                            className={
+                              "proj-cf__input" +
+                              (fieldErrors.clientName
+                                ? " proj-cf__input--error"
+                                : "")
+                            }
                             placeholder="e.g. Techcombank Bank…"
                             required
                             autoFocus
+                            {...fieldValidation(
+                              "clientName",
+                              "Please enter a client name.",
+                            )}
                           />
+                          {fieldErrors.clientName && (
+                            <span className="proj-cf__error">
+                              <span className="material-symbols-outlined">
+                                error
+                              </span>
+                              {fieldErrors.clientName}
+                            </span>
+                          )}
                         </div>
 
                         <div className="proj-cf__row">
@@ -1607,9 +1684,22 @@ export function ProjectsPage() {
                     id="proj-f-start"
                     name="startDate"
                     type="date"
-                    className="proj-input"
+                    className={
+                      "proj-input" +
+                      (fieldErrors.startDate ? " proj-input--error" : "")
+                    }
                     required
+                    {...fieldValidation(
+                      "startDate",
+                      "Please pick a start date.",
+                    )}
                   />
+                  {fieldErrors.startDate && (
+                    <span className="proj-field-error">
+                      <span className="material-symbols-outlined">error</span>
+                      {fieldErrors.startDate}
+                    </span>
+                  )}
                 </div>
                 <div className="proj-field">
                   <label className="proj-label" htmlFor="proj-f-deadline">
@@ -1619,9 +1709,22 @@ export function ProjectsPage() {
                     id="proj-f-deadline"
                     name="deadline"
                     type="date"
-                    className="proj-input"
+                    className={
+                      "proj-input" +
+                      (fieldErrors.deadline ? " proj-input--error" : "")
+                    }
                     required
+                    {...fieldValidation(
+                      "deadline",
+                      "Please pick a deadline.",
+                    )}
                   />
+                  {fieldErrors.deadline && (
+                    <span className="proj-field-error">
+                      <span className="material-symbols-outlined">error</span>
+                      {fieldErrors.deadline}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -1642,7 +1745,10 @@ export function ProjectsPage() {
                 <button
                   type="button"
                   className="proj-btn proj-btn--text"
-                  onClick={() => setModalOpen(false)}
+                  onClick={() => {
+                    setModalOpen(false);
+                    setFieldErrors({});
+                  }}
                 >
                   Cancel
                 </button>

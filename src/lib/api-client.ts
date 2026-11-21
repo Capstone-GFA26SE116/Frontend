@@ -187,7 +187,11 @@ function extractErrorCode(v: unknown, depth = 0): string | null {
   return null;
 }
 
-/** Chuỗi thông báo lỗi thân thiện cho từng mã HTTP của AI service. */
+/**
+ * Chuỗi thông báo lỗi thân thiện cho từng mã HTTP của AI service.
+ *
+ * Theo spec BE "API AI cho màn hình" — bảng "Mã lỗi chung".
+ */
 function friendlyStatusMessage(status: number): string {
   switch (status) {
     case 401:
@@ -202,9 +206,100 @@ function friendlyStatusMessage(status: number): string {
       return "Dữ liệu gửi lên không hợp lệ. Vui lòng thử lại.";
     case 429:
       return "Bạn đã dùng hết lượt AI cho lúc này. Vui lòng thử lại sau.";
+    case 502:
+      // Spec BE: "AI đang bận, thử lại" + nút Thử lại; không bị trừ lượt.
+      return "AI đang bận, thử lại sau.";
     default:
       return `Lỗi máy chủ (HTTP ${status}). Vui lòng thử lại sau.`;
   }
+}
+
+/**
+ * Dịch **mã lỗi nghiệp vụ** của AI service sang thông báo cho user.
+ *
+ * Spec BE (bảng "Mã lỗi chung"):
+ *   - 403 `plan_feature_locked` → "Tính năng này có ở gói cao hơn"
+ *   - 409 `no_active_plan`      → nhắc chọn gói
+ *   - 409 `project_limit`       → số còn tạo được + nút nâng cấp
+ *   - 409 `already_applied` / `not_latest_draft` / `project_closed` /
+ *     `domain_inactive`         → tải lại chat, báo ngắn
+ *
+ * Trả `null` nếu không khớp mã nào → caller dùng message mặc định.
+ */
+function translateAiError(
+  code: string | null,
+  body: unknown,
+): string | null {
+  if (!code) return null;
+
+  switch (code) {
+    case "plan_feature_locked":
+      return "Tính năng này có ở gói cao hơn. Hãy nâng cấp để dùng.";
+    case "no_active_plan":
+      return "Bạn chưa có gói đang hoạt động. Hãy chọn gói để dùng tiếp.";
+    case "project_limit": {
+      // Body: {code, limit, used, wanted}
+      const rec = (body ?? {}) as Record<string, unknown>;
+      const limit = Number(rec.limit);
+      const used = Number(rec.used);
+      const wanted = Number(rec.wanted);
+      if (Number.isFinite(limit) && Number.isFinite(used)) {
+        const left = Math.max(0, limit - used);
+        const suffix = Number.isFinite(wanted)
+          ? ` (bạn đang chọn ${wanted})`
+          : "";
+        return `Gói của bạn còn tạo được ${left} dự án${suffix}.`;
+      }
+      return "Bạn đã dùng hết số dự án của gói. Hãy nâng cấp gói.";
+    }
+    case "already_applied":
+      return "Bản nháp này đã được áp dụng. Hãy tải lại chat.";
+    case "not_latest_draft":
+      return "Bản nháp không còn là bản mới nhất. Hãy tải lại chat.";
+    case "project_closed":
+      return "Dự án đã đóng — không thể tiếp tục chat.";
+    case "domain_inactive":
+      return "Loại việc đã bị tắt. Hãy tải lại chat.";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Rút mã lỗi **của AI service** — khác `extractErrorCode` của BE ở chỗ
+ * chấp nhận cả mã `snake_case` thường (`plan_feature_locked`, `no_active_plan`…).
+ *
+ * Mã `UPPER_SNAKE` của BE vẫn được nhận.
+ */
+function extractAiErrorCode(v: unknown, depth = 0): string | null {
+  if (v == null || depth > 4) return null;
+  if (typeof v === "string") {
+    const s = v.trim();
+    // `snake_case` hoặc `UPPER_SNAKE`, tối thiểu 4 ký tự, có gạch dưới.
+    return /^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$|^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/.test(
+      s,
+    )
+      ? s
+      : null;
+  }
+  if (typeof v !== "object") return null;
+  if (Array.isArray(v)) {
+    for (const item of v) {
+      const got = extractAiErrorCode(item, depth + 1);
+      if (got) return got;
+    }
+    return null;
+  }
+  const rec = v as Record<string, unknown>;
+  for (const key of ["code", "errorCode", "error_code"]) {
+    const got = extractAiErrorCode(rec[key], depth + 1);
+    if (got) return got;
+  }
+  for (const key of ["detail", "details"]) {
+    const got = extractAiErrorCode(rec[key], depth + 1);
+    if (got) return got;
+  }
+  return null;
 }
 
 /* ---------- core fetch ---------- */
@@ -288,7 +383,11 @@ async function apiFetch<T>(
               ? { ok: false, error: msg, status: retry.status, details }
               : { ok: false, error: msg, status: retry.status };
           }
-          const data = await readJson(res);
+          /*
+           * ⚠️ Phải đọc `retry`, KHÔNG phải `res` — `res` là response 401 đã
+           * bị body-consume, đọc nó sẽ trả `null` dù request đã thành công.
+           */
+          const data = await readJson(retry);
           return { ok: true, data: data as T };
         }
       }
@@ -1535,6 +1634,10 @@ export interface ScheduleWarningDto {
   needed_minutes: number;
   free_minutes: number;
   message: string | null;
+  /** Ngày bị cảnh báo (ISO date) — BE có thể trả về. */
+  day?: string | null;
+  /** Tổng số phút công suất trong ngày — BE có thể trả về. */
+  capacity_minutes?: number | null;
 }
 
 export interface ProposeScheduleResponse {
@@ -1571,6 +1674,78 @@ export async function proposeSchedule(
     method: "POST",
     body: JSON.stringify({
       task_ids: ids,
+      language: body.language ?? "vi",
+    }),
+  });
+}
+
+/* ---------- POST /schedule/overrun — "Cần thêm X phút" ---------- */
+
+/** Loại overrun mà AI xử lý. */
+export type OverrunKind = "extend" | "reschedule" | "partial" | "none";
+
+/** 1 slot bị dời do kéo dài. */
+export interface OverrunMoveDto {
+  slot_id: string;
+  task_id: string | null;
+  subtask_id: string | null;
+  old_start: string;
+  old_end: string;
+  new_start: string;
+  new_end: string;
+  explanation: string | null;
+}
+
+/** 1 slot không xếp lại được. */
+export interface OverrunNotPlacedDto {
+  slot_id: string;
+  task_id: string | null;
+  reason: string | null;
+}
+
+export interface OverrunResponse {
+  kind: OverrunKind;
+  /** Slot đã được kéo dài. */
+  extended: boolean;
+  /** Các slot bị dời. */
+  moves: OverrunMoveDto[];
+  /** Các slot không xếp lại được. */
+  not_placed: OverrunNotPlacedDto[];
+  /** Slot có vượt qua cuối ngày không. */
+  past_day_end: boolean;
+  /** Câu tóm tắt cho user. */
+  summary: string | null;
+}
+
+/**
+ * POST /schedule/overrun
+ * User báo "Chưa xong, cần thêm X phút" cho 1 slot đang chạy.
+ *
+ * AI tính cách kéo dài/dời slot (không ghi thẳng vào DB). User đồng ý thì
+ * FE gọi Backend `PUT /api/schedule-slots/{id}` cho từng slot trong `moves`.
+ *
+ * `extra_minutes` 5–480.
+ */
+export async function reportOverrun(
+  body: {
+    slot_id: string;
+    extra_minutes: number;
+    language?: string;
+  },
+): Promise<ApiResult<OverrunResponse>> {
+  if (!body.slot_id) return { ok: false, error: "slot_id is required" };
+  const extra = Math.round(body.extra_minutes);
+  if (!Number.isFinite(extra) || extra < 5 || extra > 480) {
+    return {
+      ok: false,
+      error: "Số phút thêm phải từ 5 đến 480 phút.",
+    };
+  }
+  return aiFetch<OverrunResponse>("/schedule/overrun", {
+    method: "POST",
+    body: JSON.stringify({
+      slot_id: body.slot_id,
+      extra_minutes: extra,
       language: body.language ?? "vi",
     }),
   });
@@ -1998,17 +2173,27 @@ async function aiFetchRaw<T>(
       // `detail` của FastAPI có thể là OBJECT ({code, message}) — không được gán
       // thẳng vào biến string, nếu không React sẽ crash khi render.
       let msg = friendlyStatusMessage(res.status);
+      let parsed: unknown = null;
       try {
-        const body = rawText ? JSON.parse(rawText) : null;
-        msg = extractMessage(body) ?? msg;
+        parsed = rawText ? JSON.parse(rawText) : null;
       } catch {
-        // body không phải JSON (vd: HTML error page từ App Service proxy 502)
-        if (rawText) {
+        parsed = null;
+      }
+      // Ưu tiên thông báo theo mã lỗi nghiệp vụ của AI service (spec BE).
+      const code = extractAiErrorCode(parsed);
+      const translated = translateAiError(code, parsed);
+      if (translated) {
+        msg = translated;
+      } else {
+        const extracted = extractMessage(parsed);
+        if (extracted) msg = extracted;
+        else if (rawText) {
+          // body không phải JSON (vd: HTML error page từ App Service proxy 502)
           const snippet = rawText.slice(0, 120).replace(/\s+/g, " ").trim();
           if (snippet) msg = `Lỗi máy chủ (HTTP ${res.status}): ${snippet}`;
         }
       }
-      return { ok: false, error: msg, status: res.status };
+      return { ok: false, error: msg, status: res.status, errorCode: code ?? undefined };
     }
 
     // ok → parse JSON từ text đã đọc
@@ -2114,6 +2299,10 @@ export interface SimilarItem {
   estimate_source: EstimateSource;
   ratio: number | null;
   similarity: number;
+  /** Thời điểm hoàn thành (ISO) — spec BE: `finished_at`. */
+  finished_at?: string | null;
+  /** Lý do đã dừng — spec BE: `stop_reasons[]`. */
+  stop_reasons?: string[] | null;
 }
 
 export interface SummaryResponse {
@@ -2283,7 +2472,13 @@ export async function applyTaskChat(
  * ============================================================ */
 
 export type ProjectConversationStatus = "open" | "applied" | "closed";
-export type ProjectReplyKind = "question" | "draft";
+/**
+ * Loại tin AI.
+ * - `discuss`  : bàn bạc — có `content` + `notes` + cờ `ready_to_plan`.
+ * - `draft`    : bản nháp milestone + task.
+ * - `question` : AI hỏi lại (chỉ có `content`).
+ */
+export type ProjectReplyKind = "discuss" | "question" | "draft";
 export type ProjectEstimateSource = "user" | "ai";
 /** Lý do 1 task bị bỏ qua khi Apply (trùng việc đã có / trùng trong bản nháp). */
 export type ProjectSkipReason = "existing_task" | "in_draft";
@@ -2298,21 +2493,6 @@ export interface ProjectConversationDto {
 export interface ProjectDomainDto {
   id: string;
   name: string;
-}
-
-export interface ProjectDraftTaskDto {
-  key: string | null;
-  title: string;
-  domain: ProjectDomainDto;
-  estimated_minutes: number;
-  reason: string | null;
-}
-
-export interface ProjectDraftMilestoneDto {
-  key: string | null;
-  title: string;
-  deadline: string; // ISO date YYYY-MM-DD
-  tasks: ProjectDraftTaskDto[];
 }
 
 export interface ProjectDomainNumbersDto {
@@ -2335,6 +2515,8 @@ export interface ProjectDraftDto {
   reminders: string[];
   numbers: ProjectNumbersDto;
   warnings: string[];
+  /** `true` = bản nháp này đã được áp dụng → ẩn nút Apply, hiện nhãn. */
+  applied?: boolean;
 }
 
 export interface ProjectChatMessageDto {
@@ -2344,6 +2526,10 @@ export interface ProjectChatMessageDto {
   content: string;
   created_at: string;
   draft: ProjectDraftDto | null;
+  /** Ghi chú đi kèm cho tin loại `discuss`. */
+  notes?: ProjectChatNotesDto | null;
+  /** `true` → AI đã đủ thông tin, bật nút "Lên kế hoạch". */
+  ready_to_plan?: boolean;
 }
 
 export interface ProjectChatDto {
@@ -2373,6 +2559,11 @@ export interface AppliedProjectMilestoneDto {
   title: string;
   deadline: string;
   tasks: AppliedProjectTaskDto[];
+  /**
+   * `true` = milestone này đã tồn tại, task được **thêm vào** nó
+   * (thay vì tạo milestone mới) → UI hiện "Đã thêm vào cột mốc …".
+   */
+  reused?: boolean;
 }
 
 export interface SkippedProjectTaskDto {
@@ -2385,12 +2576,24 @@ export interface AppliedProjectBreakdownDto {
   skipped: SkippedProjectTaskDto[];
 }
 
+/** Việc con gửi kèm lúc Apply — bỏ field = giữ việc con của AI, `[]` = không việc con. */
+export interface EditedProjectSubtask {
+  title: string;
+  estimated_minutes: number;
+}
+
 /** Task sửa tay lúc Apply — cùng shape với `EditedMilestone` của AI service. */
 export interface EditedProjectTask {
   key?: string | null;
   title: string;
   domain_id: string;
   estimated_minutes: number;
+  /**
+   * Việc con.
+   * - `undefined` (bỏ field) → giữ nguyên việc con AI sinh.
+   * - `[]` → không có việc con.
+   */
+  subtasks?: EditedProjectSubtask[];
 }
 
 export interface EditedProjectMilestone {
@@ -2456,19 +2659,73 @@ export async function getProjectChat(
 export async function sendProjectChatMessage(
   conversationId: string,
   message: string,
+  mode: ProjectChatMode = "discuss",
+  documentIds?: string[] | null,
 ): Promise<ApiResult<ProjectChatTurnDto>> {
   if (!conversationId) return { ok: false, error: "conversation_id is required" };
   const trimmed = message.trim();
-  if (!trimmed) return { ok: false, error: "message is empty" };
-  if (trimmed.length > 8000) {
-    return {
-      ok: false,
-      error: "Tin nhắn vượt quá 8.000 ký tự. Vui lòng dán phần chính của brief.",
-    };
+
+  // `mode: "plan"` là nút "Lên kế hoạch" → message gửi lại để trống.
+  if (mode === "discuss") {
+    if (!trimmed) return { ok: false, error: "message is empty" };
+    if (trimmed.length > 8000) {
+      return {
+        ok: false,
+        error: "Tin nhắn vượt quá 8.000 ký tự. Vui lòng dán phần chính của brief.",
+      };
+    }
   }
+
+  const body: {
+    message: string;
+    mode: ProjectChatMode;
+    document_ids?: string[];
+  } = { message: trimmed, mode };
+  if (documentIds && documentIds.length > 0) body.document_ids = documentIds;
+
   return aiFetch<ProjectChatTurnDto>(
     `/chat/conversations/${encodeURIComponent(conversationId)}/messages`,
-    { method: "POST", body: JSON.stringify({ message: trimmed }) },
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+/**
+ * POST /chat/conversations/{conversation_id}/messages/files
+ * Gửi tin nhắn **kèm file đính kèm** — tối đa 3 file/tin.
+ *
+ * Dùng `multipart/form-data`:
+ *   - `message`   : nội dung tin (có thể rỗng nếu chỉ đính kèm file)
+ *   - `mode`      : "discuss" | "plan"
+ *   - `files[]`   : file thực (pdf, docx, txt, md, xlsx, csv)
+ *   - `document_ids[]`: id tài liệu đã có sẵn trong dự án
+ */
+export async function sendProjectChatMessageWithFiles(
+  conversationId: string,
+  message: string,
+  files: File[],
+  mode: ProjectChatMode = "discuss",
+  documentIds?: string[] | null,
+): Promise<ApiResult<ProjectChatTurnDto>> {
+  if (!conversationId) return { ok: false, error: "conversation_id is required" };
+  if (files.length === 0) {
+    return {
+      ok: false,
+      error: "Cần ít nhất 1 file để gửi. Dùng ô chat để gửi tin không kèm file.",
+    };
+  }
+  if (files.length > 3) {
+    return { ok: false, error: "Tối đa 3 file cho mỗi tin nhắn." };
+  }
+
+  const form = new FormData();
+  form.append("message", message.trim());
+  form.append("mode", mode);
+  for (const f of files) form.append("files[]", f);
+  for (const id of documentIds ?? []) form.append("document_ids[]", id);
+
+  return aiFetch<ProjectChatTurnDto>(
+    `/chat/conversations/${encodeURIComponent(conversationId)}/messages/files`,
+    { method: "POST", body: form },
   );
 }
 
@@ -2495,6 +2752,297 @@ export async function applyProjectBreakdown(
   return aiFetch<AppliedProjectBreakdownDto>(
     `/chat/conversations/${encodeURIComponent(conversationId)}/apply`,
     { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+/* ================================================================
+ * AI SERVICE — BỔ SUNG THEO SPEC "API AI cho màn hình (gửi FE)"
+ * ------------------------------------------------------------
+ * Các thay đổi so với bản cũ:
+ *  1. `mode` cho endpoint messages: "discuss" (ô chat) | "plan" (nút).
+ *  2. `notes` trong tin AI loại "discuss" + cờ `ready_to_plan`.
+ *  3. `reason` cho milestone, `subtasks[]` cho task trong bản nháp.
+ *  4. `apply-and-schedule` (nút chính) + `schedule` + `schedule_error`.
+ *  5. `reused` trên milestone kết quả Apply.
+ *  6. Nhập từ file: `/projects/import/preview` + `/projects/import`.
+ *  7. Đính kèm file trong chat: `/chat/conversations/{id}/messages/files`.
+ *  8. Lịch sử chat: `/chat/conversations?q=`.
+ * ================================================================ */
+
+/** Chế độ gửi tin nhắn — `discuss` (ô chat) hoặc `plan` (nút "Lên kế hoạch"). */
+export type ProjectChatMode = "discuss" | "plan";
+
+/**
+ * Ghi chú đi kèm tin AI loại `discuss`.
+ * Mỗi mảng là danh sách câu/ý dạng text do AI sinh ra.
+ */
+export interface ProjectChatNotesDto {
+  /** Đã rõ — những gì AI đã nắm được. */
+  clear?: string[] | null;
+  /** Còn thiếu — thông tin AI cần user bổ sung. */
+  missing?: string[] | null;
+  /** Nên hỏi thêm — câu hỏi gợi ý. */
+  questions?: string[] | null;
+  /** Rủi ro — điểm AI thấy dễ sót. */
+  risks?: string[] | null;
+}
+
+/** Việc con của 1 task trong bản nháp (chỉ có khi task > 2 giờ). */
+export interface ProjectDraftSubtaskDto {
+  title: string;
+  estimated_minutes: number;
+  reason: string | null;
+}
+
+/** 1 việc trong bản nháp — giờ có thêm `subtasks[]`. */
+export interface ProjectDraftTaskDto {
+  key: string | null;
+  title: string;
+  domain: ProjectDomainDto;
+  estimated_minutes: number;
+  reason: string | null;
+  /** Việc con — chỉ AI sinh khi task > 2 giờ. */
+  subtasks?: ProjectDraftSubtaskDto[] | null;
+}
+
+/** 1 cột mốc trong bản nháp — giờ có thêm `reason` (vì sao có giai đoạn này). */
+export interface ProjectDraftMilestoneDto {
+  key: string | null;
+  title: string;
+  deadline: string; // ISO date YYYY-MM-DD
+  /** Vì sao AI chia giai đoạn này. */
+  reason?: string | null;
+  tasks: ProjectDraftTaskDto[];
+}
+
+/* ---------- apply-and-schedule (nút chính) ---------- */
+
+/** Lý do xếp lịch thất bại sau khi việc đã được tạo. */
+export type ScheduleErrorCode =
+  | "quota_exceeded"
+  | "no_active_plan"
+  | "plan_feature_locked"
+  | "schedule_failed";
+
+/** Kết quả xếp lịch trả về từ `apply-and-schedule`. */
+export interface AppliedScheduleDto {
+  proposal_id: string | null;
+  is_feasible: boolean;
+  missing_minutes: number;
+  explanation: string | null;
+  slots: ProposedSlotDto[];
+  warnings: ScheduleWarningDto[];
+}
+
+/**
+ * Response của `POST /chat/conversations/{id}/apply-and-schedule`.
+ *
+ * ⚠️ Shape thật (đối chiếu OpenAPI của AI service):
+ *   201 {`applied`: AppliedResponse, `schedule`, `schedule_error`}
+ *
+ * Trong đó `applied` là **object** `{milestones[], skipped[]}` — KHÔNG phải
+ * boolean, và `milestones[]` **KHÔNG nằm ở top-level**.
+ *
+ * Endpoint `apply` (nút phụ "Chỉ áp dụng") trả thẳng `AppliedResponse`:
+ *   201 {`milestones[]`, `skipped[]`}
+ */
+export interface ApplyAndScheduleResponseDto {
+  /**
+   * Kết quả ghi bản nháp thành milestone + task.
+   * Có thể `null` nếu BE báo lỗi nghiệp vụ mà vẫn trả 200.
+   */
+  applied?: AppliedProjectBreakdownDto | null;
+  /** Đề xuất lịch — có thể `null` nếu không có gì để xếp. */
+  schedule?: AppliedScheduleDto | null;
+  /** Mã lỗi xếp lịch — việc vẫn đã được tạo. */
+  schedule_error?: ScheduleErrorCode | null;
+}
+
+/**
+ * POST /chat/conversations/{conversation_id}/apply-and-schedule
+ * **Nút chính**: ghi bản nháp thành Milestone + Task **và** xếp lịch luôn.
+ *
+ * Tốn 1 lượt AI (phần xếp lịch).
+ *
+ * - `milestones` = null → dùng nguyên bản nháp; truyền mảng → sửa tay.
+ * - `schedule_error` ≠ null → việc **đã được tạo**, chỉ chưa xếp được lịch
+ *   → UI hiện "Đã tạo việc, chưa xếp được lịch" + nút Xếp lịch.
+ */
+export async function applyAndScheduleProjectBreakdown(
+  conversationId: string,
+  messageId: string,
+  milestones?: EditedProjectMilestone[] | null,
+  language: "vi" | "en" = "vi",
+): Promise<ApiResult<ApplyAndScheduleResponseDto>> {
+  if (!conversationId) return { ok: false, error: "conversation_id is required" };
+  if (!messageId) return { ok: false, error: "message_id is required" };
+  const body: {
+    message_id: string;
+    milestones: EditedProjectMilestone[] | null;
+    language: "vi" | "en";
+  } = {
+    message_id: messageId,
+    milestones: milestones ?? null,
+    language,
+  };
+  return aiFetch<ApplyAndScheduleResponseDto>(
+    `/chat/conversations/${encodeURIComponent(conversationId)}/apply-and-schedule`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+/* ---------- Nhập từ file → nhiều dự án ---------- */
+
+/** Ngôn ngữ của file nhập vào. */
+export type ImportLanguage = "vi" | "en";
+
+/** 1 dự án AI đọc được từ file. */
+export interface ImportPreviewProjectDto {
+  name: string;
+  description: string | null;
+  deadline: string | null;
+  /** Dự án nằm ở đâu trong file (vd "Sheet Việc tháng 12, rows 2-3"). */
+  source: string | null;
+  /** Nội dung tóm tắt — hiện qua nút "Xem brief". */
+  brief: string | null;
+}
+
+/** Lý do file không đọc được (422 `{code, file}`). */
+export type ImportErrorCode =
+  | "unsupported_type"
+  | "no_text"
+  | "unreadable"
+  | "too_large";
+
+export interface ImportPreviewResponseDto {
+  file_name: string;
+  projects: ImportPreviewProjectDto[];
+  /** Cảnh báo (vd "file có 12 dự án nhưng gói chỉ còn 3 slot"). */
+  warnings: string[];
+  /** Số dự án tối đa được tạo — `null` = không giới hạn. */
+  project_limit: number | null;
+  /** Số dự án còn có thể tạo. */
+  projects_left: number | null;
+}
+
+/** 1 dự án sau khi tạo — kèm conversation để mở chat luôn. */
+export interface ImportedProjectDto {
+  project_id: string;
+  conversation_id: string | null;
+  name: string;
+}
+
+/** Request body của `POST /projects/import` — danh sách đã sửa. */
+export interface ImportProjectsRequest {
+  file_name: string;
+  language: ImportLanguage;
+  projects: Array<{
+    name: string;
+    description?: string | null;
+    deadline?: string | null;
+  }>;
+}
+
+/**
+ * POST /projects/import/preview
+ * Upload file (xlsx, csv, pdf, docx, txt, md — tối đa 20 MB) → AI đọc ra
+ * danh sách dự án để user xem trước & sửa. Tốn 1 lượt AI.
+ *
+ * Gói Free không dùng được bước xem trước (403 `plan_feature_locked`).
+ */
+export async function previewProjectImport(
+  file: File,
+  language: ImportLanguage = "vi",
+): Promise<ApiResult<ImportPreviewResponseDto>> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("language", language);
+  return aiFetch<ImportPreviewResponseDto>("/projects/import/preview", {
+    method: "POST",
+    body: form,
+  });
+}
+
+/**
+ * POST /projects/import
+ * Tạo dự án từ danh sách đã sửa ở bước xem trước. Không tốn lượt AI.
+ *
+ * 409 `project_limit` → gói hết chỗ tạo dự án (không dự án nào được tạo).
+ */
+export async function importProjects(
+  body: ImportProjectsRequest,
+): Promise<ApiResult<ImportedProjectDto[]>> {
+  if (!body.file_name) return { ok: false, error: "file_name is required" };
+  if (body.projects.length === 0) {
+    return { ok: false, error: "Cần ít nhất 1 dự án để tạo." };
+  }
+  return aiFetch<ImportedProjectDto[]>("/projects/import", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/* ---------- Lịch sử chat ---------- */
+
+/** Phạm vi của 1 cuộc chat trong lịch sử. */
+export type ChatHistoryScope = "project" | "task";
+
+/** Tin nhắn cuối cùng của 1 cuộc chat (để preview trong danh sách). */
+export interface ChatHistoryLastMessageDto {
+  role: ChatRole;
+  preview: string | null;
+  created_at: string;
+}
+
+/** 1 dòng trong danh sách lịch sử chat. */
+export interface ChatHistoryItemDto {
+  conversation_id: string;
+  scope: ChatHistoryScope;
+  /** Tên dự án — chỉ có khi `scope = "project"`. */
+  project?: { id: string; name: string } | null;
+  /** Task — chỉ có khi `scope = "task"`. */
+  task?: { id: string; name: string } | null;
+  status: string;
+  /** `true` → hiện nhãn "Đã áp dụng". */
+  applied: boolean;
+  message_count: number;
+  last_message: ChatHistoryLastMessageDto | null;
+  /** Vị trí khớp khi tìm kiếm — để tô đậm & cuộn tới đúng tin. */
+  match?: { message_id: string; snippet: string } | null;
+}
+
+export interface ChatHistoryResponseDto {
+  items: ChatHistoryItemDto[];
+  /** Còn trang sau không. */
+  has_more: boolean;
+}
+
+/**
+ * GET /chat/conversations?q=&limit=&offset=
+ * Lịch sử chat của user (chat dự án + chat chia nhỏ task), tin mới nhất trước.
+ * Không tốn lượt AI.
+ *
+ * - `q` ≤ 100 ký tự — tìm trong tin nhắn, tên dự án, tên task.
+ * - `limit` 1–50 (mặc định 20), `offset` 0–1000.
+ */
+export async function listChatHistory(params?: {
+  q?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<ApiResult<ChatHistoryResponseDto>> {
+  const qs = new URLSearchParams();
+  const q = (params?.q ?? "").trim();
+  if (q) qs.set("q", q.slice(0, 100));
+  if (params?.limit !== undefined) {
+    qs.set("limit", String(Math.max(1, Math.min(50, params.limit))));
+  }
+  if (params?.offset !== undefined) {
+    qs.set("offset", String(Math.max(0, Math.min(1000, params.offset))));
+  }
+  const suffix = qs.toString();
+  return aiFetch<ChatHistoryResponseDto>(
+    `/chat/conversations${suffix ? `?${suffix}` : ""}`,
+    { method: "GET" },
   );
 }
 
@@ -2585,6 +3133,182 @@ export async function getTodayBriefing(
   return aiFetch<BriefingResponse>(`/briefing/today?language=${lang}`, {
     method: "GET",
   });
+}
+
+/* ================================================================
+ * ANALYTICS — Thống kê (AI service, không tốn lượt AI)
+ * ----------------------------------------------------------
+ * GET /analytics/overview?range=&by=&limit=
+ * GET /analytics/breakdown?range=&by=&limit=
+ *
+ * - `range`: khoảng thời gian (vd "7d", "30d", "month").
+ * - `by`   : chi tiết theo loại việc / khách / dự án / task.
+ * - `limit`: giới hạn số dòng breakdown.
+ * ================================================================ */
+
+/** Khoảng thời gian của báo cáo. */
+export type AnalyticsRange = "7d" | "30d" | "90d" | "month" | "quarter";
+
+/** Chiều chi tiết của báo cáo. */
+export type AnalyticsBreakdownBy = "domain" | "client" | "project" | "task";
+
+/** 1 dòng breakdown — mức hay ước thiếu theo 1 nhóm. */
+export interface AnalyticsBreakdownItemDto {
+  /** Nhóm (tên domain / khách / dự án / task). */
+  name: string;
+  /** Mã nhóm nếu có. */
+  id: string | null;
+  /** Tỉ lệ hoàn thành (0–1 hoặc 0–100 tuỳ BE). */
+  completion_rate: number;
+  /** Số task đã hoàn thành. */
+  completed_tasks: number;
+  /** Tổng số task. */
+  total_tasks: number;
+  /** Mức hay ước thiếu theo thói quen (phút). */
+  estimated_minutes: number;
+  /** Phút thực tế đã dùng. */
+  actual_minutes: number;
+  /** Xu hướng so với kỳ trước (%). */
+  trend: number[];
+}
+
+/** Response của `/analytics/overview`. */
+export interface AnalyticsOverviewDto {
+  range: string;
+  /** Tỉ lệ hoàn thành tổng. */
+  completion_rate: number;
+  /** Mức hay ước thiếu (phút). */
+  estimated_minutes: number;
+  /** Phút thực tế. */
+  actual_minutes: number;
+  /** Số task hoàn thành / tổng số task. */
+  completed_tasks: number;
+  total_tasks: number;
+  /** Câu nhận xét do AI viết. */
+  insights: { text: string }[];
+}
+
+/** Response của `/analytics/breakdown`. */
+export interface AnalyticsBreakdownDto {
+  range: string;
+  by: AnalyticsBreakdownBy;
+  /** Các nhóm + mức hay ước thiếu theo loại việc. */
+  domains: {
+    /** Tên nhóm. */
+    text: string;
+    /** Mức hay ước thiếu (phút). */
+    estimated_minutes: number;
+    /** Phút thực tế. */
+    actual_minutes: number;
+    /** Tỉ lệ hoàn thành. */
+    completion_rate: number;
+    /** Xu hướng. */
+    trend: number[];
+  }[];
+  insights: { text: string }[];
+}
+
+/**
+ * GET /analytics/overview — tổng quan tỉ lệ hoàn thành + mức hay ước thiếu.
+ * Không tốn lượt AI.
+ */
+export async function getAnalyticsOverview(params?: {
+  range?: AnalyticsRange;
+  by?: AnalyticsBreakdownBy;
+  limit?: number;
+}): Promise<ApiResult<AnalyticsOverviewDto>> {
+  const qs = new URLSearchParams();
+  if (params?.range) qs.set("range", params.range);
+  if (params?.by) qs.set("by", params.by);
+  if (params?.limit !== undefined) {
+    qs.set("limit", String(Math.max(1, Math.min(50, params.limit))));
+  }
+  const suffix = qs.toString();
+  return aiFetch<AnalyticsOverviewDto>(
+    `/analytics/overview${suffix ? `?${suffix}` : ""}`,
+    { method: "GET" },
+  );
+}
+
+/**
+ * GET /analytics/breakdown — chi tiết theo loại việc / khách / dự án / task.
+ * Không tốn lượt AI.
+ */
+export async function getAnalyticsBreakdown(params?: {
+  range?: AnalyticsRange;
+  by?: AnalyticsBreakdownBy;
+  limit?: number;
+}): Promise<ApiResult<AnalyticsBreakdownDto>> {
+  const qs = new URLSearchParams();
+  if (params?.range) qs.set("range", params.range);
+  if (params?.by) qs.set("by", params.by);
+  if (params?.limit !== undefined) {
+    qs.set("limit", String(Math.max(1, Math.min(50, params.limit))));
+  }
+  const suffix = qs.toString();
+  return aiFetch<AnalyticsBreakdownDto>(
+    `/analytics/breakdown${suffix ? `?${suffix}` : ""}`,
+    { method: "GET" },
+  );
+}
+
+/* ================================================================
+ * GIỜ HIỆU QUẢ — productive hours (AI service, không tốn lượt AI)
+ * ----------------------------------------------------------
+ * PUT /profile/productive-hours/onboarding   → {blocks}
+ * GET /profile/productive-hours
+ *
+ * - `hours[]`  : điểm từng giờ (0–1) — biểu đồ nhiệt 24 giờ.
+ * - `top_hours`: các khung giờ tốt nhất để xếp lịch.
+ * - `onboarded`: user đã khai báo giờ hiệu quả chưa.
+ * ================================================================ */
+
+/** 1 khung giờ user khai báo tập trung tốt. */
+export interface ProductiveHoursBlock {
+  /** Giờ bắt đầu (0–23). */
+  start: number;
+  /** Giờ kết thúc (0–24). */
+  end: number;
+}
+
+export interface ProductiveHoursDto {
+  /** User đã hoàn tất bước khai báo giờ hiệu quả chưa. */
+  onboarded: boolean;
+  /** Điểm từng giờ trong ngày (0–1). */
+  hours: number[];
+  /** Các khung giờ hiệu quả nhất. */
+  top_hours: { start: string; end: string }[];
+}
+
+/**
+ * GET /profile/productive-hours
+ * Điểm hiệu quả từng giờ + các khung giờ tốt nhất. Không tốn lượt AI.
+ */
+export async function getProductiveHours(): Promise<
+  ApiResult<ProductiveHoursDto>
+> {
+  return aiFetch<ProductiveHoursDto>("/profile/productive-hours", {
+    method: "GET",
+  });
+}
+
+/**
+ * PUT /profile/productive-hours/onboarding
+ * Lưu các khung giờ user khai báo là giờ hiệu quả. Không tốn lượt AI.
+ */
+export async function saveProductiveHoursOnboarding(
+  blocks: ProductiveHoursBlock[],
+): Promise<ApiResult<ProductiveHoursDto>> {
+  if (!Array.isArray(blocks) || blocks.length === 0) {
+    return {
+      ok: false,
+      error: "Cần chọn ít nhất 1 khung giờ hiệu quả.",
+    };
+  }
+  return aiFetch<ProductiveHoursDto>(
+    "/profile/productive-hours/onboarding",
+    { method: "PUT", body: JSON.stringify({ blocks }) },
+  );
 }
 
 /* ============================================================

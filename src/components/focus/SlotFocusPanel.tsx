@@ -31,6 +31,8 @@ export interface SlotFocusPanelProps {
   plannedMinutes?: number;
   /** Refetch lịch sau khi slot đổi trạng thái. */
   onChanged?: () => void;
+  /** Tên task — hiện trong dialog "Cần thêm phút". */
+  taskTitle?: string | null;
 }
 
 export function SlotFocusPanel({
@@ -40,6 +42,7 @@ export function SlotFocusPanel({
   status,
   plannedMinutes,
   onChanged,
+  taskTitle,
 }: SlotFocusPanelProps) {
   const { currentSlotId, hasActiveSession } = useFocusActions();
   const [summary, setSummary] = useState<FocusTimeSummaryResponse | null>(null);
@@ -82,6 +85,7 @@ export function SlotFocusPanel({
         plannedMinutes={plannedMinutes}
         blockedByOtherSession={blockedByOtherSession}
         onChanged={onChanged}
+        taskTitle={taskTitle}
       />
 
       {loading && !hasData ? (

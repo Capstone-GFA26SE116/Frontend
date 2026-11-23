@@ -8,10 +8,24 @@
 
 .gdt {
   min-height: 100%;
-  padding: 40px 24px 96px;
+  padding: 32px 24px 96px;
   background: var(--canvas, #101010);
   color: var(--body, #bdbdbd);
   font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Nền lưới rất nhạt → tạo chiều sâu mà không dùng shadow. */
+  background-image:
+    linear-gradient(
+      to right,
+      rgba(255, 255, 255, 0.022) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.022) 1px,
+      transparent 1px
+    );
+  background-size: 64px 64px;
+  background-attachment: fixed;
 }
 
 .gdt-container {
@@ -24,15 +38,35 @@
 }
 
 /* ===========================================================
- * Header
+ * Header — card hero theo kiểu Voltagent
  * =========================================================== */
 
 .gdt-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 20px;
+  gap: 24px;
   flex-wrap: wrap;
+  padding: 24px;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 8px;
+  background: var(--canvas, #101010);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Vệt sáng xanh 2px ở đỉnh card — dấu hiệu "đang hoạt động". */
+.gdt-header::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--primary, #00d992) 0%,
+    rgba(0, 217, 146, 0.15) 45%,
+    transparent 100%
+  );
 }
 
 .gdt-header-text {
@@ -44,7 +78,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-bottom: 10px;
+  margin-bottom: 14px;
 }
 
 .gdt-breadcrumb-link {
@@ -52,6 +86,7 @@
   line-height: 18px;
   color: var(--mute, #8b949e);
   text-decoration: none;
+  transition: color 160ms ease;
 }
 .gdt-breadcrumb-link:hover {
   color: var(--primary, #00d992);
@@ -68,12 +103,24 @@
   color: var(--body, #bdbdbd);
 }
 
+/* Eyebrow kiểu Voltagent: UPPERCASE, tracking rộng. */
+.gdt-eyebrow {
+  display: block;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 2.52px;
+  text-transform: uppercase;
+  color: var(--primary, #00d992);
+  margin-bottom: 8px;
+}
+
 .gdt-title {
   margin: 0;
-  font-size: 32px;
-  line-height: 40px;
+  font-size: 34px;
+  line-height: 42px;
   font-weight: 700;
-  letter-spacing: -0.5px;
+  letter-spacing: -0.6px;
   color: var(--ink-strong, #ffffff);
   overflow-wrap: anywhere;
 }
@@ -83,35 +130,38 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  margin-top: 12px;
+  margin-top: 14px;
 }
 
 .gdt-tag {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 10px;
+  gap: 5px;
+  padding: 4px 11px;
   border: 1px solid var(--hairline, #3d3a39);
   border-radius: 9999px;
+  background: var(--canvas-soft, #1a1a1a);
   font-size: 12px;
   line-height: 16px;
   color: var(--body, #bdbdbd);
 }
 .gdt-tag .material-symbols-outlined {
   font-size: 13px;
+  color: var(--mute, #8b949e);
 }
 .gdt-tag--archived {
   border-color: rgba(255, 107, 107, 0.45);
   color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.08);
 }
 
 .gdt-role {
   display: inline-flex;
   align-items: center;
-  padding: 3px 10px;
+  padding: 4px 11px;
   border: 1px solid var(--hairline, #3d3a39);
   border-radius: 9999px;
-  background: var(--canvas, #101010);
+  background: var(--canvas-soft, #1a1a1a);
   font-size: 12px;
   line-height: 16px;
   font-weight: 600;
@@ -119,6 +169,7 @@
 .gdt-role--leader {
   border-color: var(--primary, #00d992);
   color: var(--primary, #00d992);
+  background: rgba(0, 217, 146, 0.08);
 }
 .gdt-role--member {
   border-color: rgba(0, 217, 146, 0.4);
@@ -133,14 +184,14 @@
   font-weight: 500;
 }
 .gdt-role--sm {
-  padding: 1px 8px;
+  padding: 2px 9px;
   font-size: 11px;
   line-height: 14px;
 }
 
 .gdt-desc {
-  margin: 12px 0 0;
-  max-width: 72ch;
+  margin: 14px 0 0;
+  max-width: 68ch;
   font-size: 15px;
   line-height: 24px;
   color: var(--body, #bdbdbd);
@@ -247,13 +298,13 @@
 }
 
 /* ===========================================================
- * Tiến độ
+ * Tiến độ — KPI strip
  * =========================================================== */
 
 .gdt-progress {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 18px;
   padding: 20px 24px;
   border: 1px solid var(--hairline, #3d3a39);
   border-radius: 8px;
@@ -270,61 +321,78 @@
 .gdt-progress-fill {
   height: 100%;
   border-radius: 9999px;
-  background: var(--primary, #00d992);
+  background: linear-gradient(
+    90deg,
+    var(--primary-deep, #10b981) 0%,
+    var(--primary, #00d992) 100%
+  );
   transition: width 320ms ease;
 }
 
 .gdt-progress-stats {
-  display: flex;
-  align-items: center;
-  gap: 28px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 16px;
 }
 
 .gdt-stat {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
+  padding-left: 14px;
+  border-left: 1px solid var(--hairline, #3d3a39);
+}
+.gdt-stat:first-child {
+  padding-left: 0;
+  border-left: 0;
 }
 
 .gdt-stat-value {
   font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
-  font-size: 20px;
-  line-height: 26px;
+  font-size: 22px;
+  line-height: 28px;
   font-weight: 550;
+  letter-spacing: -0.3px;
   color: var(--ink, #f2f2f2);
+}
+
+/* Số liệu "đã làm" là con số xanh — điểm nhấn của trang. */
+.gdt-stat--accent .gdt-stat-value {
+  color: var(--primary, #00d992);
 }
 
 .gdt-stat-label {
   font-size: 11px;
   line-height: 14px;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--mute, #8b949e);
 }
 
 /* ===========================================================
- * Tabs
+ * Tabs — gạch chân, kiểu tài liệu
  * =========================================================== */
 
 .gdt-tabs {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--hairline, #3d3a39);
-  border-radius: 8px;
-  background: var(--canvas-soft, #1a1a1a);
+  border-bottom: 1px solid var(--hairline, #3d3a39);
   overflow-x: auto;
+  scrollbar-width: none;
+}
+.gdt-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .gdt-tab {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 8px 14px;
+  gap: 8px;
+  padding: 12px 16px;
   border: 0;
-  border-radius: 6px;
   background: transparent;
   color: var(--mute, #8b949e);
   font-family: inherit;
@@ -333,34 +401,48 @@
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition:
-    background-color 160ms ease,
-    color 160ms ease;
+  transition: color 160ms ease;
 }
 .gdt-tab:hover {
   color: var(--ink, #f2f2f2);
 }
+/* Gạch chân xanh ở tab đang chọn — accent duy nhất của hệ thống tab. */
 .gdt-tab--on {
-  background: var(--primary, #00d992);
-  color: var(--on-primary, #101010);
+  color: var(--ink-strong, #ffffff);
 }
-.gdt-tab--on:hover {
-  color: var(--on-primary, #101010);
+.gdt-tab--on::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--primary, #00d992);
 }
 
 .gdt-tab-icon {
   font-size: 17px;
+  color: currentColor;
+  opacity: 0.85;
+}
+.gdt-tab--on .gdt-tab-icon {
+  color: var(--primary, #00d992);
+  opacity: 1;
 }
 
 .gdt-tab-count {
   font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
   font-size: 11px;
-  padding: 1px 6px;
+  line-height: 16px;
+  padding: 1px 7px;
   border-radius: 9999px;
-  background: rgba(0, 0, 0, 0.22);
-}
-.gdt-tab:not(.gdt-tab--on) .gdt-tab-count {
   background: rgba(255, 255, 255, 0.07);
+  color: var(--mute, #8b949e);
+}
+.gdt-tab--on .gdt-tab-count {
+  background: rgba(0, 217, 146, 0.14);
+  color: var(--primary, #00d992);
 }
 
 /* ===========================================================
@@ -371,6 +453,39 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/* Tiêu đề section kiểu Voltagent: eyebrow + tiêu đề. */
+.gdt-section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.gdt-section-head-text {
+  min-width: 0;
+}
+
+.gdt-section-eyebrow {
+  display: block;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 2.52px;
+  text-transform: uppercase;
+  color: var(--primary, #00d992);
+  margin-bottom: 6px;
+}
+
+.gdt-section-title {
+  margin: 0;
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  color: var(--ink-strong, #ffffff);
 }
 
 .gdt-toolbar {
@@ -431,21 +546,54 @@
 }
 
 .gdt-task {
+  position: relative;
   border: 1px solid var(--hairline, #3d3a39);
   border-radius: 8px;
   background: var(--canvas, #101010);
   overflow: hidden;
-  transition: border-color 160ms ease;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease;
 }
 .gdt-task:hover {
   border-color: rgba(0, 217, 146, 0.4);
+  background: rgba(26, 26, 26, 0.5);
+}
+
+/* Vạch accent 3px bên trái theo trạng thái việc. */
+.gdt-task::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--hairline, #3d3a39);
+}
+.gdt-task--active::before {
+  background: var(--primary, #00d992);
+}
+.gdt-task--todo::before {
+  background: rgba(255, 255, 255, 0.16);
+}
+.gdt-task--done::before {
+  background: var(--primary-deep, #10b981);
+}
+.gdt-task--skipped::before {
+  background: rgba(255, 107, 107, 0.45);
+}
+/* Việc đã xong → chữ mờ đi, không làm rối mắt. */
+.gdt-task--done .gdt-task-title {
+  color: var(--mute, #8b949e);
+  text-decoration: line-through;
+  text-decoration-color: rgba(139, 148, 158, 0.5);
 }
 
 .gdt-task-main {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 16px;
+  padding: 14px 16px 14px 18px;
 }
 
 .gdt-task-expand {
@@ -658,12 +806,12 @@
   align-items: center;
   gap: 8px;
   margin: 0;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 16px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 2.52px;
   text-transform: uppercase;
-  color: var(--mute, #8b949e);
+  color: var(--primary, #00d992);
 }
 
 .gdt-sub-count {
@@ -1011,7 +1159,7 @@ select.gdt-input {
 .gdt-mem-progress-card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   padding: 14px 16px;
   border: 1px solid var(--hairline, #3d3a39);
   border-radius: 8px;
@@ -1023,6 +1171,19 @@ select.gdt-input {
   line-height: 20px;
   font-weight: 600;
   color: var(--ink, #f2f2f2);
+}
+
+/* Thanh tiến độ nhỏ của từng thành viên. */
+.gdt-mem-progress-bar {
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--canvas-soft, #1a1a1a);
+  overflow: hidden;
+}
+.gdt-mem-progress-fill {
+  height: 100%;
+  border-radius: 9999px;
+  background: var(--primary, #00d992);
 }
 
 .gdt-mem-progress-stats {
@@ -1121,10 +1282,10 @@ select.gdt-input {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  padding: 64px 24px;
-  border: 1px solid var(--hairline, #3d3a39);
+  padding: 56px 24px;
+  border: 1px dashed rgba(79, 93, 117, 0.4);
   border-radius: 8px;
-  background: var(--canvas-soft, #1a1a1a);
+  background: var(--canvas, #101010);
   text-align: center;
 }
 .gdt-state p {
@@ -1137,9 +1298,15 @@ select.gdt-input {
 .gdt-state-icon {
   font-size: 34px;
   color: var(--mute, #8b949e);
+  opacity: 0.7;
+}
+.gdt-state--error {
+  border-style: solid;
+  border-color: rgba(255, 107, 107, 0.35);
 }
 .gdt-state--error .gdt-state-icon {
   color: #ff6b6b;
+  opacity: 1;
 }
 
 .gdt-state-icon--spin {
@@ -1363,6 +1530,23 @@ select.gdt-input {
  * Responsive
  * =========================================================== */
 
+@media (max-width: 1024px) {
+  .gdt-header {
+    padding: 20px;
+  }
+  .gdt-progress-stats {
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+    gap: 14px;
+  }
+  .gdt-stat {
+    padding-left: 12px;
+  }
+  .gdt-stat-value {
+    font-size: 19px;
+    line-height: 25px;
+  }
+}
+
 @media (max-width: 768px) {
   .gdt {
     padding: 24px 16px 72px;
@@ -1370,6 +1554,51 @@ select.gdt-input {
   .gdt-title {
     font-size: 26px;
     line-height: 32px;
+  }
+  .gdt-header {
+    padding: 18px 16px;
+    gap: 16px;
+  }
+  .gdt-header-actions {
+    width: 100%;
+  }
+  .gdt-header-actions .gdt-btn {
+    flex: 1 1 auto;
+  }
+  .gdt-progress {
+    padding: 16px;
+  }
+  .gdt-progress-stats {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px 10px;
+  }
+  .gdt-stat {
+    padding-left: 10px;
+  }
+  .gdt-stat:nth-child(3n + 1) {
+    padding-left: 0;
+    border-left: 0;
+  }
+  .gdt-stat-value {
+    font-size: 17px;
+    line-height: 23px;
+  }
+  .gdt-tab {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+  .gdt-section-head {
+    align-items: flex-start;
+  }
+  .gdt-section-title {
+    font-size: 18px;
+    line-height: 26px;
+  }
+  .gdt-toolbar {
+    width: 100%;
+  }
+  .gdt-toolbar-count {
+    margin-left: 0;
   }
   .gdt-task-main {
     flex-wrap: wrap;
@@ -1380,8 +1609,5 @@ select.gdt-input {
   }
   .gdt-task-detail {
     padding-left: 16px;
-  }
-  .gdt-progress-stats {
-    gap: 18px;
   }
 }

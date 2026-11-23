@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+﻿import { useCallback, useEffect, useState } from "react";
 import type { ApiErr } from "../../lib/api-client";
 import {
   createGroupInvitation,
@@ -90,7 +90,7 @@ export function GroupInviteModal({
     e.preventDefault();
     const trimmed = email.trim();
     if (!trimmed) {
-      setError("Vui lòng nhập email cần mời.");
+      setError("Please enter an email to invite.");
       return;
     }
     setError(null);
@@ -144,7 +144,7 @@ export function GroupInviteModal({
             type="button"
             className="grp-modal-close"
             onClick={onClose}
-            aria-label="Đóng"
+            aria-label="Close"
           >
             <span className="material-symbols-outlined">close</span>
           </button>
@@ -176,9 +176,9 @@ export function GroupInviteModal({
               value={role}
               onChange={(e) => setRole(e.target.value as GroupRole)}
             >
-              <option value="Member">Member — làm việc, đổi trạng thái</option>
-              <option value="Viewer">Viewer — chỉ xem</option>
-              <option value="Leader">Leader — quản trị nhóm</option>
+              <option value="Member">Member — work on tasks, change status</option>
+              <option value="Viewer">Viewer — read only</option>
+              <option value="Leader">Leader — manage the group</option>
             </select>
           </div>
 
@@ -195,11 +195,11 @@ export function GroupInviteModal({
           {createdInvite && (
             <div className="grp-token-box">
               <span className="grp-token-label">
-                Accept token (chỉ hiện 1 lần)
+                Accept token (shown only once)
               </span>
               <code className="grp-token-value">{createdInvite.acceptToken}</code>
               <span className="grp-token-hint">
-                Gửi liên kết cho người được mời:{" "}
+                Share this link with the invitee:{" "}
                 <code>/groups?token={createdInvite.acceptToken}</code>
               </span>
             </div>

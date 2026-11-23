@@ -1,4 +1,4 @@
-import {
+﻿import {
   useCallback,
   useEffect,
   useMemo,
@@ -228,7 +228,7 @@ export function GroupDetailPage() {
   );
 
   useEffect(() => {
-    document.title = "Nhóm · METANOIA";
+    document.title = "Group · METANOIA";
   }, []);
 
   /* ---------- Nạp toàn bộ dữ liệu ---------- */
@@ -317,7 +317,7 @@ export function GroupDetailPage() {
         setSubTasks((prev) => ({ ...prev, [task.id]: sRes.data ?? [] }));
       }
     }
-    toast.success("Đã cập nhật trạng thái");
+    toast.success("Status updated");
   }
 
   /* ---------- Đổi status việc con ---------- */
@@ -349,7 +349,7 @@ export function GroupDetailPage() {
         prev.map((t) => (t.id === task.id ? parent : t)),
       );
     }
-    toast.success("Đã cập nhật trạng thái");
+    toast.success("Status updated");
   }
 
   /** Gọi lại 1 việc (bọc try/catch để không crash nếu lỗi). */
@@ -416,7 +416,7 @@ export function GroupDetailPage() {
       prev.map((t) => (t.id === task.id ? res.data : t)),
     );
     setBusyWarning(null);
-    toast.success("Đã giao việc");
+    toast.success("Task assigned");
   }
   /* ---------- Tạo việc ---------- */
   async function handleCreateTask(e: FormEvent<HTMLFormElement>) {
@@ -424,7 +424,7 @@ export function GroupDetailPage() {
     if (!group) return;
     const title = taskForm.title.trim();
     if (!title) {
-      setTaskFormError("Vui lòng nhập tiêu đề việc.");
+      setTaskFormError("Please enter a task title.");
       return;
     }
     setTaskFormError(null);
@@ -461,7 +461,7 @@ export function GroupDetailPage() {
       deadline: "",
       estimatedMinutes: "",
     });
-    toast.success("Đã tạo việc");
+    toast.success("Task created");
   }
 
   /* ---------- Tạo giai đoạn ---------- */
@@ -470,7 +470,7 @@ export function GroupDetailPage() {
     if (!group) return;
     const name = msForm.name.trim();
     if (!name) {
-      setMsFormError("Vui lòng nhập tên giai đoạn.");
+      setMsFormError("Please enter a milestone name.");
       return;
     }
     setMsFormError(null);
@@ -493,7 +493,7 @@ export function GroupDetailPage() {
     setMilestones((prev) => [...prev, res.data].sort((a, b) => a.orderIndex - b.orderIndex));
     setMsModalOpen(false);
     setMsForm({ name: "", orderIndex: "1", dueDate: "", status: "Planned" });
-    toast.success("Đã tạo giai đoạn");
+    toast.success("Milestone created");
   }
 
   /* ---------- Đổi status giai đoạn (409 → xác nhận) ---------- */
@@ -526,7 +526,7 @@ export function GroupDetailPage() {
     setMilestones((prev) =>
       prev.map((m) => (m.id === ms.id ? res.data : m)),
     );
-    toast.success("Đã cập nhật giai đoạn");
+    toast.success("Milestone updated");
   }
 
   /* ---------- Thêm việc con ---------- */
@@ -535,7 +535,7 @@ export function GroupDetailPage() {
     if (!subModalFor) return;
     const title = subForm.title.trim();
     if (!title) {
-      setSubFormError("Vui lòng nhập tiêu đề việc con.");
+      setSubFormError("Please enter a subtask title.");
       return;
     }
     setSubFormError(null);
@@ -561,7 +561,7 @@ export function GroupDetailPage() {
     }));
     setSubModalFor(null);
     setSubForm({ title: "", estimatedMinutes: "", assigneeId: "" });
-    toast.success("Đã thêm việc con");
+    toast.success("Subtask added");
   }
 
   /* ---------- Bình luận ---------- */
@@ -602,7 +602,7 @@ export function GroupDetailPage() {
       return;
     }
     setTasks((prev) => prev.filter((t) => t.id !== taskId));
-    toast.info("Đã xoá việc");
+    toast.info("Task deleted");
   }
 
   async function handleDeleteSubTask(taskId: string, subId: string) {
@@ -615,7 +615,7 @@ export function GroupDetailPage() {
       ...prev,
       [taskId]: (prev[taskId] ?? []).filter((s) => s.id !== subId),
     }));
-    toast.info("Đã xoá việc con");
+    toast.info("Subtask deleted");
   }
 
   /* ---------- Thành viên ---------- */
@@ -627,7 +627,7 @@ export function GroupDetailPage() {
       return;
     }
     setMembers((prev) => prev.filter((m) => m.userId !== userId));
-    toast.info("Đã gỡ thành viên");
+    toast.info("Member removed");
   }
 
   async function handleLeaveGroup() {
@@ -637,7 +637,7 @@ export function GroupDetailPage() {
       showApiError(res, "leave this group");
       return;
     }
-    toast.info("Đã rời nhóm");
+    toast.info("Left the group");
     window.location.href = "/groups";
   }
 
@@ -650,7 +650,7 @@ export function GroupDetailPage() {
       return;
     }
     setGroup((prev) => (prev ? { ...prev, status: "Archived" } : prev));
-    toast.info("Đã lưu trữ nhóm");
+    toast.info("Group archived");
   }
 
   async function handleRestore() {
@@ -661,7 +661,7 @@ export function GroupDetailPage() {
       return;
     }
     setGroup((prev) => (prev ? { ...prev, status: "Active" } : prev));
-    toast.success("Đã khôi phục nhóm");
+    toast.success("Group restored");
   }
 
   /* =========================================================
@@ -675,7 +675,7 @@ export function GroupDetailPage() {
             <span className="material-symbols-outlined gdt-state-icon gdt-state-icon--spin">
               progress_activity
             </span>
-            <p>Đang tải nhóm…</p>
+            <p>Loading group…</p>
           </div>
         </div>
       </div>
@@ -690,9 +690,9 @@ export function GroupDetailPage() {
             <span className="material-symbols-outlined gdt-state-icon">
               error
             </span>
-            <p>{error ?? "Không tìm thấy nhóm."}</p>
+            <p>{error ?? "Group not found."}</p>
             <Link to="/groups" className="gdt-btn gdt-btn--ghost">
-              Về danh sách nhóm
+              Back to groups
             </Link>
           </div>
         </div>
@@ -715,12 +715,13 @@ export function GroupDetailPage() {
               </span>
               <span className="gdt-breadcrumb-current">{group.name}</span>
             </div>
+            <span className="gdt-eyebrow">Group workspace</span>
             <h1 className="gdt-title">{group.name}</h1>
             <div className="gdt-tags">
               <span className={`gdt-role gdt-role--${normalizeRole(group.myRole).toLowerCase()}`}>
                 {roleLabel(group.myRole)}
               </span>
-              <span className="gdt-tag">{group.memberCount} thành viên</span>
+              <span className="gdt-tag">{group.memberCount} members</span>
               {archived && (
                 <span className="gdt-tag gdt-tag--archived">Archived</span>
               )}
@@ -803,37 +804,37 @@ export function GroupDetailPage() {
               />
             </div>
             <div className="gdt-progress-stats">
-              <span className="gdt-stat">
+              <span className="gdt-stat gdt-stat--accent">
                 <span className="gdt-stat-value">
                   {progress.completedPercent.toFixed(1)}%
                 </span>
-                <span className="gdt-stat-label">hoàn thành</span>
+                <span className="gdt-stat-label">completed</span>
               </span>
               <span className="gdt-stat">
                 <span className="gdt-stat-value">{progress.totalTasks}</span>
-                <span className="gdt-stat-label">việc</span>
+                <span className="gdt-stat-label">tasks</span>
               </span>
               <span className="gdt-stat">
                 <span className="gdt-stat-value">{progress.remainingTasks}</span>
-                <span className="gdt-stat-label">còn lại</span>
+                <span className="gdt-stat-label">remaining</span>
               </span>
               <span className="gdt-stat">
                 <span className="gdt-stat-value">
                   {progress.unassignedTasks}
                 </span>
-                <span className="gdt-stat-label">chưa giao</span>
+                <span className="gdt-stat-label">unassigned</span>
               </span>
-              <span className="gdt-stat">
+              <span className="gdt-stat gdt-stat--accent">
                 <span className="gdt-stat-value">
                   {fmtMinutes(progress.totalTrackedMinutes)}
                 </span>
-                <span className="gdt-stat-label">đã làm</span>
+                <span className="gdt-stat-label">tracked</span>
               </span>
               <span className="gdt-stat">
                 <span className="gdt-stat-value">
                   {fmtMinutes(progress.totalEstimatedMinutes)}
                 </span>
-                <span className="gdt-stat-label">ước lượng</span>
+                <span className="gdt-stat-label">estimated</span>
               </span>
             </div>
           </section>
@@ -886,37 +887,43 @@ export function GroupDetailPage() {
         {/* ================= TAB: TASKS ================= */}
         {tab === "tasks" && (
           <section className="gdt-panel">
-            <div className="gdt-toolbar">
-              <select
-                className="gdt-select"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                aria-label="Lọc theo trạng thái"
-              >
-                <option value="">All statuses</option>
-                {GROUP_TASK_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {taskStatusLabel(s).label}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="gdt-select"
-                value={assigneeFilter}
-                onChange={(e) => setAssigneeFilter(e.target.value)}
-                aria-label="Lọc theo người được giao"
-              >
-                <option value="">All assignees</option>
-                <option value="__unassigned__">Unassigned</option>
-                {members.map((m) => (
-                  <option key={m.userId} value={m.userId}>
-                    {m.fullName}
-                  </option>
-                ))}
-              </select>
-              <span className="gdt-toolbar-count">
-                {visibleTasks.length}/{tasks.length} việc
-              </span>
+            <div className="gdt-section-head">
+              <div className="gdt-section-head-text">
+                <span className="gdt-section-eyebrow">Work items</span>
+                <h2 className="gdt-section-title">Tasks</h2>
+              </div>
+              <div className="gdt-toolbar">
+                <select
+                  className="gdt-select"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  aria-label="Filter by status"
+                >
+                  <option value="">All statuses</option>
+                  {GROUP_TASK_STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {taskStatusLabel(s).label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="gdt-select"
+                  value={assigneeFilter}
+                  onChange={(e) => setAssigneeFilter(e.target.value)}
+                  aria-label="Filter by assignee"
+                >
+                  <option value="">All assignees</option>
+                  <option value="__unassigned__">Unassigned</option>
+                  {members.map((m) => (
+                    <option key={m.userId} value={m.userId}>
+                      {m.fullName}
+                    </option>
+                  ))}
+                </select>
+                <span className="gdt-toolbar-count">
+                  {visibleTasks.length}/{tasks.length} tasks
+                </span>
+              </div>
             </div>
 
             {visibleTasks.length === 0 ? (
@@ -924,7 +931,7 @@ export function GroupDetailPage() {
                 <span className="material-symbols-outlined gdt-state-icon">
                   checklist
                 </span>
-                <p>Chưa có việc nào.</p>
+                <p>No tasks yet.</p>
               </div>
             ) : (
               <ul className="gdt-task-list">
@@ -939,7 +946,10 @@ export function GroupDetailPage() {
                     user?.id ?? null,
                   );
                   return (
-                    <li key={t.id} className="gdt-task">
+                    <li
+                      key={t.id}
+                      className={`gdt-task gdt-task--${st.tone}`}
+                    >
                       <div className="gdt-task-main">
                         <button
                           type="button"
@@ -947,7 +957,7 @@ export function GroupDetailPage() {
                           onClick={() => void openTask(t.id)}
                           aria-expanded={expanded}
                           aria-label={
-                            expanded ? "Thu gọn" : "Mở chi tiết việc"
+                            expanded ? "Collapse task" : "Open task details"
                           }
                         >
                           <span
@@ -992,7 +1002,7 @@ export function GroupDetailPage() {
                                 >
                                   person_alert
                                 </span>
-                                Chưa giao
+                                Unassigned
                               </span>
                             )}
                             {t.subTaskCount > 0 && (
@@ -1003,7 +1013,7 @@ export function GroupDetailPage() {
                                 >
                                   subdirectory_arrow_right
                                 </span>
-                                {t.subTaskDoneCount}/{t.subTaskCount} việc con
+                                {t.subTaskDoneCount}/{t.subTaskCount} subtasks
                               </span>
                             )}
                             {t.estimatedMinutes != null && (
@@ -1053,7 +1063,7 @@ export function GroupDetailPage() {
                               onChange={(e) =>
                                 void handleTaskStatus(t, e.target.value)
                               }
-                              aria-label={`Đổi trạng thái: ${t.title}`}
+                              aria-label={`Change status: ${t.title}`}
                             >
                               {GROUP_TASK_STATUSES.map((s) => (
                                 <option key={s} value={s}>
@@ -1073,7 +1083,7 @@ export function GroupDetailPage() {
                                 void handlePreviewAssignee(t, e.target.value);
                                 void handleAssign(t, e.target.value);
                               }}
-                              aria-label={`Giao việc: ${t.title}`}
+                              aria-label={`Assign task: ${t.title}`}
                             >
                               <option value="">Chưa giao</option>
                               {members.map((m) => (
@@ -1102,7 +1112,7 @@ export function GroupDetailPage() {
                                           `${fmtGroupDateTime(c.start)} → ${fmtGroupDateTime(c.end)} (${busySourceLabel(c.source)})`,
                                       )
                                       .join("\n")
-                                  : "Người nhận đang rảnh"
+                                  : "Assignee is free"
                               }
                             >
                               <span className="material-symbols-outlined">
@@ -1112,10 +1122,10 @@ export function GroupDetailPage() {
                                   : "check_circle"}
                               </span>
                               {availability[t.id].isBusy
-                                ? "Đang bận"
+                                ? "Busy"
                                 : availability[t.id].workload?.isOverloaded
-                                  ? "Quá tải"
-                                  : "Rảnh"}
+                                  ? "Overloaded"
+                                  : "Free"}
                             </span>
                           )}
 
@@ -1123,8 +1133,8 @@ export function GroupDetailPage() {
                             <button
                               type="button"
                               className="gdt-icon-btn"
-                              title="Xoá việc"
-                              aria-label={`Xoá việc ${t.title}`}
+                              title="Delete task"
+                              aria-label={`Delete task ${t.title}`}
                               onClick={() => void handleDeleteTask(t.id)}
                             >
                               <span className="material-symbols-outlined">
@@ -1171,7 +1181,7 @@ export function GroupDetailPage() {
 
                             {subs.length === 0 ? (
                               <p className="gdt-empty">
-                                Chưa có việc con nào.
+                                No subtasks yet.
                               </p>
                             ) : (
                               <ul className="gdt-sub-list">
@@ -1215,7 +1225,7 @@ export function GroupDetailPage() {
                                               e.target.value,
                                             )
                                           }
-                                          aria-label={`Đổi trạng thái: ${s.title}`}
+                                          aria-label={`Change status: ${s.title}`}
                                         >
                                           {GROUP_TASK_STATUSES.map((x) => (
                                             <option key={x} value={x}>
@@ -1228,8 +1238,8 @@ export function GroupDetailPage() {
                                         <button
                                           type="button"
                                           className="gdt-icon-btn gdt-icon-btn--sm"
-                                          title="Xoá việc con"
-                                          aria-label={`Xoá việc con ${s.title}`}
+                                          title="Delete subtask"
+                                          aria-label={`Delete subtask ${s.title}`}
                                           onClick={() =>
                                             void handleDeleteSubTask(t.id, s.id)
                                           }
@@ -1254,7 +1264,7 @@ export function GroupDetailPage() {
                             </h4>
                             {list.length === 0 ? (
                               <p className="gdt-empty">
-                                Chưa có bình luận. Nhắc tên bằng @email.
+                                No comments yet. Mention someone with @email.
                               </p>
                             ) : (
                               <ul className="gdt-comment-list">
@@ -1278,8 +1288,8 @@ export function GroupDetailPage() {
                                       <button
                                         type="button"
                                         className="gdt-icon-btn gdt-icon-btn--sm"
-                                        title="Xoá bình luận"
-                                        aria-label="Xoá bình luận"
+                                        title="Delete comment"
+                                        aria-label="Delete comment"
                                         onClick={() =>
                                           void handleDeleteComment(t.id, c.id)
                                         }
@@ -1297,7 +1307,7 @@ export function GroupDetailPage() {
                               <input
                                 type="text"
                                 className="gdt-input"
-                                placeholder="Viết bình luận… dùng @email để nhắc"
+                                placeholder="Write a comment… use @email to mention"
                                 value={commentDraft[t.id] ?? ""}
                                 onChange={(e) =>
                                   setCommentDraft((prev) => ({
@@ -1338,31 +1348,37 @@ export function GroupDetailPage() {
         {/* ================= TAB: MILESTONES ================= */}
         {tab === "milestones" && (
           <section className="gdt-panel">
-            <div className="gdt-toolbar">
-              <span className="gdt-toolbar-count">
-                {milestones.length} giai đoạn
-              </span>
-              {leader && !archived && (
-                <button
-                  type="button"
-                  className="gdt-btn gdt-btn--primary gdt-btn--sm"
-                  onClick={() => {
-                    setMsFormError(null);
-                    setMsForm({
-                      name: "",
-                      orderIndex: String(milestones.length + 1),
-                      dueDate: "",
-                      status: "Planned",
-                    });
-                    setMsModalOpen(true);
-                  }}
-                >
-                  <span className="material-symbols-outlined gdt-btn-icon">
-                    add
-                  </span>
-                  <span>New milestone</span>
-                </button>
-              )}
+            <div className="gdt-section-head">
+              <div className="gdt-section-head-text">
+                <span className="gdt-section-eyebrow">Delivery phases</span>
+                <h2 className="gdt-section-title">Milestones</h2>
+              </div>
+              <div className="gdt-toolbar">
+                <span className="gdt-toolbar-count">
+                  {milestones.length} milestones
+                </span>
+                {leader && !archived && (
+                  <button
+                    type="button"
+                    className="gdt-btn gdt-btn--primary gdt-btn--sm"
+                    onClick={() => {
+                      setMsFormError(null);
+                      setMsForm({
+                        name: "",
+                        orderIndex: String(milestones.length + 1),
+                        dueDate: "",
+                        status: "Planned",
+                      });
+                      setMsModalOpen(true);
+                    }}
+                  >
+                    <span className="material-symbols-outlined gdt-btn-icon">
+                      add
+                    </span>
+                    <span>New milestone</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             {milestones.length === 0 ? (
@@ -1370,7 +1386,7 @@ export function GroupDetailPage() {
                 <span className="material-symbols-outlined gdt-state-icon">
                   flag
                 </span>
-                <p>Chưa có giai đoạn nào.</p>
+                <p>No milestones yet.</p>
               </div>
             ) : (
               <ul className="gdt-ms-list">
@@ -1422,7 +1438,7 @@ export function GroupDetailPage() {
                                   e.target.value as GroupMilestoneStatus,
                                 )
                               }
-                              aria-label={`Đổi trạng thái: ${m.name}`}
+                              aria-label={`Change status: ${m.name}`}
                             >
                               {GROUP_MILESTONE_STATUSES.map((s) => (
                                 <option key={s} value={s}>
@@ -1435,8 +1451,8 @@ export function GroupDetailPage() {
                             <button
                               type="button"
                               className="gdt-icon-btn gdt-icon-btn--sm"
-                              title="Xoá giai đoạn"
-                              aria-label={`Xoá giai đoạn ${m.name}`}
+                              title="Delete milestone"
+                              aria-label={`Delete milestone ${m.name}`}
                               onClick={async () => {
                                 const res = await deleteGroupMilestone(m.id);
                                 if (!res.ok) {
@@ -1446,7 +1462,7 @@ export function GroupDetailPage() {
                                 setMilestones((prev) =>
                                   prev.filter((x) => x.id !== m.id),
                                 );
-                                toast.info("Đã xoá giai đoạn");
+                                toast.info("Milestone deleted");
                               }}
                             >
                               <span className="material-symbols-outlined">
@@ -1466,27 +1482,33 @@ export function GroupDetailPage() {
         {/* ================= TAB: MEMBERS ================= */}
         {tab === "members" && (
           <section className="gdt-panel">
-            <div className="gdt-toolbar">
-              <span className="gdt-toolbar-count">
-                {members.length} thành viên
-              </span>
-              {/*
-                * Mời thành viên — mở modal ngay tại trang chi tiết nhóm,
-                * không cần quay lại `/groups`. Chỉ Leader mời được (BE
-                * chặn 403 với vai trò khác) → ẩn nút nếu không phải Leader.
-                */}
-              {leader && !archived && (
-                <button
-                  type="button"
-                  className="gdt-btn gdt-btn--ghost gdt-btn--sm"
-                  onClick={() => setInviteOpen(true)}
-                >
-                  <span className="material-symbols-outlined gdt-btn-icon">
-                    person_add
-                  </span>
-                  <span>Invite</span>
-                </button>
-              )}
+            <div className="gdt-section-head">
+              <div className="gdt-section-head-text">
+                <span className="gdt-section-eyebrow">Team</span>
+                <h2 className="gdt-section-title">Members</h2>
+              </div>
+              <div className="gdt-toolbar">
+                <span className="gdt-toolbar-count">
+                  {members.length} members
+                </span>
+                {/*
+                  * Mời thành viên — mở modal ngay tại trang chi tiết nhóm,
+                  * không cần quay lại `/groups`. Chỉ Leader mời được (BE
+                  * chặn 403 với vai trò khác) → ẩn nút nếu không phải Leader.
+                  */}
+                {leader && !archived && (
+                  <button
+                    type="button"
+                    className="gdt-btn gdt-btn--ghost gdt-btn--sm"
+                    onClick={() => setInviteOpen(true)}
+                  >
+                    <span className="material-symbols-outlined gdt-btn-icon">
+                      person_add
+                    </span>
+                    <span>Invite</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             <ul className="gdt-member-list">
@@ -1499,7 +1521,7 @@ export function GroupDetailPage() {
                     <span className="gdt-member-name">
                       {m.fullName}
                       {m.userId === user?.id && (
-                        <span className="gdt-member-you">bạn</span>
+                        <span className="gdt-member-you">you</span>
                       )}
                     </span>
                     <span className="gdt-member-email">{m.email}</span>
@@ -1516,8 +1538,8 @@ export function GroupDetailPage() {
                     <button
                       type="button"
                       className="gdt-icon-btn gdt-icon-btn--sm"
-                      title="Gỡ khỏi nhóm"
-                      aria-label={`Gỡ ${m.fullName} khỏi nhóm`}
+                      title="Remove from group"
+                      aria-label={`Remove ${m.fullName} from group`}
                       onClick={() => void handleRemoveMember(m.userId)}
                     >
                       <span className="material-symbols-outlined">
@@ -1534,25 +1556,45 @@ export function GroupDetailPage() {
               <div className="gdt-mem-progress">
                 <h3 className="gdt-sub-title">Member progress</h3>
                 <div className="gdt-mem-progress-grid">
-                  {progress.members.map((mp) => (
-                    <div key={mp.userId} className="gdt-mem-progress-card">
-                      <span className="gdt-mem-progress-name">
-                        {mp.fullName}
-                      </span>
-                      <span className="gdt-role gdt-role--sm gdt-role--muted">
-                        {roleLabel(mp.role)}
-                      </span>
-                      <div className="gdt-mem-progress-stats">
-                        <span>
-                          {mp.doneTasks}/{mp.assignedTasks} việc
+                  {progress.members.map((mp) => {
+                    const pct =
+                      mp.assignedTasks > 0
+                        ? Math.round((mp.doneTasks / mp.assignedTasks) * 100)
+                        : 0;
+                    return (
+                      <div
+                        key={mp.userId}
+                        className="gdt-mem-progress-card"
+                      >
+                        <span className="gdt-mem-progress-name">
+                          {mp.fullName}
                         </span>
-                        <span>
-                          {mp.doneSubTasks}/{mp.assignedSubTasks} việc con
+                        <span className="gdt-role gdt-role--sm gdt-role--muted">
+                          {roleLabel(mp.role)}
                         </span>
-                        <span>{fmtMinutes(mp.trackedMinutes)}</span>
+                        <div className="gdt-mem-progress-bar">
+                          <div
+                            className="gdt-mem-progress-fill"
+                            style={{ width: `${pct}%` }}
+                            role="progressbar"
+                            aria-valuenow={pct}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-label={`Progress for ${mp.fullName}`}
+                          />
+                        </div>
+                        <div className="gdt-mem-progress-stats">
+                          <span>
+                            {mp.doneTasks}/{mp.assignedTasks} tasks
+                          </span>
+                          <span>
+                            {mp.doneSubTasks}/{mp.assignedSubTasks} subtasks
+                          </span>
+                          <span>{fmtMinutes(mp.trackedMinutes)}</span>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -1578,12 +1620,23 @@ export function GroupDetailPage() {
         {/* ================= TAB: ACTIVITY ================= */}
         {tab === "activity" && (
           <section className="gdt-panel">
+            <div className="gdt-section-head">
+              <div className="gdt-section-head-text">
+                <span className="gdt-section-eyebrow">Audit trail</span>
+                <h2 className="gdt-section-title">Activity log</h2>
+              </div>
+              <div className="gdt-toolbar">
+                <span className="gdt-toolbar-count">
+                  {activity.length} events
+                </span>
+              </div>
+            </div>
             {activity.length === 0 ? (
               <div className="gdt-state">
                 <span className="material-symbols-outlined gdt-state-icon">
                   history
                 </span>
-                <p>Chưa có hoạt động nào.</p>
+                <p>No activity yet.</p>
               </div>
             ) : (
               <ul className="gdt-activity-list">
@@ -1646,7 +1699,7 @@ export function GroupDetailPage() {
                 type="button"
                 className="gdt-modal-close"
                 onClick={() => setTaskModalOpen(false)}
-                aria-label="Đóng"
+                aria-label="Close"
               >
                 <span className="material-symbols-outlined">close</span>
               </button>
@@ -1661,7 +1714,7 @@ export function GroupDetailPage() {
                   id="gdt-f-title"
                   type="text"
                   className="gdt-input"
-                  placeholder="e.g. Thiết kế trang chủ"
+                  placeholder="e.g. Design the home page"
                   value={taskForm.title}
                   onChange={(e) =>
                     setTaskForm((f) => ({ ...f, title: e.target.value }))
@@ -1852,7 +1905,7 @@ export function GroupDetailPage() {
                 type="button"
                 className="gdt-modal-close"
                 onClick={() => setMsModalOpen(false)}
-                aria-label="Đóng"
+                aria-label="Close"
               >
                 <span className="material-symbols-outlined">close</span>
               </button>
@@ -1989,7 +2042,7 @@ export function GroupDetailPage() {
                 type="button"
                 className="gdt-modal-close"
                 onClick={() => setSubModalFor(null)}
-                aria-label="Đóng"
+                aria-label="Close"
               >
                 <span className="material-symbols-outlined">close</span>
               </button>
@@ -2004,7 +2057,7 @@ export function GroupDetailPage() {
                   id="gdt-f-sub-title"
                   type="text"
                   className="gdt-input"
-                  placeholder="e.g. Dựng wireframe"
+                  placeholder="e.g. Build wireframes"
                   value={subForm.title}
                   onChange={(e) =>
                     setSubForm((f) => ({ ...f, title: e.target.value }))
@@ -2297,8 +2350,8 @@ export function GroupDetailPage() {
           onClose={() => setInviteOpen(false)}
           onInvited={() => {
             toast.success(
-              "Đã gửi lời mời",
-              "Người được mời sẽ thấy lời mời trong hộp thư.",
+              "Invitation sent",
+              "The invitee will see this invitation in their inbox.",
             );
             // Nạp lại danh sách thành viên (có thể đã có người mới).
             void loadAll();

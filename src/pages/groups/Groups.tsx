@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { CenterToasts, useCenterToast } from "../../components/Toast";
 import type { ApiErr } from "../../lib/api-client";
@@ -107,7 +107,7 @@ export function GroupsPage() {
   );
 
   useEffect(() => {
-    document.title = "Nhóm · METANOIA";
+    document.title = "Groups · METANOIA";
   }, []);
 
   /* ---------- Nạp danh sách nhóm ---------- */
@@ -156,12 +156,12 @@ export function GroupsPage() {
     e.preventDefault();
     const name = form.name.trim();
     if (!name) {
-      setFormError("Vui lòng nhập tên nhóm.");
+      setFormError("Please enter a group name.");
       return;
     }
     if (form.startDate && form.deadline) {
       if (new Date(form.deadline) < new Date(form.startDate)) {
-        setFormError("Ngày hạn phải sau ngày bắt đầu.");
+        setFormError("Deadline must be after the start date.");
         return;
       }
     }
@@ -184,7 +184,7 @@ export function GroupsPage() {
     setGroups((prev) => [res.data, ...prev]);
     setCreateOpen(false);
     setForm({ name: "", description: "", startDate: "", deadline: "" });
-    toast.success("Đã tạo nhóm", `Bạn là Leader của "${res.data.name}".`);
+    toast.success("Group created", `You are the Leader of "${res.data.name}".`);
   }
 
   /* ---------- Mời thành viên ---------- */
@@ -204,7 +204,7 @@ export function GroupsPage() {
     }
     setMyInvitations((prev) => prev.filter((i) => i.id !== invitation.id));
     setGroups((prev) => [res.data, ...prev]);
-    toast.success("Đã tham gia nhóm", `Bạn là ${roleLabel(res.data.myRole)}.`);
+    toast.success("Joined group", `You are now a ${roleLabel(res.data.myRole)}.`);
   }
 
   async function handleDecline(invitation: GroupInvitationDto) {
@@ -216,7 +216,7 @@ export function GroupsPage() {
       return;
     }
     setMyInvitations((prev) => prev.filter((i) => i.id !== invitation.id));
-    toast.info("Đã từ chối lời mời");
+    toast.info("Invitation declined");
   }
 
   const pendingMyInvites = myInvitations.filter(
@@ -229,14 +229,10 @@ export function GroupsPage() {
         {/* ================= Header ================= */}
         <header className="grp-header">
           <div className="grp-header-text">
-            <h1 className="grp-eyebrow">
+            <span className="grp-eyebrow">
               <span className="grp-eyebrow-dot" aria-hidden="true" />
-              <span>Group Workspace</span>
-            </h1>
-            <p className="grp-sub">
-              Làm việc cùng nhóm — chia việc, giao người phụ trách, theo dõi
-              tiến độ và thời gian thực tế của từng thành viên.
-            </p>
+              <span>Group workspace</span>
+            </span>
           </div>
           <div className="grp-header-actions">
             <button
@@ -259,12 +255,15 @@ export function GroupsPage() {
         {pendingMyInvites.length > 0 && (
           <section className="grp-invites">
             <div className="grp-section-head">
-              <h2 className="grp-section-title">
-                <span className="material-symbols-outlined grp-section-icon">
-                  mark_email_unread
-                </span>
-                Lời mời ({pendingMyInvites.length})
-              </h2>
+              <div>
+                <span className="grp-section-eyebrow">Pending</span>
+                <h2 className="grp-section-title">
+                  <span className="material-symbols-outlined grp-section-icon">
+                    mark_email_unread
+                  </span>
+                  Invitations ({pendingMyInvites.length})
+                </h2>
+              </div>
             </div>
             <ul className="grp-invite-list">
               {pendingMyInvites.map((inv) => (
@@ -275,7 +274,7 @@ export function GroupsPage() {
                   <div className="grp-invite-body">
                     <span className="grp-invite-title">{inv.groupName}</span>
                     <span className="grp-invite-meta">
-                      {inv.invitedByName} mời bạn làm{" "}
+                      {inv.invitedByName} invited you as{" "}
                       <span
                         className={`grp-role grp-role--${roleTone(inv.role)}`}
                       >
@@ -309,32 +308,46 @@ export function GroupsPage() {
           </section>
         )}
 
-        {/* ================= Bộ lọc ================= */}
-        <div className="grp-toolbar">
-          <div className="grp-search">
-            <span
-              className="material-symbols-outlined grp-search-icon"
-              aria-hidden="true"
-            >
-              search
-            </span>
-            <input
-              type="search"
-              className="grp-search-input"
-              placeholder="Search groups…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              aria-label="Tìm nhóm"
-            />
+        {/* ================= Danh sách nhóm ================= */}
+        <div className="grp-section-head">
+          <div>
+            <span className="grp-section-eyebrow">Your workspaces</span>
+            <h2 className="grp-section-title">
+              <span className="material-symbols-outlined grp-section-icon">
+                groups
+              </span>
+              Groups
+              {visible.length > 0 && (
+                <span className="grp-section-count">{visible.length}</span>
+              )}
+            </h2>
           </div>
-          <label className="grp-check">
-            <input
-              type="checkbox"
-              checked={includeArchived}
-              onChange={(e) => setIncludeArchived(e.target.checked)}
-            />
-            <span>Show archived</span>
-          </label>
+          <div className="grp-toolbar">
+            <div className="grp-search">
+              <span
+                className="material-symbols-outlined grp-search-icon"
+                aria-hidden="true"
+              >
+                search
+              </span>
+              <input
+                type="search"
+                className="grp-search-input"
+                placeholder="Search groups…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                aria-label="Search groups"
+              />
+            </div>
+            <label className="grp-check">
+              <input
+                type="checkbox"
+                checked={includeArchived}
+                onChange={(e) => setIncludeArchived(e.target.checked)}
+              />
+              <span>Show archived</span>
+            </label>
+          </div>
         </div>
 
         {/* ================= Danh sách nhóm ================= */}
@@ -343,7 +356,7 @@ export function GroupsPage() {
             <span className="material-symbols-outlined grp-state-icon grp-state-icon--spin">
               progress_activity
             </span>
-            <p>Đang tải nhóm…</p>
+            <p>Loading groups…</p>
           </div>
         ) : error ? (
           <div className="grp-state grp-state--error">
@@ -356,7 +369,7 @@ export function GroupsPage() {
               className="grp-btn grp-btn--ghost"
               onClick={() => void loadGroups()}
             >
-              Thử lại
+              Try again
             </button>
           </div>
         ) : visible.length === 0 ? (
@@ -366,8 +379,8 @@ export function GroupsPage() {
             </span>
             <p>
               {search.trim()
-                ? "Không tìm thấy nhóm nào khớp."
-                : "Chưa có nhóm nào. Tạo nhóm để bắt đầu làm việc cùng nhau."}
+                ? "No groups match your search."
+                : "No groups yet. Create a group to start working together."}
             </p>
             {!search.trim() && (
               <button
@@ -375,7 +388,7 @@ export function GroupsPage() {
                 className="grp-btn grp-btn--primary"
                 onClick={() => setCreateOpen(true)}
               >
-                Tạo nhóm đầu tiên
+                Create your first group
               </button>
             )}
           </div>
@@ -403,8 +416,8 @@ export function GroupsPage() {
                     <button
                       type="button"
                       className="grp-icon-btn"
-                      title="Mời thành viên"
-                      aria-label={`Mời thành viên vào ${g.name}`}
+                      title="Invite members"
+                      aria-label={`Invite members to ${g.name}`}
                       onClick={() => void openInvite(g)}
                     >
                       <span className="material-symbols-outlined">
@@ -419,11 +432,11 @@ export function GroupsPage() {
                 )}
 
                 <div className="grp-card-meta">
-                  <span className="grp-card-meta-item">
+                  <span className="grp-card-meta-item grp-card-meta-item--count">
                     <span className="material-symbols-outlined" aria-hidden="true">
                       group
                     </span>
-                    {g.memberCount} thành viên
+                    {g.memberCount} members
                   </span>
                   {g.startDate && (
                     <span className="grp-card-meta-item">
@@ -452,9 +465,9 @@ export function GroupsPage() {
                 <div className="grp-card-foot">
                   <Link
                     to={`/groups/${g.id}`}
-                    className="grp-btn grp-btn--ghost grp-btn--sm"
+                    className="grp-btn grp-btn--ghost grp-btn--sm grp-card-open"
                   >
-                    Mở nhóm
+                    <span>Open group</span>
                     <span
                       className="material-symbols-outlined grp-btn-icon"
                       aria-hidden="true"
@@ -497,7 +510,7 @@ export function GroupsPage() {
                 type="button"
                 className="grp-modal-close"
                 onClick={() => setCreateOpen(false)}
-                aria-label="Đóng"
+                aria-label="Close"
               >
                 <span className="material-symbols-outlined">close</span>
               </button>
@@ -529,7 +542,7 @@ export function GroupsPage() {
                   id="grp-f-desc"
                   rows={3}
                   className="grp-input grp-input--textarea"
-                  placeholder="Mục tiêu của nhóm…"
+                  placeholder="Group goal…"
                   value={form.description}
                   onChange={(e) =>
                     setForm((f) => ({ ...f, description: e.target.value }))
@@ -615,8 +628,8 @@ export function GroupsPage() {
           onClose={() => setInviteOpen(false)}
           onInvited={() => {
             toast.success(
-              "Đã gửi lời mời",
-              "Người được mời sẽ thấy lời mời trong hộp thư.",
+              "Invitation sent",
+              "The invitee will see this invitation in their inbox.",
             );
           }}
           onError={(err) => showApiError(err, "send this invitation")}

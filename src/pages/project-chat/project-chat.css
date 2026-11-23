@@ -1,0 +1,76 @@
+/* ===========================================================
+ * Chat AI trong dự án — `/projects/:projectId/chat`
+ * ------------------------------------------------------------
+ * Dùng chung class `.aic-*` với trang `/copilot`, phần riêng chỉ để
+ * nhúng vào khung trang chi tiết dự án (chiều cao tính theo vùng
+ * chứa thay vì 100vh).
+ *
+ * Class prefix: `.pc-*`.
+ * =========================================================== */
+
+/* ---- Bố cục nhúng trong trang dự án ---- */
+.aic--embedded {
+  /* Bỏ header/footer cố định của trang độc lập. */
+  height: calc(100vh - 150px);
+  min-height: 640px;
+  border: 1px solid var(--aic-border);
+  border-radius: var(--aic-r-lg);
+  overflow: hidden;
+}
+
+/* ---- Cột trái hẹp hơn một chút trong ngữ cảnh dự án ---- */
+.aic--embedded .aic-left {
+  background: var(--aic-panel);
+}
+
+/* ---- Cột giữa có nền hơi khác để tách khỏi nền trang ---- */
+.aic--embedded .aic-mid {
+  background: var(--aic-canvas);
+}
+
+/* ---- Ẩn nút "Dự án mới" / "Nhập từ Excel" (đã ẩn qua prop) ---- */
+
+/* ---- Trạng thái rỗng của lịch sử chat: dùng chữ nhỏ hơn ---- */
+.aic--embedded .aic-left__state p {
+  max-width: 220px;
+  line-height: 1.55;
+}
+
+/* ---- Ẩn thanh cuộn ngang ở mọi cột ---- */
+.aic--embedded .aic-left__list,
+.aic--embedded .aic-mid__scroll,
+.aic--embedded .aic-right__body {
+  overflow-x: hidden;
+}
+
+/* ---- Thanh báo lỗi xếp lịch ---- */
+.aic--embedded .aic-toastbar {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+}
+
+/* ---- Responsive: ẩn cột trái trên màn nhỏ ---- */
+@media (max-width: 1180px) {
+  .aic--embedded {
+    grid-template-columns: var(--aic-left-w, 264px) minmax(0, 1fr);
+  }
+  .aic--embedded .aic-right {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .aic--embedded {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    min-height: 0;
+  }
+  .aic--embedded .aic-left {
+    display: none;
+  }
+  .aic--embedded .aic-mid {
+    min-height: 70vh;
+  }
+}

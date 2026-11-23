@@ -297,6 +297,27 @@
   font-size: 16px;
 }
 
+/* Nút mở thông báo nhóm → nhóm / việc của nhóm */
+.nt-item-open {
+  flex-shrink: 0;
+  padding: 6px;
+  border-radius: 6px;
+  border: 1px solid var(--hairline, #3d3a39);
+  background: transparent;
+  color: var(--mute, #8b949e);
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    color 160ms ease;
+}
+.nt-item-open:hover {
+  border-color: var(--primary, #00d992);
+  color: var(--primary, #00d992);
+}
+.nt-item-open span {
+  font-size: 16px;
+}
+
 /* ===========================================================
  * States
  * =========================================================== */

@@ -853,6 +853,26 @@ button.fc-bar__task:hover {
   opacity: 1;
 }
 
+/*
+ * Bị chặn bởi luật "làm trước - làm sau" (chỉ ở FE — xem `sequence-logic.ts`).
+ *
+ * Nút vẫn hiện để user thấy có việc, nhưng disable + icon ổ khoá. Tooltip
+ * (title) giải thích: phải làm việc sớm hơn trước.
+ */
+.fc-slot-btn--blocked {
+  opacity: 0.5;
+  cursor: not-allowed;
+  border-style: dashed;
+  border-color: var(--fc-line);
+  background: transparent;
+  color: var(--fc-text-3);
+}
+.fc-slot-btn--blocked:hover:not(:disabled) {
+  opacity: 0.5;
+  background: transparent;
+  border-color: var(--fc-line);
+}
+
 .fc-slot-btn--stop {
   border-color: rgba(255, 107, 107, 0.4);
   background: var(--fc-danger-soft);

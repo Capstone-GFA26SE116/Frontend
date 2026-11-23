@@ -10,12 +10,21 @@ import { GoogleCalendarSyncDialog } from "../../components/GoogleCalendarSyncDia
 import { SlotFocusPanel } from "../../components/focus/SlotFocusPanel";
 import { SlotFocusActions } from "../../components/focus/SlotFocusActions";
 import { useFocusActions } from "../../components/focus/focus-context";
+import {
+  blockedTooltip,
+  computeSequenceGate,
+  isItemAllowed,
+  type SequencedItem,
+  type SequenceGate,
+} from "../../components/focus/sequence-logic";
+import { isClosedStatus, toSlotPhase } from "../../components/focus/focus-logic";
 import { useStaggeredMount } from "../../hooks/useStaggeredMount";
 import { useGoogleCalendar } from "../../hooks/useGoogleCalendar";
 import {
   createScheduleSlot,
   deleteScheduleSlot,
   getProject,
+  listArchivedProjectIds,
   listCalendar,
   listProjects,
   listScheduleSlotsByTask,
@@ -371,7 +380,6 @@ export function SchedulePage() {
 
   /* project */
   const [project, setProject] = useState<ProjectDto | null>(null);
-  const [projectLoading, setProjectLoading] = useState(true);
 
   /* view state */
   const [viewMode, setViewMode] = useState<ViewMode>("week");
@@ -487,12 +495,9 @@ export function SchedulePage() {
   useEffect(() => {
     if (!projectId) return;
     let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- data-fetch pattern
-    setProjectLoading(true);
     void getProject(projectId).then((res) => {
       if (cancelled) return;
       if (res.ok) setProject(res.data);
-      setProjectLoading(false);
     });
     return () => { cancelled = true; };
   }, [projectId]);
@@ -537,6 +542,17 @@ export function SchedulePage() {
     const from = range.start.toISOString();
     const to = range.end.toISOString();
 
+    /*
+     * Lấy danh sách project đã archive TRƯỚC, để lọc data lịch.
+     *
+     * BE merge task/subtask/milestone/slot cho mọi project (kể cả project đã
+     * archive) → nếu không lọc, lịch vẫn hiện dự án đã archive.
+     */
+    const archivedIds = await listArchivedProjectIds();
+    /** Project đã archive → ẩn khỏi lịch. */
+    const isArchived = (pid: string | null | undefined): boolean =>
+      !!pid && archivedIds.has(pid);
+
     // Ưu tiên: dùng Calendar API (BE merged + enriched data)
     // Skip nếu đã biết API này không tồn tại (404)
     if (!calendarApiUnavailable.current) {
@@ -546,8 +562,10 @@ export function SchedulePage() {
       if (!calRes.ok && calRes.status === 404) {
         calendarApiUnavailable.current = true;
       } else if (calRes.ok && calRes.data.items.length > 0) {
-        // Dùng calendar items từ BE
-        setCalendarItems(calRes.data.items);
+        // Dùng calendar items từ BE — ẩn item thuộc project đã archive
+        setCalendarItems(
+          calRes.data.items.filter((it) => !isArchived(it.projectId)),
+        );
         // Work-hours config: AI propose dựa trên giờ làm việc nên cần giữ lại.
         setWorkHours({
           timeZone: calRes.data.timeZone,
@@ -566,19 +584,27 @@ export function SchedulePage() {
           );
           const allTasks: TaskDto[] = [];
           for (const r of taskResults) if (r.ok) allTasks.push(...r.data);
-          setTasks(allTasks);
+          // Ẩn task của project đã archive
+          const visibleTasks = allTasks.filter(
+            (t) => !isArchived(t.projectId),
+          );
+          setTasks(visibleTasks);
           // Subtask: cần cho modal (cột phải) — load theo từng task
           const subResults = await Promise.all(
-            allTasks.map((t) => listSubtasks(t.id)),
+            visibleTasks.map((t) => listSubtasks(t.id)),
           );
           const allSub: SubtaskDto[] = [];
           for (const r of subResults) if (r.ok) allSub.push(...r.data);
           setSubtasks(allSub);
         } else {
           const tasksRes = await listTasks(projectId);
-          if (tasksRes.ok) setTasks(tasksRes.data);
+          if (tasksRes.ok) {
+            setTasks(tasksRes.data.filter((t) => !isArchived(t.projectId)));
+          }
           const subResults = await Promise.all(
-            (tasksRes.ok ? tasksRes.data : []).map((t) => listSubtasks(t.id)),
+            (tasksRes.ok ? tasksRes.data : [])
+              .filter((t) => !isArchived(t.projectId))
+              .map((t) => listSubtasks(t.id)),
           );
           const allSub: SubtaskDto[] = [];
           for (const r of subResults) if (r.ok) allSub.push(...r.data);
@@ -608,9 +634,11 @@ export function SchedulePage() {
       );
       const allTasks: TaskDto[] = [];
       for (const r of taskResults) if (r.ok) allTasks.push(...r.data);
-      setTasks(allTasks);
+      // Ẩn task của project đã archive
+      const visibleTasks = allTasks.filter((t) => !isArchived(t.projectId));
+      setTasks(visibleTasks);
       const subResults = await Promise.all(
-        allTasks.map((t) => listSubtasks(t.id)),
+        visibleTasks.map((t) => listSubtasks(t.id)),
       );
       const allSub: SubtaskDto[] = [];
       for (const r of subResults) if (r.ok) allSub.push(...r.data);
@@ -618,7 +646,7 @@ export function SchedulePage() {
 
       // Load schedule slots for all tasks
       const slotResults = await Promise.all(
-        allTasks.map((t) => listScheduleSlotsByTask(t.id)),
+        visibleTasks.map((t) => listScheduleSlotsByTask(t.id)),
       );
       const allSlots: ScheduleSlotDto[] = [];
       for (const r of slotResults) if (r.ok) allSlots.push(...r.data);
@@ -637,10 +665,12 @@ export function SchedulePage() {
       setLoading(false);
       return;
     }
-    setTasks(tasksRes.data);
+    // Ẩn task của project đã archive
+    const visibleTasks = tasksRes.data.filter((t) => !isArchived(t.projectId));
+    setTasks(visibleTasks);
     // Tải song song subtasks của từng task
     const subResults = await Promise.all(
-      tasksRes.data.map((t) => listSubtasks(t.id)),
+      visibleTasks.map((t) => listSubtasks(t.id)),
     );
     const allSub: SubtaskDto[] = [];
     for (const r of subResults) if (r.ok) allSub.push(...r.data);
@@ -648,7 +678,7 @@ export function SchedulePage() {
 
     // Load schedule slots for project tasks
     const slotResults = await Promise.all(
-      tasksRes.data.map((t) => listScheduleSlotsByTask(t.id)),
+      visibleTasks.map((t) => listScheduleSlotsByTask(t.id)),
     );
     const allSlots: ScheduleSlotDto[] = [];
     for (const r of slotResults) if (r.ok) allSlots.push(...r.data);
@@ -1147,6 +1177,192 @@ export function SchedulePage() {
     return list;
   }, [rawEvents, tasksById]);
 
+  /* ===========================================================
+   * Luật "làm trước - làm sau"
+   * ===========================================================
+   *
+   * Trên lịch có nhiều việc cùng có thể bấm Start, nhưng người dùng nên
+   * làm theo đúng thứ tự thời gian: cái nào có lịch sớm hơn thì làm
+   * trước, cái nào có lịch sau thì chưa được làm.
+   *
+   * ⚠️ Luật này CHỈ Ở FE. BE chưa có luật thứ tự — BE chỉ chặn "1 người
+   * 1 phiên" (409 FOCUS_SESSION_CONFLICT). Xem `sequence-logic.ts`.
+   *
+   * Ta gom các "việc" (task không có subtask + từng subtask) thành 1 danh
+   * sách có giờ bắt đầu, rồi tính ra:
+   *  - việc nào được phép Start,
+   *  - việc nào bị chặn và bị chặn bởi ai.
+   *
+   * Chỉ việc CÓ giờ bắt đầu mới tham gia: event all-day (deadline) và
+   * event Google Calendar không có "giờ bắt đầu" để so sánh.
+   */
+
+  /** Danh sách việc xếp thứ tự — nguồn cho luật bên dưới. */
+  const sequenceItems = useMemo<SequencedItem[]>(() => {
+    const items: SequencedItem[] = [];
+    const seen = new Set<string>();
+
+    /*
+     * Thêm 1 việc vào danh sách, bỏ qua nếu trùng khoá.
+     *
+     * @param key        Khoá ổn định (slot / subtask / task).
+     * @param title      Tên hiển thị (dùng cho tooltip).
+     * @param startAt    Giờ bắt đầu (epoch ms).
+     * @param owner      Task hoặc subtask sở hữu việc này (để xem status).
+     * @param phase      Phase của slot (để biết đang chạy không).
+     */
+    const push = (
+      key: string,
+      title: string,
+      startAt: number,
+      owner: { status?: string | null } | undefined,
+      phase: ReturnType<typeof toSlotPhase>,
+    ) => {
+      if (!Number.isFinite(startAt)) return;
+      if (seen.has(key)) return;
+      seen.add(key);
+
+      const ownerStatus = owner?.status ?? "";
+      const isRunning = phase === "InProgress" || phase === "Overrun";
+
+      items.push({
+        key,
+        title,
+        startAt,
+        dayAt: startOfDay(new Date(startAt)).getTime(),
+        isPending: !isClosedStatus(ownerStatus),
+        isRunning,
+      });
+    };
+
+    for (const ev of events) {
+      // Chỉ việc có giờ bắt đầu thật. All-day = deadline (không xếp được).
+      if (ev.isAllDay) continue;
+      // Không phải việc của ta (Google event) → không xếp.
+      if (!ev.taskId) continue;
+
+      /*
+       * ⚠️ Task GỘP nhiều subtask (aggregate): các event con đã bị lọc khỏi
+       * `events`, chỉ còn 1 event tổng. Nhưng event tổng hiển thị ở NHIỀU cột
+       * ngày (mỗi ngày có 1 subtask) → ta phải tách ra từng khối con để mỗi
+       * khối là 1 mắt xích trong chuỗi thứ tự.
+       */
+      if (ev.aggregatedEvents && ev.aggregatedEvents.length > 0) {
+        for (const child of ev.aggregatedEvents) {
+          const childKey = child.scheduleSlotId
+            ? `slot:${child.scheduleSlotId}`
+            : child.subTaskId
+              ? `sub:${child.subTaskId}`
+              : child.taskId
+                ? `task:${child.taskId}`
+                : null;
+          if (!childKey) continue;
+          const childOwner = child.subTaskId
+            ? subtasks.find((s) => s.id === child.subTaskId)
+            : child.taskId
+              ? tasksById[child.taskId]
+              : undefined;
+          push(
+            childKey,
+            child.subtask?.title ?? child.title,
+            child.start.getTime(),
+            childOwner,
+            toSlotPhase(child.slotStatus ?? child.status),
+          );
+        }
+        continue;
+      }
+
+      /*
+       * Khoá: ưu tiên slot (vì 1 task có thể có nhiều slot ở nhiều ngày),
+       * nếu không có slot thì dùng subtask, cuối cùng là task.
+       */
+      const key = ev.scheduleSlotId
+        ? `slot:${ev.scheduleSlotId}`
+        : ev.subTaskId
+          ? `sub:${ev.subTaskId}`
+          : `task:${ev.taskId}`;
+
+      // Trạng thái: task gốc, hoặc subtask nếu event là subtask.
+      const owner = ev.subTaskId
+        ? subtasks.find((s) => s.id === ev.subTaskId)
+        : tasksById[ev.taskId];
+
+      push(
+        key,
+        ev.title,
+        ev.start.getTime(),
+        owner,
+        toSlotPhase(ev.slotStatus ?? ev.status),
+      );
+    }
+
+    return items;
+  }, [events, subtasks, tasksById]);
+
+  /** Kết quả luật: việc nào được Start, việc nào bị chặn (và bị ai). */
+  const sequenceGate = useMemo<SequenceGate>(
+    () => computeSequenceGate(sequenceItems),
+    [sequenceItems],
+  );
+
+  /**
+   * Lý do (tiếng Anh) để việc này bị chặn — hoặc `null` nếu được phép.
+   *
+   * @param ev  Event đang render.
+   * @param day Ngày của ô lịch — quan trọng với task GỘP nhiều subtask (một
+   *             event hiện ở nhiều cột ngày, mỗi ngày 1 khối con khác nhau).
+   */
+  const blockedReasonFor = useCallback(
+    (ev: CalEvent, day?: Date): string | null => {
+      if (!ev.taskId) return null;
+
+      /** Tra lý do chặn theo khoá việc (null = được phép Start). */
+      const reasonForKey = (key: string): string | null => {
+        const item = sequenceItems.find((i) => i.key === key);
+        if (!item) return null;
+        if (isItemAllowed(sequenceGate, key, item.dayAt)) return null;
+        const blockerKey = sequenceGate.blockedBy.get(key);
+        const blocker = blockerKey
+          ? sequenceItems.find((i) => i.key === blockerKey)
+          : null;
+        return blockedTooltip(blocker?.title ?? null);
+      };
+
+      /*
+       * Task GỘP: event tổng hiển thị ở nhiều cột ngày. Mỗi cột ứng với 1
+       * khối con (subtask) → ta tra khối con rơi vào đúng ngày đó.
+       */
+      if (ev.aggregatedEvents && ev.aggregatedEvents.length > 0) {
+        const dayMs = day ? startOfDay(day).getTime() : null;
+        const child =
+          ev.aggregatedEvents.find((c) => {
+            if (dayMs == null) return false;
+            const cs = startOfDay(c.start).getTime();
+            const ce = startOfDay(c.end).getTime();
+            return cs <= dayMs && ce >= dayMs;
+          }) ?? ev.aggregatedEvents[0];
+        const childKey = child.scheduleSlotId
+          ? `slot:${child.scheduleSlotId}`
+          : child.subTaskId
+            ? `sub:${child.subTaskId}`
+            : child.taskId
+              ? `task:${child.taskId}`
+              : null;
+        if (!childKey) return null;
+        return reasonForKey(childKey);
+      }
+
+      const key = ev.scheduleSlotId
+        ? `slot:${ev.scheduleSlotId}`
+        : ev.subTaskId
+          ? `sub:${ev.subTaskId}`
+          : `task:${ev.taskId}`;
+      return reasonForKey(key);
+    },
+    [sequenceGate, sequenceItems],
+  );
+
   /**
    * Project spans: mỗi project 1 span, lấy từ ProjectDto (startDate, deadline)
    * làm anchor, mở rộng về phía trước/sau bằng deadline/fixed* của tasks và
@@ -1597,15 +1813,17 @@ export function SchedulePage() {
               <span className="material-symbols-outlined">arrow_back</span>
             </button>
             <div>
-              <span className="sch-eyebrow">{projectId ? "Project schedule" : "Personal schedule"}</span>
-              <h1 className="sch-title">
-                {projectLoading ? "Loading…" : project?.name ?? "All your scheduled tasks"}
-              </h1>
-              <p className="sch-sub">
+              {/*
+                * Tiêu đề lớn, nổi bật.
+                * - Không còn chữ "Loading…" (trước đây `project?.name` chưa kịp
+                *   tải → nhảy "Loading…" rồi mới đổi, gây nhấp nháy).
+                * - Ở trang lịch tổng hiện "Personal schedule".
+                */}
+              <h1 className="sch-title sch-title--display">
                 {projectId
-                  ? "Tasks, subtasks and milestones for this project, synced from your API."
-                  : "Everything across all your projects — calendar items pulled from the backend."}
-              </p>
+                  ? (project?.name ?? "Project schedule")
+                  : "Personal schedule"}
+              </h1>
             </div>
           </div>
 
@@ -1675,29 +1893,6 @@ export function SchedulePage() {
                 Jump to span
               </button>
             )}
-          </div>
-        )}
-
-        {/* ============ 1b-multi. All-projects legend (khi /schedule) ============ */}
-        {projectSpans.length > 1 && (
-          <div className="sch-legend" role="status" aria-live="polite">
-            <span className="sch-legend__title">
-              <span className="material-symbols-outlined sch-icon-18">folder_open</span>
-              All projects
-            </span>
-            <div className="sch-legend__list">
-              {projectSpans.map((sp) => (
-                <div key={sp.project.id} className="sch-legend__item" title={sp.project.name}>
-                  <span className="sch-legend__dot" style={{ background: sp.color }} />
-                  <span className="sch-legend__name">{sp.project.name}</span>
-                  <span className="sch-legend__range">
-                    {sp.start.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                    <span>→</span>
-                    {sp.end.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                  </span>
-                </div>
-              ))}
-            </div>
           </div>
         )}
 
@@ -1872,10 +2067,10 @@ export function SchedulePage() {
 
             <div className="sch-board__main">
               {viewMode === "week" && (
-                <WeekBoard days={visibleWeek} onSelectEvent={setSelected} tasksById={tasksById} spans={projectSpans} onCellClick={openCellPopover} accentByKey={cellAccentByKey} subtasksByTaskId={subtasksByTaskId} showWeekend={showWeekend} />
+                <WeekBoard days={visibleWeek} onSelectEvent={setSelected} tasksById={tasksById} spans={projectSpans} onCellClick={openCellPopover} accentByKey={cellAccentByKey} subtasksByTaskId={subtasksByTaskId} showWeekend={showWeekend} blockedReasonFor={blockedReasonFor} />
               )}
               {viewMode === "month" && (
-                <MonthGrid days={monthGrid} onSelectEvent={setSelected} spans={projectSpans} onCellClick={openCellPopover} accentByKey={cellAccentByKey} gridRef={monthGridRef} />
+                <MonthGrid days={monthGrid} onSelectEvent={setSelected} spans={projectSpans} onCellClick={openCellPopover} accentByKey={cellAccentByKey} gridRef={monthGridRef} blockedReasonFor={blockedReasonFor} />
               )}
               {viewMode === "gantt" && (
                 <GanttView days={visibleWeek} onSelectEvent={setSelected} spans={projectSpans} />
@@ -1969,7 +2164,7 @@ function KpiCard({
  * =========================================================== */
 function WeekBoard({
   days, onSelectEvent, tasksById, spans, onCellClick, accentByKey, subtasksByTaskId,
-  showWeekend,
+  showWeekend, blockedReasonFor,
 }: {
   days: DayPlan[];
   onSelectEvent: (e: CalEvent) => void;
@@ -1981,6 +2176,8 @@ function WeekBoard({
   subtasksByTaskId?: Map<string, SubtaskDto[]>;
   /** Hiện cả T7 + CN hay chỉ 5 ngày làm việc (T2–T6). */
   showWeekend?: boolean;
+  /** Lý do bị chặn theo luật "làm trước - làm sau". */
+  blockedReasonFor?: (ev: CalEvent, day?: Date) => string | null;
 }) {
   /**
    * 5 ngày làm việc (T2–T6) — bỏ T7 + CN.
@@ -2105,6 +2302,7 @@ function WeekBoard({
                   taskType={ev.taskId ? tasksById[ev.taskId]?.taskType : undefined}
                   subtasksByTaskId={subtasksByTaskId}
                   day={d.date}
+                  blockedReasonFor={blockedReasonFor}
                 />
               ))}
             </div>
@@ -2119,7 +2317,7 @@ function WeekBoard({
  * Month grid — 6 rows x 7 cols
  * =========================================================== */
 function MonthGrid({
-  days, onSelectEvent, spans, onCellClick, accentByKey, gridRef,
+  days, onSelectEvent, spans, onCellClick, accentByKey, gridRef, blockedReasonFor,
 }: {
   days: DayPlan[];
   onSelectEvent: (e: CalEvent) => void;
@@ -2128,6 +2326,8 @@ function MonthGrid({
   accentByKey: Map<string, CellAccent | null>;
   /** Ref tới grid — để parent cuộn tới ô "hôm nay". */
   gridRef?: Ref<HTMLDivElement>;
+  /** Lý do bị chặn theo luật "làm trước - làm sau". */
+  blockedReasonFor?: (ev: CalEvent, day?: Date) => string | null;
 }) {
   return (
     <div className="sch-month">
@@ -2219,7 +2419,7 @@ function MonthGrid({
               </div>
               <div className="sch-month__events">
                 {visible.map((ev) => (
-                  <EventChip key={ev.id} ev={ev} compact onClick={() => onSelectEvent(ev)} />
+                  <EventChip key={ev.id} ev={ev} compact onClick={() => onSelectEvent(ev)} blockedReasonFor={blockedReasonFor} day={d.date} />
                 ))}
                 {more > 0 && (
                   <button type="button" className="sch-month__more">+{more} more</button>
@@ -2404,7 +2604,7 @@ function GanttView({
  * card (không lồng button trong button — HTML không hợp lệ).
  * =========================================================== */
 function TaskCard({
-  ev, onClick, taskType, subtasksByTaskId, day,
+  ev, onClick, taskType, subtasksByTaskId, day, blockedReasonFor,
 }: {
   ev: CalEvent;
   onClick: () => void;
@@ -2413,6 +2613,8 @@ function TaskCard({
   subtasksByTaskId?: Map<string, SubtaskDto[]>;
   /** Ngày của ô lịch đang hiển thị — chỉ hiện subtask thuộc đúng ngày này. */
   day?: Date;
+  /** Lý do bị chặn (tiếng Anh) theo luật "làm trước - làm sau". */
+  blockedReasonFor?: (ev: CalEvent, day?: Date) => string | null;
 }) {
   const isDone = (() => {
     const s = (ev.status ?? "").toLowerCase();
@@ -2575,6 +2777,12 @@ function TaskCard({
         status={ev.slotStatus ?? ev.status}
         plannedMinutes={ev.slotPlannedMinutes ?? undefined}
         taskTitle={ev.task?.title ?? ev.subtask?.title ?? null}
+        /*
+         * Luật "làm trước - làm sau" (chỉ ở FE): nếu việc này đến sau một
+         * việc khác còn dở → nút Start hiện nhưng disable + tooltip giải
+         * thích phải làm việc nào trước.
+         */
+        blockedReason={blockedReasonFor?.(ev, day) ?? null}
       />
     </div>
   );
@@ -2584,12 +2792,16 @@ function TaskCard({
  * EventChip — used in Week & Month
  * =========================================================== */
 function EventChip({
-  ev, onClick, compact, taskType,
+  ev, onClick, compact, taskType, blockedReasonFor, day,
 }: {
   ev: CalEvent;
   onClick: () => void;
   compact?: boolean;
   taskType?: string;
+  /** Lý do bị chặn theo luật "làm trước - làm sau". */
+  blockedReasonFor?: (ev: CalEvent, day?: Date) => string | null;
+  /** Ngày của ô lịch (quan trọng với task gộp nhiều subtask). */
+  day?: Date;
 }) {
   const isDone = (() => {
     const s = (ev.status ?? "").toLowerCase();
@@ -2652,6 +2864,8 @@ function EventChip({
         status={ev.slotStatus ?? ev.status}
         plannedMinutes={ev.slotPlannedMinutes ?? undefined}
         taskTitle={ev.task?.title ?? ev.subtask?.title ?? null}
+        /* Luật "làm trước - làm sau" — xem TaskCard. */
+        blockedReason={blockedReasonFor?.(ev, day) ?? null}
         compact
       />
     </div>
@@ -2677,7 +2891,6 @@ function GoogleCalendarCard({
 }) {
   const {
     isConnected,
-    status,
     loading,
     busy,
     error,
@@ -2695,25 +2908,6 @@ function GoogleCalendarCard({
   const [syncResult, setSyncResult] = useState<GoogleCalendarSyncResultDto | null>(
     null,
   );
-
-  /** Định dạng `tokenExpiresAt` -> chuỗi ngắn gọn cho user đọc. */
-  const tokenExpiresAt = status?.tokenExpiresAt ?? null;
-  const [expiresLabel, setExpiresLabel] = useState<string | null>(null);
-  useEffect(() => {
-    function compute(): string | null {
-      if (!tokenExpiresAt) return null;
-      const d = new Date(tokenExpiresAt!);
-      if (Number.isNaN(d.getTime())) return null;
-      const mins = Math.round((d.getTime() - Date.now()) / 60000);
-      if (mins <= 0) return "Token expired";
-      if (mins < 60) return `Token valid ~${mins}m`;
-      const hours = Math.round(mins / 60);
-      if (hours < 48) return `Token valid ~${hours}h`;
-      return `Token valid until ${d.toLocaleDateString()}`;
-    }
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- derive từ tokenExpiresAt
-    setExpiresLabel(compute());
-  }, [tokenExpiresAt]);
 
   /**
    * Mở hộp thoại đồng bộ (chọn hướng + khoảng ngày).
@@ -2819,66 +3013,64 @@ function GoogleCalendarCard({
       </div>
       <h3 className="sch-card__title">Google Calendar</h3>
 
-      {loading ? (
-        <p className="sch-card__hint">Checking connection…</p>
-      ) : isConnected ? (
-        <>
+      {/*
+        * Vùng nội dung — bọc trong 1 div riêng để mọi đoạn văn (hint, token
+        * meta, note) xếp dọc bên nhau. Nếu để trực tiếp là con của grid
+        * `.sch-gcal` thì chúng cùng nhận `grid-area: body` → chồng lên nhau.
+        */}
+      <div className="sch-gcal__body">
+        {loading ? (
+          <p className="sch-card__hint">Checking connection…</p>
+        ) : isConnected ? (
           <p className="sch-card__hint">
             Events sync two-way with your Google account.
           </p>
-          {expiresLabel && (
-            <div className="sch-side-meta">
-              <div className="sch-side-meta__row">
-                <span>Token</span>
-                <strong>{expiresLabel}</strong>
-              </div>
-            </div>
-          )}
-          <div className="sch-gcal__actions">
+        ) : (
+          <>
+            <p className="sch-card__hint">
+              Connect to mirror your scheduled blocks into Google Calendar.
+            </p>
             <button
               type="button"
-              className="sch-btn sch-btn--primary sch-gcal__btn"
-              onClick={openSyncDialog}
-              disabled={busy !== null}
+              className="sch-btn sch-btn--primary sch-gcal__btn sch-gcal__btn--full"
+              onClick={() => void connect()}
+              disabled={connecting}
             >
-              <span className="material-symbols-outlined sch-icon-18">sync</span>
-              {busy === "sync" ? "Syncing…" : "Đồng bộ"}
+              <span className="material-symbols-outlined sch-icon-18">
+                {connecting ? "progress_activity" : "link"}
+              </span>
+              {connecting ? "Redirecting…" : "Connect Google Calendar"}
             </button>
-            <button
-              type="button"
-              className="sch-btn sch-btn--soft sch-gcal__btn"
-              onClick={handleDisconnect}
-              disabled={busy !== null}
-            >
-              <span className="material-symbols-outlined sch-icon-18">link_off</span>
-              {busy === "disconnect" ? "Disconnecting…" : "Disconnect"}
-            </button>
-          </div>
-        </>
-      ) : (
-        <>
-          <p className="sch-card__hint">
-            Connect to mirror your scheduled blocks into Google Calendar.
-          </p>
-          <button
-            type="button"
-            className="sch-btn sch-btn--primary sch-gcal__btn sch-gcal__btn--full"
-            onClick={() => void connect()}
-            disabled={connecting}
-          >
-            <span className="material-symbols-outlined sch-icon-18">
-              {connecting ? "progress_activity" : "link"}
-            </span>
-            {connecting ? "Redirecting…" : "Connect Google Calendar"}
-          </button>
-          <p className="sch-gcal__note">
-            Bạn sẽ được chuyển sang Google để cấp quyền{" "}
-            <code>calendar.events</code>, sau đó quay lại đây.
-          </p>
-        </>
-      )}
+            <p className="sch-gcal__note">
+              Bạn sẽ được chuyển sang Google để cấp quyền{" "}
+              <code>calendar.events</code>, sau đó quay lại đây.
+            </p>
+          </>
+        )}
 
-      {error && <p className="sch-gcal__error">{error}</p>}
+        {error && <p className="sch-gcal__error">{error}</p>}
+      </div>
+
+      <div className="sch-gcal__actions">
+        <button
+          type="button"
+          className="sch-btn sch-btn--primary sch-gcal__btn"
+          onClick={openSyncDialog}
+          disabled={busy !== null}
+        >
+          <span className="material-symbols-outlined sch-icon-18">sync</span>
+          {busy === "sync" ? "Syncing…" : "Đồng bộ"}
+        </button>
+        <button
+          type="button"
+          className="sch-btn sch-btn--soft sch-gcal__btn"
+          onClick={handleDisconnect}
+          disabled={busy !== null}
+        >
+          <span className="material-symbols-outlined sch-icon-18">link_off</span>
+          {busy === "disconnect" ? "Disconnecting…" : "Disconnect"}
+        </button>
+      </div>
 
       {/* Hộp thoại đồng bộ — chọn hướng + khoảng ngày */}
       {syncOpen && (

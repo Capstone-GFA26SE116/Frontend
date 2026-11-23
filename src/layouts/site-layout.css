@@ -391,6 +391,25 @@
   flex-direction: column;
   gap: 2px;
   animation: site-menu-in 120ms ease-out;
+  /* Menu có nhiều item → cuộn được nếu màn hình thấp. */
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline) transparent;
+}
+.site-user-menu::-webkit-scrollbar {
+  width: 6px;
+}
+.site-user-menu::-webkit-scrollbar-track {
+  background: transparent;
+}
+.site-user-menu::-webkit-scrollbar-thumb {
+  background: var(--hairline);
+  border-radius: 9999px;
+}
+.site-user-menu::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
 }
 @keyframes site-menu-in {
   from { opacity: 0; transform: translateY(-4px); }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useNotificationsContext } from "../../components/focus/notifications-context-state";
 import type { NotificationDto } from "../../lib/api-client";
 import "./notifications.css";
@@ -17,12 +18,34 @@ import "./notifications.css";
  * "MissedSlot") — muốn biết chính xác loại gì thì dựa vào `title` +
  * `scheduleSlotId` + trạng thái slot. `actionType` chi tiết chỉ có ở
  * SignalR và Web Push.
+ *
+ * ⚠️ Thông báo của NHÓM (spec BE GROUP_FE.md mục 6) có thêm `groupId` và
+ * `groupTaskId` → bấm vào sẽ mở thẳng nhóm / việc của nhóm.
  */
+
+/** Các type thông báo của nhóm (mục 6 + mục 10 của GROUP_FE.md). */
+const GROUP_NOTIFICATION_TYPES = new Set([
+  "GroupInvited",
+  "GroupAssigned",
+  "GroupStatusChanged",
+  "GroupMention",
+  "GroupChangeRequested",
+  "GroupChangeDecided",
+]);
 
 /** Icon theo nhóm loại thông báo. */
 function iconFor(n: NotificationDto): string {
   const t = (n.type ?? "").toLowerCase();
   if (t === "missedslot") return "event_busy";
+  if (GROUP_NOTIFICATION_TYPES.has(n.type ?? "")) {
+    if (t === "groupinvited") return "group_add";
+    if (t === "groupassigned") return "assignment_ind";
+    if (t === "groupstatuschanged") return "published_with_changes";
+    if (t === "groupmention") return "alternate_email";
+    if (t === "groupchangerequested") return "edit_calendar";
+    if (t === "groupchangedecided") return "event_available";
+    return "groups";
+  }
   const title = (n.title ?? "").toLowerCase();
   if (title.includes("bỏ lỡ")) return "event_busy";
   if (title.includes("quá giờ") || title.includes("overrun")) return "timer_off";
@@ -31,6 +54,7 @@ function iconFor(n: NotificationDto): string {
   if (title.includes("xong")) return "sentiment_satisfied";
   return "notifications";
 }
+
 
 /** Định dạng thời gian tương đối: "vừa xong" / "5 phút trước" / "2 giờ trước". */
 function formatRelative(iso: string | null): string {
@@ -51,6 +75,7 @@ function formatRelative(iso: string | null): string {
 export function NotificationsPage() {
   // Dùng CHUNG instance với header (1 SignalR connection cho toàn app).
   const notif = useNotificationsContext();
+  const navigate = useNavigate();
   const [filter, setFilter] = useState<"all" | "unread">("all");
 
   useEffect(() => {
@@ -67,6 +92,34 @@ export function NotificationsPage() {
     },
     [notif],
   );
+
+  /**
+   * Mở thông báo nhóm → đi thẳng nhóm / việc của nhóm.
+   *
+   * Theo spec GROUP_FE.md mục 6:
+   *  - `GroupInvited` → danh sách lời mời (không có groupTaskId).
+   *  - `GroupAssigned` / `GroupStatusChanged` / `GroupMention` → chi tiết
+   *    việc `groupTaskId` (với việc con là VIỆC CHA của nó).
+   */
+  const handleOpen = useCallback(
+    (n: NotificationDto) => {
+      const groupId = n.groupId;
+      if (!groupId) return;
+      if (n.groupTaskId) {
+        navigate(`/groups/${groupId}`);
+        return;
+      }
+      navigate("/groups");
+    },
+    [navigate],
+  );
+
+  /** Thông báo này có liên kết nhóm để mở không? */
+  const groupLinkOf = (n: NotificationDto): string | null => {
+    if (!n.groupId) return null;
+    if (n.groupTaskId) return `/groups/${n.groupId}`;
+    return "/groups";
+  };
 
   return (
     <div className="nt-page">
@@ -184,38 +237,59 @@ export function NotificationsPage() {
           </div>
         ) : (
           <ul className="nt-list">
-            {visible.map((n) => (
-              <li
-                key={n.id}
-                className={`nt-item${n.isRead ? "" : " nt-item--unread"}`}
-              >
-                <span className="nt-item-icon" aria-hidden="true">
-                  <span className="material-symbols-outlined">{iconFor(n)}</span>
-                </span>
-                <div className="nt-item-body">
-                  <span className="nt-item-title">{n.title ?? "Thông báo"}</span>
-                  {n.message && (
-                    <span className="nt-item-msg">{n.message}</span>
-                  )}
-                  <span className="nt-item-meta">
-                    {formatRelative(n.sentAt)}
-                    {n.type ? ` · ${n.type}` : ""}
-                    {n.scheduleSlotId ? " · có gắn slot" : ""}
+            {visible.map((n) => {
+              const groupLink = groupLinkOf(n);
+              return (
+                <li
+                  key={n.id}
+                  className={`nt-item${n.isRead ? "" : " nt-item--unread"}`}
+                >
+                  <span className="nt-item-icon" aria-hidden="true">
+                    <span className="material-symbols-outlined">
+                      {iconFor(n)}
+                    </span>
                   </span>
-                </div>
-                {!n.isRead && (
-                  <button
-                    type="button"
-                    className="nt-item-mark"
-                    onClick={() => handleMarkRead(n.id)}
-                    aria-label="Đánh dấu đã đọc"
-                    title="Đánh dấu đã đọc"
-                  >
-                    <span className="material-symbols-outlined">done</span>
-                  </button>
-                )}
-              </li>
-            ))}
+                  <div className="nt-item-body">
+                    <span className="nt-item-title">{n.title ?? "Thông báo"}</span>
+                    {n.message && (
+                      <span className="nt-item-msg">{n.message}</span>
+                    )}
+                    <span className="nt-item-meta">
+                      {formatRelative(n.sentAt)}
+                      {n.type ? ` · ${n.type}` : ""}
+                      {n.scheduleSlotId ? " · có gắn slot" : ""}
+                    </span>
+                  </div>
+
+                  {/* Thông báo nhóm → mở thẳng nhóm / việc của nhóm. */}
+                  {groupLink && (
+                    <button
+                      type="button"
+                      className="nt-item-open"
+                      onClick={() => handleOpen(n)}
+                      title="Mở trong nhóm"
+                      aria-label="Mở trong nhóm"
+                    >
+                      <span className="material-symbols-outlined">
+                        open_in_new
+                      </span>
+                    </button>
+                  )}
+
+                  {!n.isRead && (
+                    <button
+                      type="button"
+                      className="nt-item-mark"
+                      onClick={() => handleMarkRead(n.id)}
+                      aria-label="Đánh dấu đã đọc"
+                      title="Đánh dấu đã đọc"
+                    >
+                      <span className="material-symbols-outlined">done</span>
+                    </button>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

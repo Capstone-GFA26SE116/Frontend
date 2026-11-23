@@ -639,6 +639,10 @@
 @media (min-width: 768px) {
   .pd-direction-grid { grid-template-columns: 1fr 1fr; }
 }
+/* 3 thẻ (Manual / AI auto-decompose / AI chat) → 3 cột ở màn rộng. */
+@media (min-width: 1200px) {
+  .pd-direction-grid { grid-template-columns: repeat(3, 1fr); }
+}
 
 .pd-direction {
   position: relative;
@@ -693,6 +697,9 @@
 .pd-direction--execution {
   border-color: var(--hairline);
 }
+.pd-direction--chat {
+  border-color: var(--hairline);
+}
 
 .pd-direction-icon {
   width: 44px;
@@ -706,7 +713,8 @@
   color: var(--primary);
 }
 .pd-direction--planning .pd-direction-icon,
-.pd-direction--execution .pd-direction-icon {
+.pd-direction--execution .pd-direction-icon,
+.pd-direction--chat .pd-direction-icon {
   background: var(--canvas);
   border-color: var(--primary);
   color: var(--primary);
@@ -745,6 +753,7 @@
 }
 .pd-direction--planning .pd-direction-cta,
 .pd-direction--execution .pd-direction-cta { color: var(--primary); }
+.pd-direction--chat .pd-direction-cta { color: var(--primary); }
 .pd-direction-cta .material-symbols-outlined {
   font-size: 18px;
   transition: transform 200ms ease;

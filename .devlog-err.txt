@@ -35,3 +35,15 @@
 3:13:28 PM [vite] (client) [console.error] [2026-11-21T08:13:28.971Z] Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
 3:13:28 PM [vite] (client) [console.error] [2026-11-21T08:13:28.971Z] Error: Failed to start the connection: Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
 3:13:29 PM [vite] (client) [console.error] [Projects] API error: { ok: false, error: "Không kết nối được máy chủ. Vui lòng kiểm tra mạng và thử lại. (Failed to fetch)" }
+3:13:32 PM [vite] (client) [console.error] [2026-11-21T08:13:32.129Z] Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:13:32 PM [vite] (client) [console.error] [2026-11-21T08:13:32.130Z] Error: Failed to start the connection: Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:13:36 PM [vite] (client) [console.error] [2026-11-21T08:13:36.398Z] Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:13:36 PM [vite] (client) [console.error] [2026-11-21T08:13:36.398Z] Error: Failed to start the connection: Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:13:38 PM [vite] (client) [console.error] [2026-11-21T08:13:38.512Z] Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:13:38 PM [vite] (client) [console.error] [2026-11-21T08:13:38.513Z] Error: Failed to start the connection: Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:13:47 PM [vite] (client) [console.error] [2026-11-21T08:13:47.019Z] Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:13:47 PM [vite] (client) [console.error] [2026-11-21T08:13:47.019Z] Error: Failed to start the connection: Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:14:02 PM [vite] (client) [console.error] [2026-11-21T08:14:02.708Z] Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:14:02 PM [vite] (client) [console.error] [2026-11-21T08:14:02.709Z] Error: Failed to start the connection: Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:17:03 PM [vite] (client) [console.error] [2026-11-21T08:17:03.605Z] Error: Failed to complete negotiation with the server: TypeError: Failed to fetch
+3:17:03 PM [vite] (client) [console.error] [2026-11-21T08:17:03.605Z] Error: Failed to start the connection: Error: Failed to complete negotiation with the server: TypeError: Failed to fetch

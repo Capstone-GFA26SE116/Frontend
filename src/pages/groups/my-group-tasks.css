@@ -1,0 +1,933 @@
+/* ===========================================================
+ * Trang /my-group-tasks — Việc của tôi trong các nhóm
+ * ===========================================================
+ * Theo DESIGN.md: canvas #101010 · surface #1a1a1a · hairline #3d3a39
+ * accent #00d992 · ink #f2f2f2 · body #bdbdbd · mute #8b949e
+ * Class prefix: `.mgt-*`
+ * =========================================================== */
+
+.mgt {
+  min-height: 100%;
+  padding: 40px 24px 96px;
+  background: var(--canvas, #101010);
+  color: var(--body, #bdbdbd);
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.mgt-container {
+  width: 100%;
+  max-width: 1000px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* ===========================================================
+ * Header
+ * =========================================================== */
+
+.mgt-header-text {
+  min-width: 0;
+}
+
+.mgt-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--primary, #00d992);
+}
+
+.mgt-eyebrow-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--primary, #00d992);
+}
+
+.mgt-sub {
+  margin: 10px 0 0;
+  max-width: 62ch;
+  font-size: 15px;
+  line-height: 24px;
+  color: var(--body, #bdbdbd);
+}
+
+.mgt-section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--ink, #f2f2f2);
+}
+
+.mgt-section-icon {
+  font-size: 18px;
+  color: var(--primary, #00d992);
+}
+
+/* ===========================================================
+ * Buttons
+ * =========================================================== */
+
+.mgt-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    opacity 160ms ease;
+}
+.mgt-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mgt-btn--primary {
+  background: var(--primary, #00d992);
+  color: var(--on-primary, #101010);
+}
+.mgt-btn--primary:hover:not(:disabled) {
+  background: var(--primary-soft, #2fd6a1);
+}
+
+.mgt-btn--ghost {
+  background: var(--canvas, #101010);
+  color: var(--ink, #f2f2f2);
+  border-color: var(--hairline, #3d3a39);
+}
+.mgt-btn--ghost:hover:not(:disabled) {
+  border-color: var(--primary, #00d992);
+  color: var(--primary-soft, #2fd6a1);
+}
+
+.mgt-btn--sm {
+  padding: 7px 12px;
+  font-size: 13px;
+  line-height: 18px;
+  gap: 6px;
+}
+
+.mgt-btn-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+.mgt-btn--sm .mgt-btn-icon {
+  font-size: 16px;
+}
+
+/* ===========================================================
+ * Phiên đang chạy
+ * =========================================================== */
+
+.mgt-live {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  border: 1px solid var(--primary, #00d992);
+  border-radius: 8px;
+  background: rgba(0, 217, 146, 0.06);
+  flex-wrap: wrap;
+}
+
+.mgt-live-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: rgba(0, 217, 146, 0.15);
+  color: var(--primary, #00d992);
+}
+.mgt-live-icon .material-symbols-outlined {
+  font-size: 20px;
+}
+
+.mgt-live-body {
+  flex: 1;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mgt-live-title {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--ink, #f2f2f2);
+  overflow-wrap: anywhere;
+}
+
+.mgt-live-group {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--mute, #8b949e);
+}
+
+.mgt-live-clock {
+  font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
+  font-size: 26px;
+  line-height: 32px;
+  font-weight: 550;
+  color: var(--primary, #00d992);
+  letter-spacing: -0.02em;
+}
+
+.mgt-live-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ===========================================================
+ * Đề xuất đổi giờ
+ * =========================================================== */
+
+.mgt-cr {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 24px;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 8px;
+  background: var(--canvas, #101010);
+}
+
+.mgt-cr-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mgt-cr-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 8px;
+  background: var(--canvas-soft, #1a1a1a);
+  flex-wrap: wrap;
+}
+
+.mgt-cr-body {
+  flex: 1;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mgt-cr-title {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--ink, #f2f2f2);
+  overflow-wrap: anywhere;
+}
+
+.mgt-cr-requester {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--mute, #8b949e);
+}
+
+.mgt-cr-reason {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--body, #bdbdbd);
+  font-style: italic;
+}
+
+.mgt-cr-change {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.mgt-cr-dim {
+  font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--mute, #8b949e);
+  text-decoration: line-through;
+}
+
+.mgt-cr-new {
+  font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--primary-soft, #2fd6a1);
+}
+
+.mgt-cr-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ===========================================================
+ * Task list
+ * =========================================================== */
+
+.mgt-task-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mgt-task {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 8px;
+  background: var(--canvas, #101010);
+  overflow: hidden;
+  transition: border-color 160ms ease;
+}
+.mgt-task:hover {
+  border-color: rgba(0, 217, 146, 0.4);
+}
+
+.mgt-task-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  flex-wrap: wrap;
+}
+
+.mgt-task-main {
+  flex: 1;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mgt-task-title {
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--ink, #f2f2f2);
+  overflow-wrap: anywhere;
+}
+
+.mgt-task-tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mgt-task-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--mute, #8b949e);
+  text-decoration: none;
+}
+.mgt-task-group:hover {
+  color: var(--primary, #00d992);
+}
+.mgt-task-group .material-symbols-outlined {
+  font-size: 14px;
+}
+
+.mgt-task-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.mgt-task-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--mute, #8b949e);
+}
+.mgt-task-meta-item .material-symbols-outlined {
+  font-size: 14px;
+}
+.mgt-task-meta-item--fixed {
+  color: var(--primary-soft, #2fd6a1);
+}
+
+.mgt-task-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+/* ===========================================================
+ * Subtasks
+ * =========================================================== */
+
+.mgt-sub-list {
+  list-style: none;
+  margin: 0;
+  padding: 12px 18px 16px 18px;
+  border-top: 1px solid var(--hairline, #3d3a39);
+  background: rgba(26, 26, 26, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mgt-sub {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 6px;
+  background: var(--canvas, #101010);
+  flex-wrap: wrap;
+}
+
+.mgt-sub-name {
+  flex: 1;
+  min-width: 140px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ink, #f2f2f2);
+  overflow-wrap: anywhere;
+}
+
+/* ===========================================================
+ * Running badge
+ * =========================================================== */
+
+.mgt-running {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px;
+  border: 1px solid var(--primary, #00d992);
+  border-radius: 9999px;
+  font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 550;
+  color: var(--primary, #00d992);
+  white-space: nowrap;
+}
+.mgt-running--sm {
+  padding: 2px 9px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.mgt-running-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--primary, #00d992);
+  animation: mgt-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes mgt-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* ===========================================================
+ * Báo cáo giờ
+ * =========================================================== */
+
+.mgt-time {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 18px;
+  border-top: 1px solid var(--hairline, #3d3a39);
+  background: rgba(26, 26, 26, 0.4);
+}
+
+.mgt-time-summary {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  flex-wrap: wrap;
+}
+
+.mgt-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mgt-stat-value {
+  font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 550;
+  color: var(--ink, #f2f2f2);
+}
+
+.mgt-stat-label {
+  font-size: 11px;
+  line-height: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute, #8b949e);
+}
+
+.mgt-time-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mgt-sub-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute, #8b949e);
+}
+
+.mgt-time-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mgt-time-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 6px;
+  background: var(--canvas, #101010);
+  flex-wrap: wrap;
+}
+
+.mgt-time-name {
+  flex: 1;
+  min-width: 140px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ink, #f2f2f2);
+  overflow-wrap: anywhere;
+}
+
+.mgt-time-value {
+  font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 550;
+  color: var(--primary, #00d992);
+}
+
+.mgt-time-count {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--mute, #8b949e);
+}
+
+/* ===========================================================
+ * Status + priority pills
+ * =========================================================== */
+
+.mgt-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 9999px;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mgt-status--sm {
+  font-size: 10px;
+  line-height: 14px;
+  padding: 1px 8px;
+}
+
+.mgt-status--todo {
+  color: var(--mute, #8b949e);
+}
+.mgt-status--active {
+  border-color: var(--primary, #00d992);
+  color: var(--primary, #00d992);
+}
+.mgt-status--done {
+  border-color: rgba(0, 217, 146, 0.45);
+  background: rgba(0, 217, 146, 0.08);
+  color: var(--primary-soft, #2fd6a1);
+}
+.mgt-status--skipped {
+  border-color: rgba(255, 107, 107, 0.45);
+  color: #ff6b6b;
+}
+.mgt-status--muted {
+  color: var(--mute, #8b949e);
+}
+
+.mgt-priority {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
+  font-size: 10px;
+  line-height: 14px;
+  font-weight: 550;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.mgt-priority--high {
+  background: rgba(255, 107, 107, 0.14);
+  color: #ff6b6b;
+}
+.mgt-priority--medium {
+  background: rgba(0, 217, 146, 0.12);
+  color: var(--primary-soft, #2fd6a1);
+}
+.mgt-priority--low {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--mute, #8b949e);
+}
+
+/* ===========================================================
+ * States
+ * =========================================================== */
+
+.mgt-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 64px 24px;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 8px;
+  background: var(--canvas-soft, #1a1a1a);
+  text-align: center;
+}
+.mgt-state p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 24px;
+  color: var(--body, #bdbdbd);
+}
+
+.mgt-state-icon {
+  font-size: 34px;
+  color: var(--mute, #8b949e);
+}
+.mgt-state--error .mgt-state-icon {
+  color: #ff6b6b;
+}
+
+.mgt-state-icon--spin {
+  animation: mgt-spin 1.1s linear infinite;
+}
+
+@keyframes mgt-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.mgt-empty {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--mute, #8b949e);
+  font-style: italic;
+}
+
+/* ===========================================================
+ * Modal
+ * =========================================================== */
+
+.mgt-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(3px);
+  animation: mgt-fade 140ms ease;
+}
+
+@keyframes mgt-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.mgt-modal {
+  width: 100%;
+  max-width: 540px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 24px;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 8px;
+  background: var(--canvas, #101010);
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(148, 163, 184, 0.1) inset;
+  animation: mgt-rise 160ms ease;
+}
+
+@keyframes mgt-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+.mgt-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.mgt-modal-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+  color: var(--ink, #f2f2f2);
+}
+
+.mgt-modal-title-icon {
+  font-size: 20px;
+  color: var(--primary, #00d992);
+}
+
+.mgt-modal-title-icon--warn {
+  color: #e3b341;
+}
+
+/* ---------- Nội dung hộp thoại cảnh báo ---------- */
+
+.mgt-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.mgt-modal-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--body, #bdbdbd);
+}
+
+.mgt-modal-text strong {
+  color: var(--ink, #f2f2f2);
+  font-weight: 600;
+}
+
+.mgt-modal-sub {
+  margin-bottom: 18px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--mute, #8b949e);
+}
+
+.mgt-modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mute, #8b949e);
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    color 160ms ease;
+}
+.mgt-modal-close:hover {
+  border-color: var(--danger, #ff6b6b);
+  color: var(--danger, #ff6b6b);
+}
+.mgt-modal-close .material-symbols-outlined {
+  font-size: 18px;
+}
+
+/* ===========================================================
+ * Form
+ * =========================================================== */
+
+.mgt-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.mgt-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.mgt-field-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.mgt-label {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mute, #8b949e);
+}
+
+.mgt-input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 6px;
+  background: var(--canvas-soft, #1a1a1a);
+  color: var(--ink, #f2f2f2);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  outline: none;
+  transition: border-color 160ms ease;
+}
+.mgt-input::placeholder {
+  color: var(--mute, #8b949e);
+}
+.mgt-input:focus {
+  border-color: var(--primary, #00d992);
+}
+
+.mgt-input--textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.mgt-form-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--danger, #ff6b6b);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+}
+.mgt-form-error .material-symbols-outlined {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.mgt-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+/* ===========================================================
+ * Responsive
+ * =========================================================== */
+
+@media (max-width: 640px) {
+  .mgt {
+    padding: 24px 16px 72px;
+  }
+  .mgt-live-clock {
+    font-size: 22px;
+    line-height: 28px;
+  }
+  .mgt-task-head {
+    padding: 14px 16px;
+  }
+  .mgt-task-actions {
+    width: 100%;
+  }
+  .mgt-cr-item {
+    flex-direction: column;
+  }
+  .mgt-cr-actions {
+    width: 100%;
+  }
+}

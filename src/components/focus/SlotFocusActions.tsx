@@ -68,6 +68,14 @@ export interface SlotFocusActionsProps {
   onChanged?: () => void;
   /** Tên task — hiện trong dialog "Cần thêm phút". */
   taskTitle?: string | null;
+  /**
+   * Lý do bị chặn (tiếng Anh) — VD: "Finish 'X' first".
+   *
+   * Khi có giá trị: nút Start **vẫn hiện** nhưng bị disable, và tooltip
+   * giải thích lý do. Đây là luật "làm trước - làm sau" của trang lịch
+   * (chỉ ở FE, xem `sequence-logic.ts`).
+   */
+  blockedReason?: string | null;
 }
 
 export function SlotFocusActions({
@@ -80,6 +88,7 @@ export function SlotFocusActions({
   compact,
   onChanged,
   taskTitle,
+  blockedReason,
 }: SlotFocusActionsProps) {
   const { start, openStopDialog, busy } = useFocusActions();
   const phase = toSlotPhase(status);
@@ -231,6 +240,27 @@ export function SlotFocusActions({
           : "Bắt đầu";
 
   const faded = isSlotFaded(phase);
+
+  /*
+   * Bị chặn bởi luật "làm trước - làm sau" (chỉ ở FE).
+   *
+   * → VẪN hiện nút Start nhưng disable + tooltip giải thích. Người dùng
+   *   thấy rõ là có việc, chỉ là chưa được phép làm chưa.
+   */
+  if (blockedReason) {
+    return (
+      <button
+        type="button"
+        className={`fc-slot-btn fc-slot-btn--start fc-slot-btn--blocked${compact ? " fc-slot-btn--compact" : ""}`}
+        disabled
+        title={blockedReason}
+      >
+        <span className="material-symbols-outlined">lock</span>
+        <span>{label}</span>
+        <span className="fc-slot-btn__status">{slotPhaseLabel(phase)}</span>
+      </button>
+    );
+  }
 
   return (
     <button

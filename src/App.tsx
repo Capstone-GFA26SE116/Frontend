@@ -9,6 +9,9 @@ import { BriefingPage } from "./pages/briefing/Briefing";
 import { OnboardingPage } from "./pages/onboarding/Onboarding";
 import { PricingPage } from "./pages/pricing/Pricing";
 import { ProjectsPage } from "./pages/projects/Projects";
+import { GroupsPage } from "./pages/groups/Groups";
+import { GroupDetailPage } from "./pages/groups/GroupDetail";
+import { MyGroupTasksPage } from "./pages/groups/MyGroupTasks";
 import { ProjectAiChatPage } from "./pages/project-ai-chat/ProjectAiChat";
 import { ProjectImportPage } from "./pages/project-import/ProjectImport";
 import { ChatHistoryPage } from "./pages/chat-history/ChatHistory";
@@ -20,6 +23,7 @@ import { PlanningPage } from "./pages/planning/Planning";
 import { MilestonesPage } from "./pages/milestones/Milestones";
 import { SchedulePage } from "./pages/schedule/Schedule";
 import { CopilotPage } from "./pages/copilot/Copilot";
+import { ProjectChatPage } from "./pages/project-chat/ProjectChat";
 import { ProjectDocumentsPage } from "./pages/documents/ProjectDocuments";
 import { MyDocumentsPage } from "./pages/documents/MyDocuments";
 import {
@@ -67,6 +71,9 @@ function guarded(label: string, node: ReactNode) {
  *                       (trang fullscreen, KHÔNG dùng SiteLayout — có header/footer riêng)
  *  /dashboard         -> Cần đăng nhập + đã hoàn tất onboarding (Lịch ngày)
  *  /projects          -> Cần đăng nhập + đã hoàn tất onboarding (Không gian dự án)
+ *  /groups            -> Nhóm làm việc (spec BE GROUP_FE.md)
+ *  /groups/:groupId   -> Chi tiết nhóm: việc, việc con, giai đoạn, thành viên, nhật ký
+ *  /my-group-tasks    -> Việc nhóm được giao cho tôi + bấm giờ + đề xuất đổi giờ
  *  /projects/:id/milestones -> Quản lý milestone của dự án
  *  /projects/:id/documents -> Kho tài liệu của dự án
  *  /documents               -> Tất cả tài liệu của tôi (gom mọi dự án)
@@ -166,6 +173,17 @@ function App() {
           element={guarded("Briefing hôm nay", <BriefingPage />)}
         />
         <Route path="/projects" element={guarded("Dự án", <ProjectsPage />)} />
+        {/* Nhóm làm việc — GET/POST /api/groups (spec BE GROUP_FE.md) */}
+        <Route path="/groups" element={guarded("Nhóm", <GroupsPage />)} />
+        <Route
+          path="/groups/:groupId"
+          element={guarded("Chi tiết nhóm", <GroupDetailPage />)}
+        />
+        {/* Việc nhóm được giao cho tôi — GET /api/my-group-tasks */}
+        <Route
+          path="/my-group-tasks"
+          element={guarded("Việc nhóm của tôi", <MyGroupTasksPage />)}
+        />
         {/* Nhập từ file → nhiều dự án (AI service: /projects/import/*) */}
         <Route
           path="/projects/import"
@@ -197,6 +215,11 @@ function App() {
         <Route
           path="/projects/:projectId/documents"
           element={guarded("Tài liệu dự án", <ProjectDocumentsPage />)}
+        />
+        {/* Chat AI trong dự án — 3 cột (lịch sử chat của dự án + chat + cây dự án) */}
+        <Route
+          path="/projects/:projectId/chat"
+          element={guarded("Chat AI dự án", <ProjectChatPage />)}
         />
         {/* Tất cả tài liệu của tôi (gom mọi dự án) */}
         <Route

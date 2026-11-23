@@ -492,6 +492,28 @@ function ProjectDetailBody({
               <span className="material-symbols-outlined">arrow_forward</span>
             </div>
           </Link>
+
+          <Link
+            to={`/projects/${project.id}/chat`}
+            className="pd-direction pd-direction--chat"
+            aria-label="Open AI chat for this project"
+          >
+            <div className="pd-direction-badge">AI</div>
+            <div className="pd-direction-icon">
+              <span className="material-symbols-outlined">forum</span>
+            </div>
+            <div className="pd-direction-body">
+              <h3 className="pd-direction-title">AI chat</h3>
+              <p className="pd-direction-desc">
+                Talk to AI about this project — full chat history, project tree
+                and one-click scheduling.
+              </p>
+            </div>
+            <div className="pd-direction-cta">
+              <span>Chat</span>
+              <span className="material-symbols-outlined">arrow_forward</span>
+            </div>
+          </Link>
         </div>
       </section>
 

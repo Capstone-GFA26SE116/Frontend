@@ -794,6 +794,24 @@ export async function listProjects(
 }
 
 /**
+ * Lấy danh sách ID của các project đã `Archived`.
+ *
+ * Mục đích: các màn khác (đặc biệt là `/schedule`) nhận data đã merge từ BE
+ * (task, subtask, milestone, slot) — BE không lọc project đã archive, nên FE
+ * cần biết ID nào bị archive để **loại khỏi lịch**.
+ *
+ * Gọi `GET /api/projects?includeArchived=true` rồi lọc `Archived` ở FE.
+ * Nếu BE không hỗ trợ param này → trả về set rỗng (không ẩn gì, an toàn).
+ */
+export async function listArchivedProjectIds(): Promise<Set<string>> {
+  const res = await get<ProjectDto[]>("/api/projects?includeArchived=true");
+  if (!res.ok || !Array.isArray(res.data)) return new Set<string>();
+  return new Set(
+    res.data.filter((p) => isProjectArchived(p)).map((p) => p.id),
+  );
+}
+
+/**
  * Lấy chi tiết 1 project theo id.
  *
  * GET /api/projects/{projectId}  -> ProjectDto
@@ -3934,7 +3952,24 @@ export async function getFocusTimeSummary(
  * ============================================================ */
 
 /** Loại thông báo (nhóm lớn — BE giới hạn ở 2 giá trị này). */
-export type NotificationType = "SlotReminder" | "MissedSlot" | (string & {});
+/**
+ * Loại thông báo.
+ *
+ * - Nhánh cá nhân: `SlotReminder` | `MissedSlot`.
+ * - Nhóm: `GroupInvited` | `GroupAssigned` | `GroupStatusChanged` |
+ *   `GroupMention` | `GroupChangeRequested` | `GroupChangeDecided`.
+ */
+export type NotificationType =
+  | "SlotReminder"
+  | "MissedSlot"
+  | "GroupInvited"
+  | "GroupAssigned"
+  | "GroupStatusChanged"
+  | "GroupMention"
+  | "GroupChangeRequested"
+  | "GroupChangeDecided"
+  | (string & {});
+
 
 /**
  * Loại hành động chi tiết — chỉ xuất hiện qua SignalR / Web Push.
@@ -3957,6 +3992,13 @@ export interface NotificationDto {
   title: string | null;
   message: string | null;
   scheduleSlotId: string | null;
+  /**
+   * Thông báo nhóm: id nhóm liên quan (rỗng với thông báo thường).
+   * Bấm vào thông báo nhóm sẽ mở thẳng nhóm / việc của nhóm.
+   */
+  groupId?: string | null;
+  /** Thông báo nhóm: id việc của nhóm (với việc con là việc CHA của nó). */
+  groupTaskId?: string | null;
   sentAt: string | null;
   isRead: boolean;
   readAt: string | null;

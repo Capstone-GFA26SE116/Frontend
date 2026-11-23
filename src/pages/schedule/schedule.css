@@ -226,6 +226,35 @@
 @media (max-width: 767px) {
   .sch-title { font-size: 28px; line-height: 34px; letter-spacing: -0.6px; }
 }
+/*
+ * Tiêu đề "nổi bật" — dùng cho trang lịch tổng (`/schedule`).
+ *
+ * Lớn hơn + đậm hơn + gradient nhấn nháy để làm tiêu điểm của trang,
+ * thay cho cụm eyebrow + title + sub trước đây.
+ */
+.sch-title--display {
+  font-size: 44px;
+  line-height: 50px;
+  font-weight: 600;
+  letter-spacing: -1.4px;
+  margin: 0;
+  background: linear-gradient(
+    120deg,
+    var(--sch-text) 0%,
+    var(--sch-primary) 55%,
+    var(--sch-text) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+@media (max-width: 767px) {
+  .sch-title--display {
+    font-size: 32px;
+    line-height: 38px;
+    letter-spacing: -0.8px;
+  }
+}
 .sch-sub {
   font-size: 14px;
   line-height: 20px;
@@ -744,6 +773,7 @@
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas:
     "head  actions"
+    "title actions"
     "body  actions";
   align-items: center;
   column-gap: 16px;
@@ -754,12 +784,30 @@
   grid-area: head;
   margin-bottom: 0;
 }
-.sch-board__toolbar .sch-gcal .sch-card__title,
+/*
+ * ⚠️ Tiêu đề ("Google Calendar") phải ở ô riêng `title` — nếu để chung
+ * `body` với nội dung thì 2 phần tử chồng lên nhau (grid-area trùng nhau
+ * → cùng 1 ô).
+ */
+.sch-board__toolbar .sch-gcal .sch-card__title {
+  grid-area: title;
+  margin: 0;
+}
+/*
+ * Nội dung (hint + note + error) bọc trong 1 div `.sch-gcal__body`
+ * → xếp dọc, không chồng lên nhau.
+ */
+.sch-board__toolbar .sch-gcal .sch-gcal__body {
+  grid-area: body;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
 .sch-board__toolbar .sch-gcal .sch-card__hint,
 .sch-board__toolbar .sch-gcal .sch-gcal__note,
-.sch-board__toolbar .sch-gcal .sch-gcal__error,
-.sch-board__toolbar .sch-gcal .sch-side-meta {
-  grid-area: body;
+.sch-board__toolbar .sch-gcal .sch-gcal__error {
   margin: 0;
 }
 .sch-board__toolbar .sch-gcal .sch-gcal__actions {
@@ -774,10 +822,10 @@
 .sch-board__toolbar .sch-gcal .sch-gcal__btn--full {
   margin-top: 0;
 }
-.sch-board__toolbar .sch-gcal .sch-gcal__note,
-.sch-board__toolbar .sch-gcal .sch-gcal__error {
-  grid-area: body;
-}
+/*
+ * Nội dung đã bọc trong `.sch-gcal__body` (một grid item duy nhất ở vùng
+ * `body`) → không còn rule `grid-area: body` cho note/error ở đây nữa.
+ */
 
 /* ===========================================================
  * Week board — 5 ngày làm việc (T2–T6) hoặc 7 ngày
@@ -2115,6 +2163,19 @@
   flex-direction: column;
   gap: 8px;
   margin-top: 12px;
+}
+/*
+ * Vùng nội dung của card Google Calendar.
+ *
+ * Bọc hint + token meta + note vào 1 div để chúng xếp dọc, không chồng
+ * lên nhau. Trong toolbar, div này là 1 grid item duy nhất ở vùng `body`.
+ */
+.sch-gcal__body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
 }
 .sch-gcal__btn {
   width: 100%;

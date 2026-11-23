@@ -150,13 +150,20 @@ export function SiteLayout() {
                 <span>Projects</span>
               </NavLink>
               <NavLink
-                to="/documents"
-                className={({ isActive }) =>
-                  "site-nav-link" + (isActive ? " site-nav-link--active" : "")
-                }
+                to="/groups"
+                className={({ isActive }) => {
+                  // Active on /groups AND any /groups/:groupId subroute
+                  const active =
+                    isActive ||
+                    (typeof window !== "undefined" &&
+                      window.location.pathname.startsWith("/groups/"));
+                  return (
+                    "site-nav-link" + (active ? " site-nav-link--active" : "")
+                  );
+                }}
               >
-                <span className="material-symbols-outlined site-nav-icon" aria-hidden="true">folder_open</span>
-                <span>Documents</span>
+                <span className="material-symbols-outlined site-nav-icon" aria-hidden="true">groups</span>
+                <span>Groups</span>
               </NavLink>
               <NavLink
                 to="/schedule"
@@ -166,24 +173,6 @@ export function SiteLayout() {
               >
                 <span className="material-symbols-outlined site-nav-icon" aria-hidden="true">event</span>
                 <span>Schedule &amp; Tasks</span>
-              </NavLink>
-              <NavLink
-                to="/copilot"
-                className={({ isActive }) =>
-                  "site-nav-link" + (isActive ? " site-nav-link--active" : "")
-                }
-              >
-                <span className="material-symbols-outlined site-nav-icon" aria-hidden="true">neurology</span>
-                <span>AI Copilot</span>
-              </NavLink>
-              <NavLink
-                to="/analytics"
-                className={({ isActive }) =>
-                  "site-nav-link" + (isActive ? " site-nav-link--active" : "")
-                }
-              >
-                <span className="material-symbols-outlined site-nav-icon" aria-hidden="true">query_stats</span>
-                <span>Analytics</span>
               </NavLink>
               <NavLink
                 to="/pricing"
@@ -309,6 +298,21 @@ export function SiteLayout() {
                         </span>
                         <span>Profile</span>
                       </Link>
+                      {/* Việc nhóm được giao cho tôi — bấm giờ, đề xuất đổi giờ */}
+                      <Link
+                        to="/my-group-tasks"
+                        className="site-user-menu-item"
+                        role="menuitem"
+                        onClick={() => setMenuOpen(false)}
+                      >
+                        <span
+                          className="material-symbols-outlined"
+                          aria-hidden="true"
+                        >
+                          group
+                        </span>
+                        <span>Việc nhóm của tôi</span>
+                      </Link>
                       {/* Lịch sử chat — mọi cuộc chat (dự án + task) */}
                       <Link
                         to="/chat-history"
@@ -323,6 +327,51 @@ export function SiteLayout() {
                           forum
                         </span>
                         <span>Chat history</span>
+                      </Link>
+                      {/* Chat AI — màn chat 3 cột (lịch sử + chat + cây dự án) */}
+                      <Link
+                        to="/copilot"
+                        className="site-user-menu-item"
+                        role="menuitem"
+                        onClick={() => setMenuOpen(false)}
+                      >
+                        <span
+                          className="material-symbols-outlined"
+                          aria-hidden="true"
+                        >
+                          neurology
+                        </span>
+                        <span>Chat AI</span>
+                      </Link>
+                      {/* Kho tài liệu — mọi tài liệu của tôi */}
+                      <Link
+                        to="/documents"
+                        className="site-user-menu-item"
+                        role="menuitem"
+                        onClick={() => setMenuOpen(false)}
+                      >
+                        <span
+                          className="material-symbols-outlined"
+                          aria-hidden="true"
+                        >
+                          folder_open
+                        </span>
+                        <span>Documents</span>
+                      </Link>
+                      {/* Thống kê — phân tích giờ làm việc & năng suất */}
+                      <Link
+                        to="/analytics"
+                        className="site-user-menu-item"
+                        role="menuitem"
+                        onClick={() => setMenuOpen(false)}
+                      >
+                        <span
+                          className="material-symbols-outlined"
+                          aria-hidden="true"
+                        >
+                          query_stats
+                        </span>
+                        <span>Analytics</span>
                       </Link>
                       {/* Giờ hiệu quả — khung giờ tập trung tốt nhất */}
                       <Link
@@ -450,7 +499,7 @@ export function SiteLayout() {
               Schedule &amp; Tasks
             </Link>
             <Link to="/copilot" className="site-footer-link">
-              AI Copilot
+              Chat AI
             </Link>
             <Link to="/pricing" className="site-footer-link">
               Pricing

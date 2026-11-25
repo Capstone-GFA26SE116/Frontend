@@ -921,3 +921,357 @@
   font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 13px;
 }
+
+/* ================================================================
+ * FORM THIẾT LẬP (contract BE mới — POST /api/me/onboarding)
+ * ------------------------------------------------------------
+ * Scope prefix: `.ob-*`
+ *
+ * Elevation = hairline 1px (KHÔNG shadow). Accent DUY NHẤT #00d992.
+ * ================================================================ */
+
+/* ----- Field (label + input + hint/error) ----- */
+.ob-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.ob-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ob-ink);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+}
+
+.ob-required {
+  color: var(--ob-primary);
+  font-weight: 700;
+}
+
+.ob-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--ob-hairline);
+  border-radius: 6px;
+  background: var(--ob-canvas-soft);
+  color: var(--ob-ink);
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1.4;
+  box-sizing: border-box;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.ob-input:hover {
+  border-color: var(--ob-hairline-soft);
+}
+
+.ob-input:focus {
+  outline: none;
+  border-color: var(--ob-primary-soft);
+  box-shadow: 0 0 0 3px var(--ob-primary-wash);
+}
+
+/* select — dùng mũi tên mặc định của hệ điều hành, nền tối. */
+select.ob-input {
+  color-scheme: dark;
+  cursor: pointer;
+}
+
+.ob-input--error {
+  border-color: var(--ob-danger, #e5534b);
+}
+
+.ob-input--error:focus {
+  border-color: var(--ob-danger, #e5534b);
+  box-shadow: 0 0 0 3px rgba(229, 83, 75, 0.14);
+}
+
+.ob-hint {
+  color: var(--ob-mute);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.ob-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #ff8b84;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.ob-note {
+  margin: 0;
+  color: var(--ob-mute);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+/* ----- Grid 2 cột ----- */
+.ob-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+@media (min-width: 560px) {
+  .ob-grid-2 {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* ----- Checkbox (cuối tuần) ----- */
+.ob-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ob-check input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.ob-check-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  border: 1px solid var(--ob-hairline);
+  border-radius: 5px;
+  background: var(--ob-canvas-soft);
+  color: transparent;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.ob-check-box .material-symbols-outlined {
+  font-size: 15px;
+}
+
+.ob-check input:checked + .ob-check-box {
+  background: var(--ob-primary);
+  border-color: var(--ob-primary);
+  color: #101010;
+}
+
+.ob-check input:focus-visible + .ob-check-box {
+  outline: 2px solid var(--ob-primary-soft);
+  outline-offset: 2px;
+}
+
+.ob-check-text {
+  color: var(--ob-ink);
+  font-size: 14.5px;
+  line-height: 1.45;
+}
+
+/* ----- Grid 24 giờ hiệu quả ----- */
+.ob-hours-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 6px;
+  margin-top: 4px;
+}
+
+@media (max-width: 720px) {
+  .ob-hours-grid {
+    grid-template-columns: repeat(8, 1fr);
+  }
+}
+
+@media (max-width: 440px) {
+  .ob-hours-grid {
+    grid-template-columns: repeat(6, 1fr);
+  }
+}
+
+.ob-hour {
+  min-height: 38px;
+  padding: 6px 2px;
+  border: 1px solid var(--ob-hairline);
+  border-radius: 6px;
+  background: var(--ob-canvas-soft);
+  color: var(--ob-body);
+  font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.ob-hour:hover {
+  border-color: var(--ob-hairline-soft);
+  color: var(--ob-ink);
+}
+
+.ob-hour--active {
+  background: var(--ob-primary-wash);
+  border-color: var(--ob-primary-soft);
+  color: var(--ob-primary);
+}
+
+.ob-hour:focus-visible {
+  outline: 2px solid var(--ob-primary-soft);
+  outline-offset: 2px;
+}
+
+/* ----- Tag loại công việc ----- */
+.ob-tagcloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.ob-tag {
+  min-height: 36px;
+  padding: 7px 14px;
+  border: 1px solid var(--ob-hairline);
+  border-radius: 9999px;
+  background: var(--ob-canvas-soft);
+  color: var(--ob-body);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.ob-tag:hover {
+  border-color: var(--ob-hairline-soft);
+  color: var(--ob-ink);
+}
+
+.ob-tag--active {
+  background: var(--ob-primary-wash);
+  border-color: var(--ob-primary-soft);
+  color: var(--ob-primary);
+}
+
+.ob-tag:focus-visible {
+  outline: 2px solid var(--ob-primary-soft);
+  outline-offset: 2px;
+}
+
+/* ----- Mức làm lố (overrunLevel) ----- */
+.ob-overrun {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--ob-hairline);
+}
+
+.ob-overrun-head {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ob-overrun-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (min-width: 760px) {
+  .ob-overrun-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.ob-overrun-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--ob-hairline);
+  border-radius: 8px;
+  background: var(--ob-canvas-soft);
+  color: var(--ob-ink);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.ob-overrun-card:hover {
+  border-color: var(--ob-hairline-soft);
+}
+
+.ob-overrun-card--active {
+  border-color: var(--ob-primary-soft);
+  background: var(--ob-primary-wash);
+}
+
+.ob-overrun-card:focus-visible {
+  outline: 2px solid var(--ob-primary-soft);
+  outline-offset: 2px;
+}
+
+.ob-overrun-label {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+}
+
+.ob-overrun-card--active .ob-overrun-label {
+  color: var(--ob-primary);
+}
+
+.ob-overrun-factor {
+  font-size: 12px;
+  color: var(--ob-mute);
+}
+
+.ob-overrun-desc {
+  color: var(--ob-mute);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+/* ----- Alert lỗi submit ----- */
+.ob-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 14px;
+  border: 1px solid rgba(229, 83, 75, 0.42);
+  border-radius: 8px;
+  background: rgba(229, 83, 75, 0.09);
+  color: #ffb3ad;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.ob-alert .material-symbols-outlined {
+  font-size: 18px;
+  flex: 0 0 18px;
+  color: #ff8b84;
+}
+
+/* CTA disabled khi đang lưu / đã xong. */
+.onboarding-cta:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.onboarding-cta:disabled:hover {
+  background: var(--ob-primary);
+}

@@ -1,73 +1,52 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import type { AuthError } from "../../auth/types";
 import { getPostLoginPath } from "../../auth/post-login-redirect";
 import { useGoogleIdentity } from "../../auth/useGoogleIdentity";
+import loginHeroWebp from "../../login-hero.webp";
+import loginHeroPng from "../../login-hero.png";
 import "./login.css";
 
 /**
  * Trang đăng nhập.
  *
+ * ⚠️ Chỉ hỗ trợ **Google Sign-In** — backend (`POST /api/Auth/google`) chỉ
+ * nhận `idToken` từ Google Identity Services. Không có endpoint
+ * email/password thật, nên form email + mật khẩu cũ chỉ là mock localStorage
+ * (`verifyCredentials`) → đã bỏ hoàn toàn khỏi UI.
+ *
  * Flow:
- *  - Nhập email + password -> validate phía client (UX nhanh).
- *  - Gọi useAuth().login -> nếu ok thì điều hướng về trang đích.
- *  - Nếu sai, hiện thông báo lỗi bằng tiếng Việt, không leak lý do kỹ thuật.
+ *  - Bấm "Continue with Google" → forward click xuống nút GIS chính thức.
+ *  - GIS trả `idToken` → `useAuth().loginWithGoogle(idToken)`.
+ *  - Ok → điều hướng tới trang đích (`from` > Landing > Dashboard).
+ *  - Lỗi → hiện alert rõ ràng, không leak lý do kỹ thuật.
  *
- * Sau khi đăng ký thành công, Register sẽ redirect về /login với query
- * `?email=...&registered=1` để:
- *  - Pre-fill ô email (user chỉ cần nhập lại mật khẩu).
- *  - Hiển thị banner "Đăng ký thành công" màu xanh secondary.
+ * Sau khi đăng ký thành công, Register redirect về /login với query
+ * `?registered=1` để hiện banner "Đăng ký thành công".
  *
- * Visual: dark glassmorphism, prefix class `.login-*`, dùng Material Symbols
- * cho icon trong input + nút toggle mật khẩu.
+ * Visual: split-screen 2 cột trong 1 khung card (mẫu tham khảo):
+ *   trái = visual panel (logo, quote, dots) · phải = form panel.
+ *   Toàn bộ bám DESIGN.md: hairline chrome, single green accent, không shadow.
  */
 export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { login, loginWithGoogle } = useAuth();
+  const { loginWithGoogle, isNewUser } = useAuth();
 
   const registeredFlag = searchParams.get("registered") === "1";
-  // Trim để chắc chắn không có khoảng trắng thừa do URL encode sai.
-  const prefillEmail = (searchParams.get("email") ?? "").trim();
-
-  const [email, setEmail] = useState(prefillEmail);
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [remember, setRemember] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   // Banner chỉ hiện 1 lần rồi user dismiss / navigate đi thì xoá khỏi URL
   // để tránh F5 lại vẫn thấy.
-  const [showSuccessBanner, setShowSuccessBanner] = useState(registeredFlag);
+  //
+  // Banner derive trực tiếp từ URL (`?registered=1`) + cờ `dismissed` nội bộ
+  // → không cần effect đồng bộ (tránh cascading render).
+  const [dismissedBanner, setDismissedBanner] = useState(false);
+  const showSuccessBanner = registeredFlag && !dismissedBanner;
 
-  // Đồng bộ email + banner với URL khi user navigate giữa các query khác nhau
-  // (vd: từ /login?email=a&registered=1 sang /login?email=b thì phải update).
-  useEffect(() => {
-    setEmail(prefillEmail);
-    setShowSuccessBanner(registeredFlag);
-  }, [prefillEmail, registeredFlag]);
-
-  // Focus vào ô password nếu email đã được prefill, để user chỉ cần gõ tiếp.
-  useEffect(() => {
-    if (prefillEmail && document.getElementById("password")) {
-      document.getElementById("password")?.focus({ preventScroll: true });
-    }
-  }, [prefillEmail]);
-
-  const from =
-    (location.state as { from?: string } | null)?.from;
-  /**
-   * Đích đi sau login: ưu tiên `from` > Landing (lần đầu) > Dashboard.
-   * `from` là deep-link user muốn tới trước khi bị redirect về /login.
-   *
-   * Riêng tài khoản Admin → luôn vào thẳng `/admin` (xem `getPostLoginPath`).
-   * Vì `user` trong context chỉ cập nhật sau re-render, mỗi flow login sẽ
-   * gọi lại `getPostLoginPath(from, res.session.user)` với user chính xác
-   * từ response BE.
-   */
+  const from = (location.state as { from?: string } | null)?.from;
 
   /*
    * Google Identity Services (GIS) — dùng `accounts.id` (Sign In With Google)
@@ -83,47 +62,44 @@ export function LoginPage() {
       const res = await loginWithGoogle(idToken);
       setGoogleLoading(false);
       if (res.ok) {
-        navigate(getPostLoginPath(from, res.session.user), { replace: true });
+        /*
+         * `isNewUser = true` → tài khoản vừa được tạo (hoặc vừa được nhận
+         * từ Admin) → chưa có onboarding → đưa thẳng vào màn onboarding.
+         * Admin vẫn vào /admin (đã xử lý trong `getPostLoginPath`).
+         *
+         * Spec: `FE_CHANGES.md` mục 1.1 + 1.3.
+         */
+        const target = isNewUser
+          ? "/onboarding"
+          : getPostLoginPath(from, res.session.user);
+        navigate(target, { replace: true });
       } else {
         setError(mapError(res.error));
       }
     },
   });
 
-  /** Google lỗi → ưu tiên dùng form email & mật khẩu. */
-  const googleBroken = google.status === "failed" || google.status === "unconfigured";
+  /** Google lỗi → không có đường đăng nhập thay thế → hiện hướng dẫn. */
+  const googleBroken =
+    google.status === "failed" || google.status === "unconfigured";
   /** Nút Google có dùng được không (đã render xong). */
   const googleReady = google.status === "ready";
 
   function dismissSuccessBanner() {
-    setShowSuccessBanner(false);
+    setDismissedBanner(true);
     // Xoá query khỏi URL nhưng giữ nguyên trang.
     const next = new URLSearchParams(searchParams);
     next.delete("registered");
     setSearchParams(next, { replace: true });
   }
 
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setError(null);
-    setSubmitting(true);
-    const res = await login(email, password);
-    setSubmitting(false);
-    if (res.ok) {
-      // Dùng user từ response để quyết định đích: Admin → /admin.
-      navigate(getPostLoginPath(from, res.session.user), { replace: true });
-    } else {
-      setError(mapError(res.error));
-    }
-  }
-
   async function handleGoogle() {
     setError(null);
 
-    // Chưa cấu hình Client ID → báo rõ, cho user dùng form email.
+    // Chưa cấu hình Client ID → báo rõ.
     if (google.status === "unconfigured") {
       setError(
-        "Đăng nhập Google chưa được cấu hình trên môi trường này. Vui lòng dùng email & mật khẩu.",
+        "Google Sign-In is not configured on this environment. Please contact an administrator.",
       );
       return;
     }
@@ -132,20 +108,20 @@ export function LoginPage() {
     if (google.status === "failed") {
       setError(
         google.message ??
-          "Đăng nhập Google đang lỗi. Vui lòng dùng email & mật khẩu.",
+          "Google Sign-In is currently unavailable. Please try again in a moment.",
       );
       return;
     }
 
     // Script chưa xong → bấm lại sau.
     if (google.status !== "ready") {
-      setError("Đang tải Google Sign-In, vui lòng thử lại sau giây lát.");
+      setError("Google Sign-In is still loading. Please try again in a moment.");
       return;
     }
 
     setGoogleLoading(true);
     /*
-     * Có Client ID + script đã load → forward click xuống nút GIS chính chủ
+     * Có Client ID + script đã load → forward click xuống nút GIS chính thủc
      * đã được renderButton().
      *
      * Forwarding click (thay vì gọi prompt() trực tiếp) đảm bảo:
@@ -168,7 +144,7 @@ export function LoginPage() {
       // (GIS callback cũng setGoogleLoading(false) khi nhận được response/error.)
       window.setTimeout(() => setGoogleLoading(false), 800);
     } else {
-      // GIS chưa load xong hoặc chưa renderButton xong — fallback về prompt().
+      // GIS chưa load xong hoặc chưa renderButton xong → fallback về prompt().
       const w = window as unknown as { google?: unknown };
       const g = w.google as {
         accounts?: { id?: { prompt?: () => void } };
@@ -183,226 +159,175 @@ export function LoginPage() {
     }
   }
 
-  const emailError = error && error.includes("email") ? error : null;
-
   return (
     <div className="login">
-      {/* Header */}
-      <div className="login-header">
-        <span className="login-eyebrow">CỔNG ĐĂNG NHẬP</span>
-        <h1 className="login-title">Chào mừng trở lại</h1>
-        <p className="login-subtitle">
-          Tiếp tục tối ưu hóa thời gian và năng lượng làm việc của bạn.
-        </p>
-      </div>
-
-      {/* Success banner: hiện sau khi đăng ký thành công */}
-      {showSuccessBanner && (
-        <div className="login-banner login-banner--success" role="status">
-          <span className="material-symbols-outlined login-banner-icon">
-            check_circle
-          </span>
-          <div className="login-banner-body">
-            <strong className="login-banner-title">Đăng ký thành công!</strong>
-            <span className="login-banner-text">
-              Tài khoản của bạn đã sẵn sàng. Vui lòng đăng nhập để tiếp tục.
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={dismissSuccessBanner}
-            className="login-banner-close"
-            aria-label="Đóng thông báo"
-          >
-            <span className="material-symbols-outlined">close</span>
-          </button>
-        </div>
-      )}
-
-      {/* Google SSO */}
-      <div className="login-sso">
-        {/*
-          Nút primary chỉ hiện khi Google **dùng được** (đã render xong).
-          Khi Google lỗi (403 do origin chưa whitelist / thiếu Client ID) →
-          ẩn nút để user không bấm vào nút chết, kèm cảnh báo rõ nguyên nhân.
-
-          ⚠️ Host `google-signin-host` PHẢI luôn tồn tại trong DOM — hook
-          renderButton vào đó. Nếu ẩn luôn host, hook sẽ báo nhầm "không tìm
-          thấy nút" thay vì lỗi thật (403 / thiếu Client ID).
-        */}
-        <div
-          id="google-signin-host"
-          className="login-google-gis-host"
-          hidden={googleBroken}
-        />
-        {!googleBroken && (
-          <>
-            {/* Button primary hiển thị */}
-            <button
-              type="button"
-              id="google-signin-btn"
-              onClick={handleGoogle}
-              disabled={googleLoading || submitting || !googleReady}
-              className="metanoia-google-btn login-google-btn"
-            >
-              <GoogleIcon />
-              <span>
-                {googleLoading
-                  ? "Đang kết nối Google..."
-                  : googleReady
-                    ? "Tiếp tục với Google"
-                    : "Đang tải Google Sign-In…"}
-              </span>
-            </button>
-            <div className="login-sso-hint">
-              <span className="login-sso-dot" aria-hidden="true" />
-              <span>Đồng bộ tức thì Google Calendar</span>
-            </div>
-          </>
-        )}
-
-        {/* Cảnh báo khi Google không dùng được → hướng dẫn cụ thể. */}
-        {googleBroken && (
-          <div className="login-banner login-banner--warning" role="status">
-            <span className="material-symbols-outlined login-banner-icon">
-              info
-            </span>
-            <div className="login-banner-body">
-              <strong>Đăng nhập Google đang không khả dụng</strong>
-              <span className="login-banner-text">
-                {google.message ??
-                  "Đăng nhập Google chưa được cấu hình trên môi trường này."}{" "}
-                Bạn vẫn có thể đăng nhập bằng email &amp; mật khẩu bên dưới.
-              </span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Divider */}
-      <div className="login-divider">
-        <div className="login-divider-line" />
-        <span className="login-divider-text">HOẶC VỚI EMAIL</span>
-        <div className="login-divider-line" />
-      </div>
-
-      {/* Form */}
-      <form className="login-form" onSubmit={handleSubmit} noValidate>
-        {/* Email */}
-        <div className="login-field">
-          <label className="login-field-label" htmlFor="email">
-            Email
-          </label>
-          <div className="login-input-wrap">
-            <input
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="nguyenvana@gmail.com"
-              className="login-input"
+      {/* ================= Split card ================= */}
+      <div className="login-split">
+        {/* ---------- LEFT: visual panel ---------- */}
+        <aside className="login-visual" aria-hidden="true">
+          {/* Ảnh minh hoạ sản phẩm — chiếm phần "trống" của panel.
+              • WebP làm src chính (54KB), PNG fallback (1.2MB) cho browser cũ.
+              • `object-position: left` để khi panel hẹp (thiếu chỗ) ảnh lấy
+                từ phía BÊN TRÁI, không lấy ở giữa. */}
+          <picture>
+            <source srcSet={loginHeroWebp} type="image/webp" />
+            <img
+              className="login-visual-image"
+              src={loginHeroPng}
+              alt=""
+              loading="eager"
+              decoding="async"
+              fetchPriority="high"
             />
+          </picture>
+
+          {/* Dot-grid depth cue — hairline mờ, mask fade ra rìa. */}
+          <div className="login-visual-bg" />
+
+          {/* Scram tối trên/dưới → logo ảnh nổi bật hơn. */}
+          <div className="login-visual-scrim" />
+        </aside>
+
+        {/* ---------- RIGHT: form panel ---------- */}
+        <main className="login-form-panel">
+          {/* Thanh trên — nút "Back to website" ở góc phải */}
+          <div className="login-panel-top">
+            <Link to="/" className="login-visual-back">
+              <span className="material-symbols-outlined">arrow_back</span>
+              <span>Back to website</span>
+            </Link>
+          </div>
+
+          {/* Header — chỉ eyebrow (đã bỏ tiêu đề "Đăng nhập") */}
+          <header className="login-header">
+            <span className="login-eyebrow">SIGN-IN PORTAL</span>
+          </header>
+
+          {/* Success banner: hiện sau khi đăng ký thành công */}
+          {showSuccessBanner && (
+            <div className="login-banner login-banner--success" role="status">
+              <span className="material-symbols-outlined login-banner-icon">
+                check_circle
+              </span>
+              <div className="login-banner-body">
+                <strong className="login-banner-title">Signed up successfully!</strong>
+                <span className="login-banner-text">
+                  Your account is ready. Please sign in to continue.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={dismissSuccessBanner}
+                className="login-banner-close"
+                aria-label="Close notification"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+          )}
+
+          {/* Google SSO */}
+          <div className="login-sso">
+            {/*
+              Nút primary chỉ hiện khi Google **dùng được** (đã render xong).
+              Khi Google lỗi (403 do origin chưa whitelist / thiếu Client ID) →
+              ẩn nút để user không bấm vào nút chết, kèm cảnh báo rõ nguyên nhân.
+
+              ⚠️ Host `google-signin-host` PHẢI luôn tồn tại trong DOM — hook
+              renderButton vào đó. Nếu ẩn luôn host, hook sẽ báo nhầm "không tìm
+              thấy nút" thay vì lỗi thật (403 / thiếu Client ID).
+            */}
+            <div
+              id="google-signin-host"
+              className="login-google-gis-host"
+              hidden={googleBroken}
+            />
+            {!googleBroken && (
+              <>
+                {/* Button primary hiển thị */}
+                <button
+                  type="button"
+                  id="google-signin-btn"
+                  onClick={handleGoogle}
+                  disabled={googleLoading || !googleReady}
+                  className="metanoia-google-btn login-google-btn"
+                  aria-busy={googleLoading}
+                >
+                  <GoogleIcon />
+                  <span>
+                    {googleLoading
+                      ? "Connecting to Google..."
+                      : googleReady
+                        ? "Continue with Google"
+                        : "Loading Google Sign-In..."}
+                  </span>
+                </button>
+                <div className="login-sso-hint">
+                  <span className="login-sso-dot" aria-hidden="true" />
+                  <span>Instant Google Calendar sync</span>
+                </div>
+              </>
+            )}
+
+            {/* Cảnh báo khi Google không dùng được → hướng dẫn cụ thể. */}
+            {googleBroken && (
+              <div className="login-banner login-banner--warning" role="status">
+                <span className="material-symbols-outlined login-banner-icon">
+                  info
+                </span>
+                <div className="login-banner-body">
+                  <strong>Google Sign-In is currently unavailable</strong>
+                  <span className="login-banner-text">
+                    {google.message ??
+                      "Google Sign-In is not configured on this environment."}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Alert lỗi chung */}
+          {error && (
+            <div className="login-alert" role="alert">
+              <span
+                className="material-symbols-outlined login-alert-icon"
+                aria-hidden="true"
+              >
+                error
+              </span>
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* Divider */}
+          <div className="login-divider">
+            <div className="login-divider-line" />
+            <span className="login-divider-text">HOẶC</span>
+            <div className="login-divider-line" />
+          </div>
+
+          {/* CTA đăng ký */}
+          <Link to="/register" className="login-register">
+            <span className="material-symbols-outlined" aria-hidden="true">
+              person_add
+            </span>
+            <span className="login-register-text">Create a new account</span>
             <span
-              className="material-symbols-outlined login-input-icon"
+              className="material-symbols-outlined login-register-arrow"
               aria-hidden="true"
             >
-              alternate_email
-            </span>
-          </div>
-          {emailError && <span className="login-field-error">{emailError}</span>}
-        </div>
-
-        {/* Password */}
-        <div className="login-field">
-          <div className="login-field-row">
-            <label className="login-field-label" htmlFor="password">
-              Mật khẩu
-            </label>
-            <a href="#" className="login-link">
-              Quên mật khẩu?
-            </a>
-          </div>
-          <div className="login-input-wrap">
-            <input
-              id="password"
-              name="password"
-              type={showPassword ? "text" : "password"}
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••••••"
-              className="login-input login-input--with-toggle"
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword((v) => !v)}
-              className="login-toggle"
-              aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
-            >
-              <span className="material-symbols-outlined" aria-hidden="true">
-                {showPassword ? "visibility_off" : "visibility"}
-              </span>
-            </button>
-          </div>
-        </div>
-
-        {/* Remember */}
-        <div className="login-remember">
-          <input
-            id="remember"
-            type="checkbox"
-            checked={remember}
-            onChange={(e) => setRemember(e.target.checked)}
-            className="login-checkbox-input"
-          />
-          <label htmlFor="remember" className="login-checkbox-label">
-            <span className="login-checkbox-box" aria-hidden="true">
-              <svg
-                className="login-checkbox-check"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="3"
-              >
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            </span>
-            Ghi nhớ phiên đăng nhập trên thiết bị này
-          </label>
-        </div>
-
-        {error && !emailError && (
-          <div className="login-alert" role="alert">
-            {error}
-          </div>
-        )}
-
-        {/* Submit */}
-        <button
-          type="submit"
-          disabled={submitting || googleLoading}
-          className="login-submit"
-        >
-          <span>{submitting ? "Đang đăng nhập..." : "Đăng nhập vào Không gian làm việc"}</span>
-          {!submitting && (
-            <span className="material-symbols-outlined" aria-hidden="true">
               arrow_forward
             </span>
-          )}
-        </button>
-      </form>
+          </Link>
 
-      {/* Mobile-only: link đến Register (desktop đã có ở top-right) */}
-      <p className="login-mobile-link">
-        Chưa có tài khoản?{" "}
-        <Link to="/register" className="login-link login-link--strong">
-          Đăng ký ngay
-        </Link>
-      </p>
+          {/* Link đăng nhập (desktop) — đã có sẵn ở topbar của AuthLayout */}
+          <p className="login-switch">
+            <Link to="/login" className="login-link login-link--strong">
+              Sign in with a different account
+            </Link>
+          </p>
+        </main>
+      </div>
     </div>
   );
 }
@@ -438,21 +363,11 @@ function GoogleIcon() {
 
 function mapError(code: AuthError): string {
   switch (code) {
-    case "invalid_email":
-      return "Email chưa đúng định dạng.";
-    case "weak_password":
-      return "Mật khẩu phải có ít nhất 8 ký tự.";
-    case "user_not_found":
-      return "Tài khoản không tồn tại. Vui lòng đăng ký trước.";
-    case "wrong_password":
-      return "Mật khẩu không đúng.";
-    case "email_exists":
-      return "Email này đã được dùng để đăng ký.";
     case "google_auth_failed":
-      return "Đăng nhập Google thất bại. Vui lòng thử lại.";
+      return "Google Sign-In failed. Please try again.";
     case "session_expired":
-      return "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
+      return "Your session has expired. Please sign in again.";
     default:
-      return "Đăng nhập thất bại. Vui lòng thử lại.";
+      return "Sign-in failed. Please try again.";
   }
 }

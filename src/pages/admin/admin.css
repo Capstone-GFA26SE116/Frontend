@@ -1209,6 +1209,40 @@
   font-weight: 600;
 }
 
+/* Dòng phụ hiển thị dưới 1 giá trị chính (VD email dưới tên). */
+.adm-table__sub {
+  display: block;
+  margin-top: 2px;
+  color: var(--adm-mute);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Nút-链接 mở chi tiết (tên nhóm, tên entity…). */
+.adm-link-btn {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--adm-primary);
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: color 140ms ease;
+}
+
+.adm-link-btn:hover {
+  color: var(--adm-primary-soft);
+  text-decoration: underline;
+}
+
+.adm-link-btn:focus-visible {
+  outline: 2px solid var(--adm-primary);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
 .adm-table__reason {
   max-width: 300px;
 }
@@ -1440,6 +1474,68 @@
 }
 
 /* ================================================================
+ * ACTIVITY LIST (nhật ký hoạt động của nhóm)
+ * ================================================================ */
+
+.adm-activity-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.adm-activity-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--adm-hairline);
+}
+
+.adm-activity-item:last-child {
+  border-bottom: none;
+}
+
+.adm-activity-dot {
+  flex: 0 0 7px;
+  width: 7px;
+  height: 7px;
+  margin-top: 6px;
+  border-radius: 9999px;
+  background: var(--adm-primary);
+}
+
+.adm-activity-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.adm-activity-action {
+  color: var(--adm-ink);
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.adm-activity-meta {
+  color: var(--adm-mute);
+  font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.adm-activity-detail {
+  color: var(--adm-body);
+  font-size: 12.5px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+/* ================================================================
  * CHART (doanh thu theo thời gian)
  * ================================================================ */
 
@@ -1513,11 +1609,6 @@
   background: var(--adm-primary);
 }
 
-.adm-chart__bar--refund {
-  background: var(--adm-danger);
-  opacity: 0.8;
-}
-
 .adm-chart__x {
   position: absolute;
   bottom: -22px;
@@ -1567,10 +1658,6 @@
 
 .adm-legend__swatch--net {
   background: var(--adm-primary);
-}
-
-.adm-legend__swatch--refund {
-  background: var(--adm-danger);
 }
 
 /* ================================================================

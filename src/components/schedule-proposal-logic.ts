@@ -8,6 +8,7 @@ import {
   type SubtaskDto,
   type TaskDto,
 } from "../lib/api-client";
+import { describeSlotOverlapError } from "./schedule/slot-overlap";
 
 /* ===========================================================
  * Logic (không phải component) cho AI Schedule Proposal.
@@ -640,6 +641,8 @@ export function useScheduleProposal(opts: {
     approvingRef.current = true;
     setApproving(true);
     const failed: Array<{ key: string; title: string }> = [];
+    /** Message chồng giờ đầu tiên (BE trả 409 `SLOT_OVERLAP`). */
+    let firstOverlapMsg: string | null = null;
     let created = 0;
 
     // Mỗi slot thuộc proposal riêng của task đó (nếu đã gộp nhiều task).
@@ -663,6 +666,17 @@ export function useScheduleProposal(opts: {
       });
       if (res.ok) created += 1;
       else {
+        /*
+         * ⚠️ `409 SLOT_OVERLAP` — slot đề xuất chồng lên slot đang chiếm giờ.
+         * Chặn cứng — không có tham số "xác nhận để vẫn tạo".
+         * Spec: `FE_CHANGES.md` mục 3.2b.
+         */
+        if (!firstOverlapMsg) {
+          firstOverlapMsg =
+            describeSlotOverlapError(res, {
+              taskTitle: tasksById.get(slot.task_id)?.title ?? null,
+            }) ?? res.error;
+        }
         failed.push({
           key: slotKey(slot),
           title: tasksById.get(slot.task_id)?.title ?? slot.task_id,
@@ -682,10 +696,17 @@ export function useScheduleProposal(opts: {
     // Một phần thành công → bỏ chọn sẵn slot lỗi, giữ panel mở để duyệt lại.
     const failedKeys = new Set(failed.map((f) => f.key));
     setExcluded(failedKeys);
-    toast.error(
-      `${created}/${slots.length} khung giờ đã apply`,
-      `Không tạo được: ${failed.map((f) => f.title).join(", ")}`,
-    );
+    if (firstOverlapMsg) {
+      toast.error(
+        `${created}/${slots.length} khung giờ đã apply`,
+        firstOverlapMsg,
+      );
+    } else {
+      toast.error(
+        `${created}/${slots.length} khung giờ đã apply`,
+        `Không tạo được: ${failed.map((f) => f.title).join(", ")}`,
+      );
+    }
     return created;
   }, [proposal, approving, selectedSlots, tasksById, toast, reset]);
 

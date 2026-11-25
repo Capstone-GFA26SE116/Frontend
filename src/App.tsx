@@ -1,9 +1,8 @@
-import { Route, Routes } from "react-router-dom";
+import { Route, Navigate, Routes } from "react-router-dom";
 import { AuthLayout } from "./layouts/AuthLayout";
 import { SiteLayout } from "./layouts/SiteLayout";
 import { LoginPage } from "./pages/login/Login";
 import { RegisterPage } from "./pages/register/Register";
-import { LandingPage } from "./pages/landing/Landing";
 import { DashboardPage } from "./pages/dashboard/Dashboard";
 import { BriefingPage } from "./pages/briefing/Briefing";
 import { OnboardingPage } from "./pages/onboarding/Onboarding";
@@ -40,6 +39,7 @@ import { AdminUsers } from "./pages/admin/AdminUsers";
 import { AdminPlans } from "./pages/admin/AdminPlans";
 import { AdminTransactions } from "./pages/admin/AdminTransactions";
 import { AdminAuditLogs } from "./pages/admin/AdminAuditLogs";
+import { AdminGroups } from "./pages/admin/AdminGroups";
 import { AdminMaintenance } from "./pages/admin/AdminMaintenance";
 import {
   AdminRoute,
@@ -48,6 +48,8 @@ import {
 } from "./router/ProtectedRoute";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { NotificationsProvider } from "./components/focus/notifications-context";
+import { DemoLayout } from "./pages/demo/DemoLayout";
+import { DemoPage } from "./pages/demo/DemoPage";
 import type { ReactNode } from "react";
 
 /**
@@ -61,7 +63,8 @@ function guarded(label: string, node: ReactNode) {
 /**
  * Bảng định tuyến chính của METANOIA.
  *
- *  /                  -> Landing (công khai)
+ *  /                  -> Trang chủ (marketing 1 trang, dữ liệu mẫu cho khách)
+ *  /demo, /demo/*     -> URL cũ → redirect về trang chủ `/`
  *  /pricing           -> Bảng giá & Lựa chọn gói (công khai, SiteLayout)
  *  /payment/success   -> Kết quả thanh toán thành công (PayOS ReturnUrl)
  *  /payment/cancel    -> Đã hủy thanh toán (PayOS CancelUrl)
@@ -91,7 +94,7 @@ function guarded(label: string, node: ReactNode) {
  *  /admin/audit-logs  -> Nhật ký thao tác Admin
  *  /admin/maintenance -> Đồng bộ trạng thái dữ liệu cũ
  *
- * Mọi route khác đều fallback về Landing.
+ * Mọi route khác đều fallback về trang chủ `/`.
  */
 function App() {
   return (
@@ -109,7 +112,22 @@ function App() {
      */
     <NotificationsProvider>
       <Routes>
-        <Route path="/" element={guarded("Trang chủ", <LandingPage />)} />
+        {/*
+          TRANG CHỦ = trang demo (marketing 1 trang dài, dữ liệu mẫu).
+          Guest mở `/` thấy ngay sản phẩm — không cần đăng nhập.
+        */}
+        <Route element={<DemoLayout />}>
+          <Route path="/" element={guarded("Trang chủ", <DemoPage />)} />
+          {/* URL cũ → gộp về trang chủ. */}
+          <Route path="/demo" element={<Navigate to="/" replace />} />
+          <Route path="/demo/today" element={<Navigate to="/" replace />} />
+          <Route path="/demo/schedule" element={<Navigate to="/" replace />} />
+          <Route
+            path="/demo/projects"
+            element={<Navigate to="/" replace />}
+          />
+          <Route path="/demo/groups" element={<Navigate to="/" replace />} />
+        </Route>
 
       <Route
         element={
@@ -284,12 +302,16 @@ function App() {
           element={guarded("Nhật ký thao tác", <AdminAuditLogs />)}
         />
         <Route
+          path="/admin/groups"
+          element={guarded("Quản lý nhóm", <AdminGroups />)}
+        />
+        <Route
           path="/admin/maintenance"
           element={guarded("Bảo trì dữ liệu", <AdminMaintenance />)}
         />
       </Route>
 
-      <Route path="*" element={guarded("Trang chủ", <LandingPage />)} />
+      <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </NotificationsProvider>
   );

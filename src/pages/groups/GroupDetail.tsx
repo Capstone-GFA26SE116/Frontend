@@ -9,8 +9,22 @@ import { Link, useParams } from "react-router-dom";
 import { CenterToasts, useCenterToast } from "../../components/Toast";
 import { useAuth } from "../../auth/AuthContext";
 import type { ApiErr } from "../../lib/api-client";
+import { listDomains } from "../../lib/api-client";
 import { GroupErrorDialog } from "./GroupErrorDialog";
 import { GroupInviteModal } from "./GroupInviteModal";
+import { GroupAiChatTab } from "./GroupAiChatTab";
+import {
+  GroupAssigneeSuggestionsModal,
+  type GroupAiMember,
+} from "./GroupAssigneeSuggestionsModal";
+import {
+  getGroupAssigneeSuggestions,
+  type GroupAssigneeSuggestionsDto,
+} from "../../lib/group-ai-api";
+import {
+  toGroupAiErrorView,
+  type GroupAiErrorView,
+} from "./group-ai-errors";
 import {
   type GroupErrorDetails,
   type GroupErrorView,
@@ -104,7 +118,7 @@ import "./group-detail.css";
  * =========================================================== */
 
 /** Tab của trang. */
-type TabKey = "tasks" | "milestones" | "members" | "activity";
+type TabKey = "tasks" | "milestones" | "members" | "activity" | "ai";
 
 export function GroupDetailPage() {
   const { groupId = "" } = useParams();
@@ -207,6 +221,53 @@ export function GroupDetailPage() {
   /* ---------- Modal mời thành viên (tab Members) ---------- */
   const [inviteOpen, setInviteOpen] = useState(false);
 
+  /* ---------- AI: gợi ý người làm (spec GROUP_AI_FE.md mục 1) ---------- */
+  /** Việc đang xét gợi ý. */
+  const [suggestForTask, setSuggestForTask] = useState<GroupTaskDto | null>(
+    null,
+  );
+  /** Kết quả AI trả về. */
+  const [suggestions, setSuggestions] =
+    useState<GroupAssigneeSuggestionsDto | null>(null);
+  /** Đang gọi AI. */
+  const [suggestLoading, setSuggestLoading] = useState(false);
+  /** Loại công việc để AI dùng đúng thói quen ước lượng (tuỳ chọn). */
+  const [suggestDomainId, setSuggestDomainId] = useState<string>("");
+  /** Danh sách loại công việc lấy từ `GET /api/domains`. */
+  const [domains, setDomains] = useState<{ id: string; name: string }[]>([]);
+
+  /** Hộp thoại lỗi riêng cho AI (tiếng Anh). */
+  const [aiErrorDialog, setAiErrorDialog] = useState<{
+    view: GroupAiErrorView;
+    raw: string;
+  } | null>(null);
+
+  /**
+   * Thao tác thử lại cho lỗi AI tạm thời (502/503/429).
+   *
+   * Được `GroupAiChatTab` đăng ký khi một request AI thất bại → hộp thoại
+   * lỗi hiện nút "Try again" thay vì bắt user tự làm lại từ đầu.
+   */
+  const [aiRetry, setAiRetry] = useState<(() => void) | null>(null);
+
+  /** Hiện lỗi AI trong hộp thoại dùng chung (tiêu đề + message đã dịch). */
+  const showAiError = useCallback(
+    (view: GroupAiErrorView, raw?: string) => {
+      setAiErrorDialog({ view, raw: raw ?? "" });
+    },
+    [],
+  );
+
+  /**
+   * Nhận thao tác thử lại từ `GroupAiChatTab`.
+   *
+   * Chỉ giữ khi lỗi **tạm thời** (`showRetry`) — lỗi cấu hình/gói thì
+   * không có gì để thử lại.
+   */
+  const registerAiRetry = useCallback((retry: () => void) => {
+    setAiRetry(() => retry);
+  }, []);
+
   /**
    * Đổi lỗi API thành hộp thoại dễ hiểu.
    *
@@ -229,6 +290,15 @@ export function GroupDetailPage() {
 
   useEffect(() => {
     document.title = "Group · METANOIA";
+  }, []);
+
+  /* ---------- Nạp loại công việc (cho gợi ý AI) ---------- */
+  useEffect(() => {
+    void listDomains().then((res) => {
+      if (res.ok) {
+        setDomains(res.data.map((d) => ({ id: d.id, name: d.name })));
+      }
+    });
   }, []);
 
   /* ---------- Nạp toàn bộ dữ liệu ---------- */
@@ -418,6 +488,132 @@ export function GroupDetailPage() {
     setBusyWarning(null);
     toast.success("Task assigned");
   }
+
+  /* ---------- AI: gợi ý người làm (spec GROUP_AI_FE.md mục 1) ---------- */
+
+  /**
+   * Mở modal gợi ý người làm cho 1 việc.
+   *
+   * Chỉ Leader, và chỉ với việc **chưa xong** (ToDo / InProgress) —
+   * AI service trả 409 nếu việc đã Done/Skipped.
+   */
+  const handleOpenSuggestions = useCallback(
+    async (task: GroupTaskDto) => {
+      setSuggestForTask(task);
+      setSuggestions(null);
+      setSuggestLoading(true);
+
+      const res = await getGroupAssigneeSuggestions(task.id, {
+        domain_id: suggestDomainId || null,
+        language: "en",
+      });
+      setSuggestLoading(false);
+
+      if (!res.ok) {
+        showAiError(toGroupAiErrorView(res), res.error);
+        return;
+      }
+      setSuggestions(res.data);
+    },
+    [suggestDomainId, showAiError],
+  );
+
+  /** Gọi lại AI (tốn thêm 1 lượt AI của Leader). */
+  const handleRetrySuggestions = useCallback(async () => {
+    if (!suggestForTask) return;
+    setSuggestLoading(true);
+    const res = await getGroupAssigneeSuggestions(suggestForTask.id, {
+      domain_id: suggestDomainId || null,
+      language: "en",
+    });
+    setSuggestLoading(false);
+    if (!res.ok) {
+      showAiError(toGroupAiErrorView(res), res.error);
+      return;
+    }
+    setSuggestions(res.data);
+  }, [suggestForTask, suggestDomainId, showAiError]);
+
+  /**
+   * Đổi loại công việc → gọi lại AI với `domain_id` mới.
+   *
+   * Mỗi lần gọi lại tốn 1 lượt AI, nên chỉ gọi khi Leader **thực sự** đổi
+   * (không gọi lại với cùng giá trị đã chọn).
+   */
+  const handleSuggestDomainChange = useCallback(
+    async (domainId: string) => {
+      setSuggestDomainId(domainId);
+      if (!suggestForTask) return;
+      if (domainId === suggestDomainId) return;
+
+      setSuggestLoading(true);
+      const res = await getGroupAssigneeSuggestions(suggestForTask.id, {
+        domain_id: domainId || null,
+        language: "en",
+      });
+      setSuggestLoading(false);
+      if (!res.ok) {
+        showAiError(toGroupAiErrorView(res), res.error);
+        return;
+      }
+      setSuggestions(res.data);
+    },
+    [suggestForTask, suggestDomainId, showAiError],
+  );
+
+  /**
+   * Leader chọn 1 người → giao việc qua Backend.
+   *
+   * `PUT /api/group-tasks/{id}/assignee` → nếu 409 GROUP_ASSIGNEE_BUSY thì
+   * hiện hộp thoại xác nhận (dùng lại `busyWarning` sẵn có).
+   */
+  const handleAssignSuggestion = useCallback(
+    async (userId: string) => {
+      if (!suggestForTask) return;
+      setBusy(true);
+      const res = await updateGroupTaskAssignee(suggestForTask.id, {
+        assigneeId: userId,
+      });
+      setBusy(false);
+
+      if (!res.ok) {
+        if (res.status === 409 && res.errorCode === "GROUP_ASSIGNEE_BUSY") {
+          const details = parseAssigneeBusyDetails(res.details);
+          if (details) {
+            setBusyWarning({
+              taskId: suggestForTask.id,
+              assigneeId: userId,
+              details,
+            });
+            setSuggestForTask(null);
+            return;
+          }
+        }
+        showAiError(toGroupAiErrorView(res), res.error);
+        return;
+      }
+
+      setTasks((prev) =>
+        prev.map((t) => (t.id === suggestForTask.id ? res.data : t)),
+      );
+      setSuggestForTask(null);
+      setSuggestions(null);
+      toast.success("Task assigned");
+    },
+    [suggestForTask, showAiError, toast],
+  );
+
+  /** Danh sách thành viên dạng rút gọn cho modal AI. */
+  const aiMembers: GroupAiMember[] = useMemo(
+    () =>
+      members.map((m) => ({
+        userId: m.userId,
+        fullName: m.fullName,
+        role: String(m.role ?? "member"),
+      })),
+    [members],
+  );
+
   /* ---------- Tạo việc ---------- */
   async function handleCreateTask(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -863,6 +1059,20 @@ export function GroupDetailPage() {
                 icon: "history",
                 count: activity.length,
               },
+              /*
+               * Tab "Chat AI" — CHỈ Leader mới thấy (spec GROUP_AI_FE.md mục 0).
+               * Member/Viewer: ẩn hẳn, gọi API vẫn bị 403.
+               */
+              ...(leader
+                ? [
+                    {
+                      key: "ai" as const,
+                      label: "Chat AI",
+                      icon: "auto_awesome",
+                      count: 0,
+                    },
+                  ]
+                : []),
             ] as const
           ).map((t) => (
             <button
@@ -1093,6 +1303,31 @@ export function GroupDetailPage() {
                               ))}
                             </select>
                           )}
+
+                          {/*
+                           * Nút "Gợi ý người làm" bằng AI (spec GROUP_AI_FE.md mục 1).
+                           * Chỉ Leader, chỉ việc chưa xong (ToDo / InProgress) —
+                           * AI service trả 409 nếu việc đã Done/Skipped.
+                           */}
+                          {leader &&
+                            !archived &&
+                            (t.status === "ToDo" || t.status === "InProgress") && (
+                              <button
+                                type="button"
+                                className="gai-suggest-btn"
+                                onClick={() => void handleOpenSuggestions(t)}
+                                disabled={busy}
+                                title="Ask AI who should take this on"
+                              >
+                                <span
+                                  className="material-symbols-outlined"
+                                  aria-hidden="true"
+                                >
+                                  auto_awesome
+                                </span>
+                                Suggest assignee
+                              </button>
+                            )}
 
                           {/* Dấu cảnh báo bận / quá tải bên cạnh người nhận. */}
                           {availability[t.id] && (
@@ -1667,6 +1902,27 @@ export function GroupDetailPage() {
                 ))}
               </ul>
             )}
+          </section>
+        )}
+
+        {/* ================= TAB: CHAT AI (Leader) ================= */}
+        {tab === "ai" && leader && (
+          <section className="gdt-panel">
+            <div className="gdt-section-head">
+              <div className="gdt-section-head-text">
+                <span className="gdt-section-eyebrow">AI planning</span>
+                <h2 className="gdt-section-title">Chat AI</h2>
+              </div>
+            </div>
+            <GroupAiChatTab
+              groupId={groupId}
+              members={members}
+              enabled={leader}
+              archived={archived}
+              onError={showAiError}
+              onRetryRequest={registerAiRetry}
+              onGroupChanged={() => void loadAll()}
+            />
           </section>
         )}
       </div>
@@ -2366,6 +2622,46 @@ export function GroupDetailPage() {
         details={errorDialog?.details ?? null}
         rawMessage={errorDialog?.raw || undefined}
         onClose={() => setErrorDialog(null)}
+      />
+
+      {/* ============ Modal gợi ý người làm (AI) ============ */}
+      {suggestForTask && (
+        <GroupAssigneeSuggestionsModal
+          taskTitle={suggestForTask.title}
+          data={suggestions}
+          members={aiMembers}
+          loading={suggestLoading}
+          onClose={() => {
+            setSuggestForTask(null);
+            setSuggestions(null);
+          }}
+          onAssign={(userId) => void handleAssignSuggestion(userId)}
+          onRetry={() => void handleRetrySuggestions()}
+          domains={domains}
+          domainId={suggestDomainId}
+          onDomainChange={(id) => void handleSuggestDomainChange(id)}
+        />
+      )}
+
+      {/* ============ Hộp thoại lỗi AI (tiếng Anh) ============ */}
+      <GroupErrorDialog
+        error={aiErrorDialog?.view ?? null}
+        rawMessage={aiErrorDialog?.raw || undefined}
+        onClose={() => {
+          setAiErrorDialog(null);
+          setAiRetry(null);
+        }}
+        onSecondary={
+          aiErrorDialog?.view.showRetry && aiRetry
+            ? () => {
+                const retry = aiRetry;
+                setAiErrorDialog(null);
+                setAiRetry(null);
+                retry();
+              }
+            : undefined
+        }
+        secondaryLabel="Try again"
       />
 
       <CenterToasts toasts={toasts} onDismiss={toast.dismiss} />

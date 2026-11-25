@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 /**
  * Logo METANOIA — vẽ SVG inline để không phụ thuộc asset ngoài.
  *
@@ -24,9 +26,6 @@ interface MetanoiaLogoProps {
 }
 
 // 3 stop gradient theo token Voltagent — brand voice: single electric-green.
-const LOGO_GRADIENT_DARK = "voltagent-logo-gradient";
-const LOGO_GRADIENT_LIGHT = "voltagent-logo-gradient-light";
-
 const RING_COLOR_DARK = "#00d992";
 const RING_COLOR_LIGHT = "#10b981"; // primary-deep — đậm hơn để đọc trên nền trắng
 const DOT_COLOR_DARK = "#00d992"; // primary
@@ -40,8 +39,20 @@ export function MetanoiaLogo({
   className = "",
   tone = "dark",
 }: MetanoiaLogoProps) {
-  const gradId =
-    tone === "dark" ? LOGO_GRADIENT_DARK : LOGO_GRADIENT_LIGHT;
+  /*
+   * ⚠️ Gradient ID phải UNIQUE cho mỗi instance.
+   *
+   * Nếu dùng ID cố định (vd `voltagent-logo-gradient`) và trang render
+   * nhiều logo (hero + mobile + brand trên login) → DOM có nhiều `<defs>`
+   * cùng ID → `url(#voltagent-logo-gradient)` chỉ resolve được cái ĐẦU TIÊN,
+   * các bản sau bị rỗng → vòng tròn trong SVG **không vẽ ra** (chỉ còn
+   * wordmark chữ).
+   *
+   * `useId()` sinh ID duy nhất theo instance → mỗi SVG có gradient riêng.
+   */
+  const uid = useId().replace(/:/g, "");
+  const gradId = `metanoia-logo-grad-${uid}`;
+
   const ringColor =
     tone === "dark" ? RING_COLOR_DARK : RING_COLOR_LIGHT;
   const dotColor =
@@ -50,7 +61,7 @@ export function MetanoiaLogo({
     tone === "dark" ? WORDMARK_COLOR_DARK : WORDMARK_COLOR_LIGHT;
 
   return (
-    <div className={`flex items-center gap-2 ${className}`}>
+    <div className={`metanoia-logo ${className}`}>
       <svg
         width={size}
         height={size}
@@ -97,7 +108,7 @@ export function MetanoiaLogo({
       </svg>
       {withWordmark && (
         <span
-          className="text-lg font-semibold tracking-tight"
+          className="metanoia-logo-wordmark"
           style={{ color: wordmarkColor }}
         >
           METANOIA

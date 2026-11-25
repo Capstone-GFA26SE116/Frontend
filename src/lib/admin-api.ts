@@ -440,22 +440,31 @@ export async function deleteSubscriptionPlan(
 
 export type RevenueGroupBy = "day" | "month" | "plan";
 
+/**
+ * Tổng doanh thu.
+ *
+ * ⚠️ BE đã **xoá** `refundedAmount` và `netRevenue` (bỏ hoàn tiền).
+ * Doanh thu thực = `grossRevenue`.
+ * Spec: `FE_CHANGES.md` mục 4.
+ */
 export interface RevenueTotalsDto {
   grossRevenue: number;
-  refundedAmount: number;
-  netRevenue: number;
   succeededTransactions: number;
   averageOrderValue: number;
   invoicesIssued: number;
   newPayingUsers: number;
 }
 
+/**
+ * 1 dòng doanh thu theo nhóm (ngày / tháng / gói).
+ *
+ * ⚠️ BE đã **xoá** `refunded` và `net` — dùng `revenue` (chính là doanh thu
+ * thực).
+ */
 export interface RevenueRowDto {
   key: string;
   revenue: number;
   transactions: number;
-  refunded: number;
-  net: number;
   sharePercent: number;
 }
 
@@ -484,6 +493,203 @@ export async function getRevenueReport(
       from: query.from,
       to: query.to,
     })}`,
+  );
+}
+
+/* ================================================================
+ * GROUPS — /api/admin/groups  (chỉ role Admin)
+ * ----------------------------------------------------------
+ * Spec: `FE_CHANGES.md` mục 9.
+ *
+ * ⚠️ 2 thao tác ghi (`archive` / `restore`) BẮT BUỘC header `X-Admin-Reason`.
+ * `adminFetch` đã tự encodeURIComponent lý do (header HTTP chỉ nhận Latin-1).
+ *
+ * Lưu ý: Admin KHÔNG cần là thành viên nhóm, nhưng KHÔNG thấy nội dung
+ * bình luận hay lịch cá nhân của nhóm.
+ * ================================================================ */
+
+/** Trạng thái nhóm — `Active` hoặc `Archived`. */
+export type AdminGroupStatus = "Active" | "Archived";
+
+/** 1 dòng trong danh sách nhóm. */
+export interface AdminGroupListItemDto {
+  id: string;
+  name: string;
+  description: string | null;
+  status: AdminGroupStatus | string;
+  /** Chủ nhóm. */
+  ownerId: string | null;
+  ownerName: string | null;
+  ownerEmail: string | null;
+  /** Số thành viên. */
+  memberCount: number;
+  /** Số việc trong nhóm. */
+  taskCount: number;
+  createdAt: string;
+}
+
+/** Thống kê tổng quan nhóm. */
+export interface AdminGroupStatsDto {
+  totalGroups: number;
+  activeGroups: number;
+  archivedGroups: number;
+  totalMembers: number;
+  totalTasks: number;
+  /** Số việc theo trạng thái. */
+  tasksByStatus: Record<string, number>;
+  /** Nhóm mới trong 30 ngày. */
+  newGroupsLast30Days: number;
+  /** Lời mời đang chờ. */
+  pendingInvitations: number;
+  /** Phiên bấm giờ đang chạy. */
+  activeFocusSessions: number;
+}
+
+/** Thành viên trong chi tiết nhóm. */
+export interface AdminGroupMemberDto {
+  userId: string;
+  fullName: string | null;
+  email: string | null;
+  /** `Leader` | `Member` | `Viewer`. */
+  role: string;
+  joinedAt: string | null;
+}
+
+/** Báo cáo tiến độ của nhóm. */
+export interface AdminGroupProgressDto {
+  totalTasks: number;
+  completedTasks: number;
+  /** 0–100. */
+  progressPercent: number;
+}
+
+/** Chi tiết 1 nhóm. */
+export interface AdminGroupDetailDto {
+  id: string;
+  name: string;
+  description: string | null;
+  status: AdminGroupStatus | string;
+  ownerId: string | null;
+  ownerName: string | null;
+  ownerEmail: string | null;
+  members: AdminGroupMemberDto[];
+  progress: AdminGroupProgressDto | null;
+  taskCount: number;
+  memberCount: number;
+  createdAt: string;
+}
+
+/** 1 dòng nhật ký hoạt động của nhóm. */
+export interface AdminGroupActivityDto {
+  id: string;
+  action: string;
+  actorName: string | null;
+  actorEmail: string | null;
+  /** Nội dung mô tả (JSON string hoặc text). */
+  detail: string | null;
+  createdAt: string;
+}
+
+export interface AdminGroupFilters {
+  search?: string;
+  status?: AdminGroupStatus;
+  ownerId?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+/**
+ * `GET /api/admin/groups` — danh sách mọi nhóm.
+ */
+export async function listAdminGroups(
+  filters: AdminGroupFilters = {},
+): Promise<AdminApiResult<AdminPagedResultDto<AdminGroupListItemDto>>> {
+  return adminGet<AdminPagedResultDto<AdminGroupListItemDto>>(
+    `/api/admin/groups${qs({
+      search: filters.search,
+      status: filters.status,
+      ownerId: filters.ownerId,
+      page: filters.page,
+      pageSize: filters.pageSize,
+    })}`,
+  );
+}
+
+/**
+ * `GET /api/admin/groups/stats` — số liệu tổng quan nhóm.
+ */
+export async function getAdminGroupStats(): Promise<
+  AdminApiResult<AdminGroupStatsDto>
+> {
+  return adminGet<AdminGroupStatsDto>("/api/admin/groups/stats");
+}
+
+/**
+ * `GET /api/admin/groups/{id}` — chi tiết nhóm (chủ nhóm, thành viên, tiến độ).
+ */
+export async function getAdminGroup(
+  groupId: string,
+): Promise<AdminApiResult<AdminGroupDetailDto>> {
+  if (!groupId) return { ok: false, error: "groupId is required", status: 400 };
+  return adminGet<AdminGroupDetailDto>(
+    `/api/admin/groups/${encodeURIComponent(groupId)}`,
+  );
+}
+
+/**
+ * `GET /api/admin/groups/{id}/activity` — nhật ký hoạt động của nhóm.
+ */
+export async function listAdminGroupActivity(
+  groupId: string,
+  params: { skip?: number; take?: number } = {},
+): Promise<AdminApiResult<AdminGroupActivityDto[]>> {
+  if (!groupId) return { ok: false, error: "groupId is required", status: 400 };
+  return adminGet<AdminGroupActivityDto[]>(
+    `/api/admin/groups/${encodeURIComponent(groupId)}/activity${qs({
+      skip: params.skip,
+      take: params.take,
+    })}`,
+  );
+}
+
+/**
+ * `POST /api/admin/groups/{id}/archive` — lưu trữ nhóm.
+ *
+ * ⚠️ BẮT BUỘC lý do → BE trả `400` nếu thiếu. Nhóm đã `Archived` → `400`.
+ * Ghi nhật ký admin + nhật ký nhóm + gửi thông báo `GroupStatusChanged`.
+ */
+export async function archiveAdminGroup(
+  groupId: string,
+  reason: string,
+): Promise<AdminApiResult<void>> {
+  if (!groupId) return { ok: false, error: "groupId is required", status: 400 };
+  if (!reason.trim()) {
+    return { ok: false, error: "Vui lòng nhập lý do thao tác.", status: 400 };
+  }
+  return adminPost<void>(
+    `/api/admin/groups/${encodeURIComponent(groupId)}/archive`,
+    undefined,
+    reason,
+  );
+}
+
+/**
+ * `POST /api/admin/groups/{id}/restore` — khôi phục nhóm.
+ *
+ * ⚠️ BẮT BUỘC lý do → BE trả `400` nếu thiếu. Nhóm không `Archived` → `400`.
+ */
+export async function restoreAdminGroup(
+  groupId: string,
+  reason: string,
+): Promise<AdminApiResult<void>> {
+  if (!groupId) return { ok: false, error: "groupId is required", status: 400 };
+  if (!reason.trim()) {
+    return { ok: false, error: "Vui lòng nhập lý do thao tác.", status: 400 };
+  }
+  return adminPost<void>(
+    `/api/admin/groups/${encodeURIComponent(groupId)}/restore`,
+    undefined,
+    reason,
   );
 }
 

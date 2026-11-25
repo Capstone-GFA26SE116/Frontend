@@ -1278,12 +1278,38 @@ export function ProjectsPage() {
             </div>
           ) : filteredProjects.length === 0 ? (
             <div className="proj-empty">
-              <span className="material-symbols-outlined">search_off</span>
-              <p>
-                {projects.length === 0
-                  ? "You don't have any projects yet. Click the button above to create your first one."
-                  : "No projects match the current filter."}
-              </p>
+              {projects.length === 0 ? (
+                /*
+                 * ⚠️ Người dùng MỚI không có dự án nào (BE không tạo dự án "Cá
+                 * nhân" tự động nữa) → cần nút rõ ràng để tạo dự án đầu tiên
+                 * trước khi tạo việc.
+                 * Spec: `FE_CHANGES.md` mục 1.4.
+                 */
+                <>
+                  <span className="material-symbols-outlined">
+                    account_tree
+                  </span>
+                  <p>
+                    You don't have any projects yet. Create your first project to
+                    start planning work and building your schedule.
+                  </p>
+                  <button
+                    type="button"
+                    className="proj-btn proj-btn--primary proj-empty-cta"
+                    onClick={() => setModalOpen(true)}
+                  >
+                    <span className="material-symbols-outlined proj-btn-icon">
+                      add
+                    </span>
+                    <span>Create your first project</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined">search_off</span>
+                  <p>No projects match the current filter.</p>
+                </>
+              )}
             </div>
           ) : null}
         </section>

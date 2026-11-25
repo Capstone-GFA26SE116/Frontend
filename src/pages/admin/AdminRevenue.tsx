@@ -175,9 +175,9 @@ export function AdminRevenue() {
 
   const dateError = "error" in range ? range.error : null;
 
-  const maxRowNet = useMemo(() => {
+  const maxRowRevenue = useMemo(() => {
     if (!report) return 1;
-    return Math.max(1, ...report.rows.map((r) => Math.abs(r.net)));
+    return Math.max(1, ...report.rows.map((r) => Math.abs(r.revenue)));
   }, [report]);
 
   const totals = report?.total;
@@ -197,8 +197,7 @@ export function AdminRevenue() {
           <span className="adm-eyebrow">BÁO CÁO TÀI CHÍNH</span>
           <h1 className="adm-page-title">Doanh thu</h1>
           <p className="adm-page-sub">
-            Doanh thu tính theo ngày thanh toán của giao dịch thành công; hoàn tiền
-            tính vào kỳ xử lý xong.
+            Doanh thu tính theo ngày thanh toán của giao dịch thành công.
           </p>
         </div>
       </div>
@@ -295,13 +294,11 @@ export function AdminRevenue() {
           {/* ============ KPI ============ */}
           <section className="adm-kpi-grid" aria-label="Tổng quan doanh thu">
             <article className="adm-kpi adm-kpi--accent">
-              <span className="adm-kpi__label">Doanh thu thuần</span>
+              <span className="adm-kpi__label">Doanh thu</span>
               <strong className="adm-kpi__value adm-mono">
-                {formatShortVnd(totals?.netRevenue ?? 0)}
+                {formatShortVnd(totals?.grossRevenue ?? 0)}
               </strong>
-              <span className="adm-kpi__foot">
-                Tổng {formatVnd(totals?.grossRevenue ?? 0)}
-              </span>
+              <span className="adm-kpi__foot">Tổng tiền giao dịch thành công</span>
             </article>
             <article className="adm-kpi">
               <span className="adm-kpi__label">Giao dịch thành công</span>
@@ -316,13 +313,6 @@ export function AdminRevenue() {
                 {formatShortVnd(totals?.averageOrderValue ?? 0)}
               </strong>
               <span className="adm-kpi__foot">Mỗi giao dịch thành công</span>
-            </article>
-            <article className="adm-kpi">
-              <span className="adm-kpi__label">Đã hoàn tiền</span>
-              <strong className="adm-kpi__value adm-mono">
-                {formatShortVnd(totals?.refundedAmount ?? 0)}
-              </strong>
-              <span className="adm-kpi__foot">Hoàn tận xong trong kỳ</span>
             </article>
             <article className="adm-kpi">
               <span className="adm-kpi__label">Hoá đơn phát hành</span>
@@ -359,7 +349,7 @@ export function AdminRevenue() {
                   {report.rows.map((row, index) => {
                     const height = Math.max(
                       2,
-                      (Math.abs(row.net) / maxRowNet) * 100,
+                      (Math.abs(row.revenue) / maxRowRevenue) * 100,
                     );
                     /* Chỉ hiện nhãn mỗi `step` cột — tránh chồng chữ. */
                     const showLabel =
@@ -368,24 +358,13 @@ export function AdminRevenue() {
                       <div
                         key={row.key}
                         className="adm-chart__col"
-                        title={`${row.key} · ${formatVnd(row.net)}`}
+                        title={`${row.key} · ${formatVnd(row.revenue)}`}
                       >
                         <div className="adm-chart__stack">
                           <div
                             className="adm-chart__bar adm-chart__bar--net"
                             style={{ height: `${height}%` }}
                           />
-                          {row.refunded > 0 && (
-                            <div
-                              className="adm-chart__bar adm-chart__bar--refund"
-                              style={{
-                                height: `${Math.max(
-                                  1,
-                                  (row.refunded / maxRowNet) * 100,
-                                )}%`,
-                              }}
-                            />
-                          )}
                         </div>
                         {showLabel && (
                           <span className="adm-chart__x adm-mono">
@@ -399,11 +378,7 @@ export function AdminRevenue() {
                 <div className="adm-legend">
                   <span className="adm-legend__item">
                     <span className="adm-legend__swatch adm-legend__swatch--net" />
-                    Doanh thu thuần
-                  </span>
-                  <span className="adm-legend__item">
-                    <span className="adm-legend__swatch adm-legend__swatch--refund" />
-                    Hoàn tiền
+                    Doanh thu
                   </span>
                 </div>
               </div>
@@ -428,8 +403,6 @@ export function AdminRevenue() {
                     <th scope="col">{groupBy === "plan" ? "Gói" : "Mốc"}</th>
                     <th scope="col" className="adm-table__num">Doanh thu</th>
                     <th scope="col" className="adm-table__num">Giao dịch</th>
-                    <th scope="col" className="adm-table__num">Hoàn</th>
-                    <th scope="col" className="adm-table__num">Thực nhận</th>
                     <th scope="col" className="adm-table__num">Tỉ trọng</th>
                   </tr>
                 </thead>
@@ -439,12 +412,10 @@ export function AdminRevenue() {
                       <td>
                         <span className="adm-table__strong">{row.key}</span>
                       </td>
-                      <td className="adm-table__num adm-mono">{formatVnd(row.revenue)}</td>
-                      <td className="adm-table__num adm-mono">{row.transactions}</td>
-                      <td className="adm-table__num adm-mono">{formatVnd(row.refunded)}</td>
                       <td className="adm-table__num adm-mono adm-table__strong">
-                        {formatVnd(row.net)}
+                        {formatVnd(row.revenue)}
                       </td>
+                      <td className="adm-table__num adm-mono">{row.transactions}</td>
                       <td className="adm-table__num adm-mono">{row.sharePercent.toFixed(1)}%</td>
                     </tr>
                   ))}

@@ -96,6 +96,15 @@
   }
 }
 
+/* Khi hero bị ẩn (`/login` dùng split full-screen) → grid 1 cột, 1 hàng cao
+   100vh để split chiếm trọn màn hình. */
+.auth-layout[data-split="true"] .auth-grid {
+  grid-template-columns: 1fr;
+  grid-template-rows: 100vh;
+  height: 100vh;
+  overflow: hidden;
+}
+
 /* ---------- LEFT: hero panel (Voltagent: hairline card trên canvas, không ảnh) ---------- */
 .auth-hero {
   position: relative;
@@ -117,6 +126,12 @@
   .auth-hero {
     display: flex;
   }
+}
+
+/* Hero bị ẩn khi route dùng split-card nội bộ (`/login`) — tránh 2 tầng
+   visual cạnh tranh nhau. Ở layout 1 cột (mobile) hero vốn đã ẩn. */
+.auth-hero--hidden {
+  display: none !important;
 }
 
 /* Ảnh nền + vignette gradient đã bỏ — DESIGN.md: "No photography in the brand's
@@ -525,17 +540,59 @@
 /* ---------- form shell (chứa <Outlet />) ---------- */
 .auth-form-shell {
   width: 100%;
-  max-width: 28rem; /* ~ max-w-md */
+  max-width: var(--auth-shell-max, 28rem); /* ~ max-w-md */
   margin: auto;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
 }
 
+/* `/login` render split-card rộng (60rem) → nới shell + footer cho vừa.
+   Dùng data attribute trên `.auth-layout` (không phụ thuộc `:has()` để
+   tương thích trình duyệt cũ). */
+.auth-layout[data-split="true"] {
+  --auth-shell-max: 60rem;
+}
+
+/* ===========================================================
+ * Split mode (`/login`) — FULL SCREEN 2 cột, không card ở giữa
+ * =========================================================== */
+
+/* Bỏ padding của form panel + bỏ topbar/bottom để split chiếm trọn
+   viewport. Visual panel (trái) và form panel (phải) là 2 nửa màn hình. */
+.auth-form-panel--split {
+  padding: 0 !important;
+  justify-content: stretch;
+  gap: 0;
+  min-height: 100vh;
+}
+
+.auth-form-panel--split::before,
+.auth-form-panel--split::after {
+  /* Ambient blobs của panel bị tràn sang visual panel → tắt ở split mode
+     (visual panel đã có dot-grid riêng). */
+  display: none;
+}
+
+/* Topbar (logo mobile + link đăng ký) & footer privacy → ẩn ở split mode
+   vì split card đã có đủ (Back to website + CTA đăng ký + brand). */
+.auth-form-panel--split .auth-form-topbar,
+.auth-form-panel--split .auth-form-bottom {
+  display: none;
+}
+
+/* Shell → không giới hạn bề rộng, không margin auto, chiếm trọn cột. */
+.auth-form-shell--split {
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  gap: 0;
+}
+
 /* ---------- footer privacy ---------- */
 .auth-form-bottom {
   width: 100%;
-  max-width: 28rem;
+  max-width: var(--auth-shell-max, 28rem);
   margin: 0 auto;
   padding-top: 1.5rem;
   text-align: center;

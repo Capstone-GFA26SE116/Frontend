@@ -34,8 +34,8 @@ const TARGET_TYPES = [
   "UserSubscription",
   "PaymentTransaction",
   "Invoice",
-  "Refund",
   "StatusResync",
+  "Group",
 ];
 
 function formatDateTime(iso: string | null | undefined): string {

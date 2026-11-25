@@ -14,7 +14,7 @@ import { readOnboarding } from "../pages/onboarding/storage";
  *   (Cho phép user vào thẳng /onboarding hoặc /logout khi đang ở trong này.)
  */
 export function ProtectedRoute({ children }: { children?: ReactNode }) {
-  const { user, isAuthenticated, isReady } = useAuth();
+  const { user, isAuthenticated, isReady, onboardingCompleted } = useAuth();
   const location = useLocation();
 
   if (!isReady) {
@@ -48,12 +48,23 @@ export function ProtectedRoute({ children }: { children?: ReactNode }) {
   // /admin và không cần thiết lập lịch cá nhân.
   const isAdmin = isAdminUser(user);
 
+  /*
+   * Nguồn cờ onboarding:
+   *   1. `GET /api/me` → `onboardingCompleted` (nguồn chính, xuyên session).
+   *   2. Fallback localStorage (`readOnboarding()`) cho mock local.
+   *
+   * BE **không** chặn API khi chưa onboarding → FE phải tự gate.
+   * Spec: `FE_CHANGES.md` mục 1.3.
+   */
+  const needsOnboarding =
+    onboardingCompleted === false || readOnboarding() === null;
+
   if (
     !location.pathname.startsWith("/onboarding") &&
     !location.pathname.startsWith("/logout") &&
     !isPaymentResult &&
     !isAdmin &&
-    readOnboarding() === null
+    needsOnboarding
   ) {
     return <Navigate to="/onboarding" replace />;
   }

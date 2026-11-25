@@ -31,6 +31,26 @@ interface AuthContextValue {
   token: string | null;
   isAuthenticated: boolean;
   isReady: boolean;
+  /**
+   * User **vừa được tạo** (hoặc vừa được nhận từ Admin) → cần onboarding.
+   *
+   * Lấy từ `isNewUser` của `POST /api/auth/google`. Đăng nhập thường và
+   * `POST /api/auth/refresh` luôn trả `false`.
+   *
+   * Spec: `FE_CHANGES.md` mục 1.1.
+   */
+  isNewUser: boolean;
+  /**
+   * User đã hoàn tất onboarding chưa (`GET /api/me` → `onboardingCompleted`).
+   *
+   * `undefined` = chưa biết (đang tải). `false` = phải làm onboarding.
+   */
+  onboardingCompleted: boolean | undefined;
+  /**
+   * Đánh dấu onboarding đã hoàn tất — gọi sau khi `POST /api/me/onboarding`
+   * thành công để cỡng cổng gate ngay (không phải chờ refetch `/api/me`).
+   */
+  markOnboardingCompleted: () => void;
   login: (
     email: string,
     password: string,
@@ -45,6 +65,9 @@ interface AuthContextValue {
    * Dùng cho flow "đăng ký xong phải đăng nhập lại" — tránh bị ProtectedRoute
    * đẩy sang /onboarding giữa chừng vì user vừa tạo lại authenticated.
    * Trả về user (đã normalize email) để Register có thể prefill vào form Login.
+   *
+   * @deprecated Không còn dùng — /register giờ đăng ký bằng Google (GIS) nên
+   * không còn form email/mật khẩu. Giữ lại để không vỡ API cũ.
    */
   createAccount: (
     name: string,
@@ -82,6 +105,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   // isReady = true sau khi đã đọc xong localStorage (tránh flash redirect).
   const [isReady, setIsReady] = useState(false);
+  /**
+   * `true` khi đăng nhập Google vừa tạo/nhận tài khoản → cần onboarding.
+   * Chỉ set 1 lần rồi xoá sau khi dùng (xem `consumeNewUser`).
+   */
+  const [isNewUser, setIsNewUser] = useState(false);
+  /** `GET /api/me` → `onboardingCompleted`. `undefined` = chưa biết. */
+  const [onboardingCompleted, setOnboardingCompleted] = useState<
+    boolean | undefined
+  >(undefined);
 
   // Khôi phục session khi mount.
   // Với backend thật: đọc access token từ localStorage → gọi /api/me để lấy profile.
@@ -100,9 +132,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             createdAt: new Date().toISOString(),
             avatarUrl: res.data.avatarUrl ?? undefined,
             role: res.data.role ?? null,
+            onboardingCompleted: res.data.onboardingCompleted,
           };
           setUser(u);
           setToken(token);
+          setOnboardingCompleted(res.data.onboardingCompleted);
         } else {
           // Token hết hạn hoặc invalid → xoá
           clearTokens();
@@ -125,6 +159,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const markOnboardingCompleted = useCallback(() => {
+    setOnboardingCompleted(true);
+    setUser((prev) => (prev ? { ...prev, onboardingCompleted: true } : prev));
+  }, []);
+
   const loginWithGoogle = useCallback(async (idToken: string) => {
     const res = await loginWithGoogleApi(idToken);
     if (!res.ok) {
@@ -138,11 +177,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       createdAt: new Date().toISOString(),
       avatarUrl: dto.avatarUrl ?? undefined,
       role: dto.role ?? null,
+      // `isNewUser = true` → tài khoản vừa tạo → chưa onboarding.
+      onboardingCompleted: dto.isNewUser ? false : undefined,
     };
     // Lưu vào localStorage để mock code vẫn hoạt động nếu cần
     saveSession({ token: dto.accessToken, email: u.email });
     setUser(u);
     setToken(dto.accessToken);
+    if (dto.isNewUser) {
+      setIsNewUser(true);
+      setOnboardingCompleted(false);
+    }
     return { ok: true as const, session: { user: u, token: dto.accessToken } };
   }, []);
 
@@ -193,6 +238,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearTokens();
     setUser(null);
     setToken(null);
+    setIsNewUser(false);
+    setOnboardingCompleted(undefined);
   }, []);
 
   /**
@@ -228,13 +275,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       token,
       isAuthenticated: user !== null,
       isReady,
+      isNewUser,
+      onboardingCompleted,
+      markOnboardingCompleted,
       login,
       register,
       createAccount,
       loginWithGoogle,
       logout,
     }),
-    [user, token, isReady, login, register, createAccount, loginWithGoogle, logout],
+    [
+      user,
+      token,
+      isReady,
+      isNewUser,
+      onboardingCompleted,
+      markOnboardingCompleted,
+      login,
+      register,
+      createAccount,
+      loginWithGoogle,
+      logout,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

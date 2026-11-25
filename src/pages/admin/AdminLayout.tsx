@@ -57,6 +57,12 @@ const ADMIN_NAV: AdminNavItem[] = [
     description: "Theo dõi giao dịch thanh toán và hoá đơn đã phát hành.",
   },
   {
+    to: "/admin/groups",
+    label: "Nhóm",
+    icon: "groups",
+    description: "Quản lý nhóm làm việc: thành viên, tiến độ, lưu trữ và khôi phục.",
+  },
+  {
     to: "/admin/audit-logs",
     label: "Nhật ký thao tác",
     icon: "history",

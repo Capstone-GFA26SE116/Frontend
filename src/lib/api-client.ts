@@ -8,6 +8,9 @@
  * - Chuẩn response: `{ ok: true, data: T }` hoặc `{ ok: false, error: string }`.
  */
 
+import { isDemoMode } from "./demo-mode";
+import { demoMatch } from "./demo-data";
+
 const BASE_URL = import.meta.env.VITE_API_URL as string;
 const SESSION_KEY = "metanoia:session";
 const REFRESH_KEY = "metanoia:refresh";
@@ -146,6 +149,35 @@ function extractMessage(v: unknown, depth = 0): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Kiểm tra 1 chuỗi `detail` từ BE có phải **thông điệp kỹ thuật** hay không.
+ *
+ * VD 502 → `"AI unavailable, try again"` — đây là câu kỹ thuật của hạ tầng,
+ * không phải lời giải thích cho người dùng. Khi đó nên dùng thông điệp
+ * theo HTTP status (đã dịch sẵn) thay vì đưa thẳng câu này lên UI.
+ *
+ * ⚠️ Chỉ khớp với cụm từ **hạ tầng** cụ thể — không dùng quy tắc "câu ngắn
+ * không có dấu chấm" vì nhiều thông điệp hợp lệ cho người dùng cũng ngắn
+ * và không có dấu chấm (VD: "Your message is too long").
+ *
+ * @param s Chuỗi lấy từ `detail`/`message` của body lỗi.
+ */
+function isTechnicalDetail(s: string): boolean {
+  const t = s.trim().toLowerCase();
+  if (!t) return false;
+  const technicalPhrases = [
+    "ai unavailable",
+    "service unavailable",
+    "temporarily unavailable",
+    "bad gateway",
+    "gateway timeout",
+    "internal server error",
+    "upstream error",
+    "try again later",
+  ];
+  return technicalPhrases.some((p) => t.includes(p));
 }
 
 /**
@@ -336,8 +368,41 @@ async function apiFetch<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<ApiResult<T>> {
+  /*
+   * ⚠️ CHẾ ĐỘ DEMO (guest chưa đăng nhập, đang ở trang chủ `/`).
+   *
+   * Chặn request TRƯỚC khi chạm network và trả dữ liệu mẫu. Nhờ vậy:
+   * - Guest không bao giờ thấy/ghi dữ liệu thật.
+   * - Demo không tiêu tốn quota AI của bất kỳ ai.
+   * - Không có request nào thoát ra ngoài → không rò rỉ token.
+   */
+  if (isDemoMode()) {
+    const method = options.method ?? "GET";
+    const match = demoMatch(method, path);
+    if (match.handled) {
+      /* Ghi (POST/PUT/DELETE) không được phép trong demo. */
+      if (method.toUpperCase() !== "GET") {
+        return {
+          ok: false,
+          status: 403,
+          error:
+            "This is a read-only demo. Create a free account to make changes.",
+        };
+      }
+      return { ok: true, data: match.data as T };
+    }
+  }
+
   const url = `${BASE_URL}${path}`;
   const token = getAccessToken();
+  /*
+   * `hadToken` = request này có gắn Authorization hay không.
+   * Dùng để phân biệt 2 trường hợp khi BE trả 401:
+   *   - có token nhưng hết hạn / không hợp lệ → phiên hết hạn → redirect /login.
+   *   - không có token (khách chưa đăng nhập) → endpoint cần auth → KHÔNG
+   *     redirect (đá khách khỏi trang public như /pricing).
+   */
+  const hadToken = !!token;
 
   const headers: Record<string, string> = {
     // ⚠️ KHÔNG tự đặt `Content-Type` khi body là FormData — trình duyệt phải
@@ -393,7 +458,19 @@ async function apiFetch<T>(
       }
       // Refresh thất bại hoặc không có refresh token → logout
       clearTokens();
-      window.location.href = "/login";
+      /*
+       * ⚠️ Đang ở route DEMO + token rác → KHÔNG đá guest ra khỏi demo.
+       * Demo là trang công khai, mất token không phải lý do để redirect.
+       *
+       * ⚠️ QUAN TRỌNG: nếu user CHƯA TỪNG đăng nhập (không có token nào)
+       * thì 401 chỉ nghĩa là "endpoint này cần auth" — KHÔNG phải "phiên hết
+       * hạn". Redirect /login lúc đó sẽ đá khách khỏi trang public (vd
+       * /pricing gọi GET /api/subscription-plans) → họ bị "văng ra" ngoài.
+       * Chỉ redirect khi thực sự có session mà session đó không còn hợp lệ.
+       */
+      if (!isDemoMode() && hadToken) {
+        window.location.href = "/login";
+      }
       return { ok: false, error: "session_expired", status: 401 };
     }
 
@@ -522,6 +599,16 @@ export interface AuthResponseDto {
   expiresAtUtc: string;
   refreshToken: string;
   refreshTokenExpiresAtUtc: string;
+  /**
+   * `true` khi tài khoản **vừa được tạo** hoặc **vừa được nhận** (tài khoản
+   * Admin tạo sẵn, chủ nhân đăng nhập Google lần đầu).
+   *
+   * FE dùng để đưa người mới vào màn hình onboarding. Đăng nhập thường và
+   * `POST /api/auth/refresh` luôn trả `false`.
+   *
+   * Spec: `FE_CHANGES.md` mục 1.1.
+   */
+  isNewUser?: boolean;
 }
 
 export async function loginWithGoogle(idToken: string): Promise<ApiResult<AuthResponseDto>> {
@@ -598,6 +685,88 @@ export async function getMe(): Promise<ApiResult<MeResponse>> {
     };
   }
   return res;
+}
+
+/* ---------- onboarding ---------- */
+
+/**
+ * Mức "làm lố" — quy đổi thành hệ số nhân cho giờ làm việc của từng loại
+ * công việc: Rarely 1.10 · Sometimes 1.25 · Often 1.50 · Always 1.80.
+ *
+ * ⚠️ `overrunLevel` CHỈ có tác dụng khi chọn ít nhất 1 loại công việc —
+ * không có cột riêng, được lưu riêng cho từng domain đã chọn.
+ * Spec: `FE_CHANGES.md` mục 1.2.
+ */
+export type OverrunLevel = "Rarely" | "Sometimes" | "Often" | "Always";
+
+export const OVERRUN_LEVELS: OverrunLevel[] = [
+  "Rarely",
+  "Sometimes",
+  "Often",
+  "Always",
+];
+
+/**
+ * Body của `POST /api/me/onboarding`.
+ *
+ * ⚠️ 6 trường BẮT BUỘC — thiếu bất kỳ trường nào BE trả `400` và **không
+ * lưu gì**:
+ *   `timeZone`, `workDayStart`, `workDayEnd`, `worksOnWeekend`,
+ *   `defaultBufferMinutes`, `reminderLeadMinutes`.
+ *
+ * Còn lại (`productiveHours`, `domainIds`, `overrunLevel`) là tuỳ chọn.
+ */
+export interface OnboardingRequest {
+  /** Tên IANA, VD `Asia/Ho_Chi_Minh`. */
+  timeZone: string;
+  /** `HH:mm:ss`. */
+  workDayStart: string;
+  /** `HH:mm:ss` — phải sau `workDayStart`. */
+  workDayEnd: string;
+  worksOnWeekend: boolean;
+  /** 0–120 phút. */
+  defaultBufferMinutes: number;
+  /** 0–120 phút. */
+  reminderLeadMinutes: number;
+  /** Giờ (0–23) user làm hiệu quả. Có thể bỏ trống. */
+  productiveHours?: number[];
+  /** ID các loại công việc (domain) user hay làm. Có thể bỏ trống. */
+  domainIds?: string[];
+  /** Mức làm lố. Chỉ gửi khi đã chọn ít nhất 1 domain. */
+  overrunLevel?: OverrunLevel;
+}
+
+/**
+ * `POST /api/me/onboarding` — lưu câu trả lời onboarding.
+ *
+ * Thành công trả `MeDto` với `onboardingCompleted = true`. Gọi lại được để
+ * sửa câu trả lời — cờ không bao giờ quay về `false`.
+ */
+export async function submitOnboarding(
+  body: OnboardingRequest,
+): Promise<ApiResult<MeResponse>> {
+  return post<MeResponse>("/api/me/onboarding", body);
+}
+
+/**
+ * `PUT /api/me/settings` — đổi cài đặt giờ làm.
+ *
+ * ⚠️ Hành vi mới: khi `workDayStart`/`workDayEnd` đổi, BE **tính lại** 24
+ * điểm giờ làm việc theo khung mới. FE không cần làm gì thêm.
+ */
+export interface UpdateSettingsRequest {
+  workDayStart: string;
+  workDayEnd: string;
+  worksOnWeekend: boolean;
+  defaultBufferMinutes: number;
+  reminderLeadMinutes: number;
+  timeZone: string;
+}
+
+export async function updateSettings(
+  body: UpdateSettingsRequest,
+): Promise<ApiResult<MeResponse>> {
+  return put<MeResponse>("/api/me/settings", body);
 }
 
 /* ---------- profile update ---------- */
@@ -1417,6 +1586,95 @@ export async function deleteMilestone(
 
 /** Schedule Slot DTO — trả về từ GET/POST/PUT */
 /**
+ * Slot đang **chiếm giờ** mà 1 slot mới sẽ chồng lên.
+ *
+ * BE trả kèm trong `details.overlaps` của lỗi `409 SLOT_OVERLAP`.
+ * Spec: `FE_CHANGES.md` mục 3.2.
+ */
+export interface SlotOverlapDto {
+  slotId: string;
+  taskId: string;
+  taskTitle: string;
+  status: string;
+  start: string; // ISO 8601
+  end: string; // ISO 8601
+}
+
+/**
+ * Trùng giờ khi duyệt đề xuất AI.
+ *
+ * Ở màn duyệt lịch, `slot` là slot **đề xuất** (sắp bị chồng) và `with` là
+ * slot **đang chiếm giờ**. Cấu trúc khác `SlotOverlapDto` vì thêm `with`.
+ */
+export interface ProposalOverlapDto {
+  /** Slot đề xuất bị chồng. */
+  slotId: string;
+  taskId: string;
+  taskTitle: string;
+  start: string;
+  end: string;
+  /** Slot đang chiếm giờ. */
+  with: {
+    slotId: string;
+    taskId: string;
+    taskTitle: string;
+    status: string;
+    start: string;
+    end: string;
+  };
+}
+
+/** Mã lỗi khi slot chồng giờ (HTTP 409). */
+export const SLOT_OVERLAP_CODE = "SLOT_OVERLAP";
+
+/**
+ * Kiểm tra 1 lỗi API có phải `409 SLOT_OVERLAP` không.
+ *
+ * BE trả `{ message, code: "SLOT_OVERLAP", details: { overlaps: [...] } }`.
+ */
+export function isSlotOverlapError(err: {
+  status?: number;
+  errorCode?: string;
+  details?: unknown;
+}): boolean {
+  if (err.status !== 409) return false;
+  if (err.errorCode === SLOT_OVERLAP_CODE) return true;
+  // Một số BE bản cũ chỉ trả `code` trong body → đã được map sang errorCode.
+  const details = err.details as { code?: string } | undefined;
+  return details?.code === SLOT_OVERLAP_CODE;
+}
+
+/**
+ * Rút danh sách slot chồng giờ ra từ `details` của lỗi 409.
+ *
+ * Hỗ trợ 2 shape:
+ *   - `{ overlaps: SlotOverlapDto[] }` — tạo/sửa slot.
+ *   - `{ overlaps: ProposalOverlapDto[] }` — duyệt đề xuất (có `with`).
+ */
+export function extractOverlaps(details: unknown): SlotOverlapDto[] {
+  if (!details || typeof details !== "object") return [];
+  const overlaps = (details as { overlaps?: unknown }).overlaps;
+  if (!Array.isArray(overlaps)) return [];
+  return overlaps.filter(
+    (o): o is SlotOverlapDto =>
+      !!o && typeof o === "object" && "slotId" in (o as object),
+  );
+}
+
+/**
+ * Rút danh sách trùng giờ của đề xuất (shape có `with`).
+ */
+export function extractProposalOverlaps(details: unknown): ProposalOverlapDto[] {
+  if (!details || typeof details !== "object") return [];
+  const overlaps = (details as { overlaps?: unknown }).overlaps;
+  if (!Array.isArray(overlaps)) return [];
+  return overlaps.filter(
+    (o): o is ProposalOverlapDto =>
+      !!o && typeof o === "object" && "with" in (o as object),
+  );
+}
+
+/**
  * Trạng thái schedule slot — phải khớp enum phía backend:
  * "Trạng thái không hợp lệ. Chọn một trong: Proposed, Approved, Done, Skipped, Missed, Cancelled."
  */
@@ -2165,27 +2423,11 @@ async function aiFetchRaw<T>(
   }
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  // [DEBUG] log outgoing request
-  console.log("[aiFetch] →", options.method ?? "GET", url, {
-    headers: { ...headers, Authorization: token ? "Bearer ***" : "(none)" },
-    body: options.body instanceof FormData
-      ? "[FormData]"
-      : typeof options.body === "string"
-        ? (() => { try { return JSON.parse(options.body as string); } catch { return options.body; } })()
-        : options.body,
-  });
-
   try {
     const res = await fetch(url, { ...options, headers });
 
     // Đọc body 1 lần dưới dạng text, rồi thử parse JSON — tránh lỗi "body already read".
     const rawText = await res.text();
-
-    // [DEBUG] log incoming response
-    console.log("[aiFetch] ←", res.status, res.statusText, url, {
-      contentType: res.headers.get("content-type"),
-      bodyPreview: rawText.slice(0, 500),
-    });
 
     if (!res.ok) {
       // `detail` của FastAPI có thể là OBJECT ({code, message}) — không được gán
@@ -2203,9 +2445,13 @@ async function aiFetchRaw<T>(
       if (translated) {
         msg = translated;
       } else {
+        // `detail` dạng chuỗi thuần (VD 502 → "AI unavailable, try again")
+        // là thông điệp kỹ thuật của BE — KHÔNG đưa thẳng cho user.
+        // Ưu tiên thông điệp theo HTTP status (đã dịch sẵn) nếu có.
         const extracted = extractMessage(parsed);
-        if (extracted) msg = extracted;
-        else if (rawText) {
+        if (extracted && !isTechnicalDetail(extracted)) {
+          msg = extracted;
+        } else if (rawText && !res.headers.get("content-type")?.includes("json")) {
           // body không phải JSON (vd: HTML error page từ App Service proxy 502)
           const snippet = rawText.slice(0, 120).replace(/\s+/g, " ").trim();
           if (snippet) msg = `Lỗi máy chủ (HTTP ${res.status}): ${snippet}`;
@@ -2218,12 +2464,12 @@ async function aiFetchRaw<T>(
     const data: unknown = rawText ? JSON.parse(rawText) : null;
     return { ok: true, data: data as T };
   } catch (err) {
-    // [DEBUG] log network / CORS / parse error
-    console.error("[aiFetch] ✖ error for", url, err);
-    const raw = err instanceof Error ? err.message : String(err);
+    // Lỗi mạng / CORS / parse — không có HTTP status.
+    console.error("[aiFetch] error for", url, err);
     return {
       ok: false,
-      error: `Không kết nối được dịch vụ AI. Vui lòng kiểm tra mạng và thử lại. (${raw})`,
+      error:
+        "Can't reach the AI service. Check your internet connection and try again.",
     };
   }
 }
@@ -2240,8 +2486,11 @@ async function aiFetchRaw<T>(
  *
  * Retry **tối đa 1 lần**: 401 sau khi refresh = token vẫn không hợp lệ →
  * trả lỗi, không refresh nữa (tránh loop vô hạn).
+ *
+ * ⚠️ Được export để `lib/group-ai-api.ts` dùng lại cho AI của nhóm
+ *    (`GROUP_AI_FE.md`) — cùng cơ chế Bearer + refresh + parse lỗi.
  */
-async function aiFetch<T>(
+export async function aiFetch<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<ApiResult<T>> {
@@ -2254,9 +2503,21 @@ async function aiFetch<T>(
   const retry = await aiFetchRaw<T>(path, options);
   if (retry.ok || retry.status !== 401) return retry;
 
+  /*
+   * `hadToken` = trước khi xoá token, user có phiên hay không.
+   * Nếu KHÔNG có token (chưa từng đăng nhập) → 401 chỉ là "endpoint cần
+   * auth" → KHÔNG redirect /login (đá khách khỏi trang public).
+   */
+  const hadToken = getAccessToken() !== null;
+
   // Refresh xong vẫn 401 → token không hợp lệ → đăng xuất như BE.
   clearTokens();
-  window.location.href = "/login";
+  /*
+   * Đang ở route demo → không đá guest ra (demo là trang công khai).
+   */
+  if (!isDemoMode() && hadToken) {
+    window.location.href = "/login";
+  }
   return { ok: false, error: "session_expired", status: 401 };
 }
 
@@ -3650,7 +3911,6 @@ export interface FocusStartRequest {
    * ta không gửi `subTaskId`, phiên sẽ **không** có nhãn subtask.
    */
   subTaskId?: string | null;
-  focusTrackId?: string | null;
 }
 
 /** Response 201 của `POST /api/focus/start`. */
@@ -3835,7 +4095,6 @@ export async function startFocusSession(
     taskId: body.taskId,
     scheduleSlotId: body.scheduleSlotId ?? null,
     subTaskId: body.subTaskId ?? null,
-    focusTrackId: body.focusTrackId ?? null,
   });
 }
 

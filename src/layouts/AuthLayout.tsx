@@ -3,10 +3,14 @@ import { MetanoiaLogo } from "../components/MetanoiaLogo";
 import "./auth-layout.css";
 
 /**
- * Layout 2 cột dùng cho trang Login & Register (theo DESIGN.md — Voltagent):
+ * Layout dùng cho trang Login & Register (theo DESIGN.md — Voltagent):
  *  - Cột trái (≥lg): hero panel — hairline card trên canvas, dot grid depth cue,
  *    quote `display-lg` 36px / weight 400 / tracking -0.9px, bullets body-md.
  *  - Cột phải: form đăng nhập / đăng ký render qua <Outlet />.
+ *
+ * ⚠️ `/login` dùng **split-card nội bộ** (visual panel + form panel trong 1
+ * khung) → ẩn hero panel bên trái để tránh 2 tầng visual cạnh tranh nhau.
+ * Xem `isSplitRoute` bên dưới.
  *
  * Brand rules đã được apply:
  *  - Single electric-green accent cho monogram + bullets + pulse.
@@ -17,11 +21,25 @@ import "./auth-layout.css";
  * Responsive: dưới `lg` ẩn hero panel, chỉ hiển thị cột form.
  */
 export function AuthLayout() {
+  const location = useLocation();
+  /**
+   * `/login` tự render split-card đầy đủ (visual + form trong 1 khung) →
+   * hero panel của layout bị ẩn để không lặp visual.
+   */
+  const isSplitRoute =
+    location.pathname.startsWith("/login") ||
+    location.pathname.startsWith("/register");
+
   return (
-    <div className="auth-layout">
+    <div
+      className="auth-layout"
+      data-split={isSplitRoute ? "true" : undefined}
+    >
       <div className="auth-grid">
-        {/* LEFT: Hero — chỉ hiện từ lg trở lên */}
-        <aside className="auth-hero" aria-hidden="true">
+        {/* LEFT: Hero — chỉ hiện từ lg trở lên, và ẩn với split route */}        <aside
+          className={isSplitRoute ? "auth-hero auth-hero--hidden" : "auth-hero"}
+          aria-hidden="true"
+        >
           {/* Subtle dot-grid depth cue (1px primary @ 8% trên canvas, mask radial fade) */}
           <div className="auth-hero-bg" />
 
@@ -90,7 +108,11 @@ export function AuthLayout() {
         </aside>
 
         {/* RIGHT: Form */}
-        <main className="auth-form-panel">
+        <main
+          className={
+            isSplitRoute ? "auth-form-panel auth-form-panel--split" : "auth-form-panel"
+          }
+        >
           {/* Top bar: link Register + logo mobile */}
           <div className="auth-form-topbar">
             <div className="auth-mobile-logo">
@@ -99,7 +121,13 @@ export function AuthLayout() {
             <OutletTopRightLink />
           </div>
 
-          <div className="auth-form-shell">
+          <div
+            className={
+              isSplitRoute
+                ? "auth-form-shell auth-form-shell--split"
+                : "auth-form-shell"
+            }
+          >
             <Outlet />
           </div>
 
@@ -124,12 +152,12 @@ function OutletTopRightLink() {
   const isLogin = location.pathname.startsWith("/login");
   return (
     <div className="auth-topbar-text">
-      {isLogin ? "Chưa có tài khoản?" : "Đã có tài khoản?"}
+      {isLogin ? "No account yet?" : "Already have an account?"}
       <Link
         to={isLogin ? "/register" : "/login"}
         className="auth-topbar-link"
       >
-        {isLogin ? "Đăng ký ngay" : "Đăng nhập"}
+        {isLogin ? "Sign up" : "Sign in"}
       </Link>
     </div>
   );

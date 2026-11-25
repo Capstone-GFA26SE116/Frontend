@@ -305,7 +305,9 @@ export function PaymentResultPage({ variant }: PaymentResultPageProps) {
           tone: "err" as const,
           icon: "error",
           title: "Thanh toán thất bại",
-          detail: error ?? "Có lỗi xảy ra khi xác nhận thanh toán.",
+          detail:
+            error ??
+            "Có lỗi xảy ra khi xác nhận thanh toán. Nếu tiền đã về nhưng đơn không hợp lệ, vui lòng liên hệ hỗ trợ để được xử lý.",
         };
       default: {
         /* Hết lượt poll → nhắc user đợi thêm (không báo thất bại). */

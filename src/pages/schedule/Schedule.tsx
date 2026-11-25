@@ -38,6 +38,7 @@ import {
   type SubtaskDto,
   type TaskDto,
 } from "../../lib/api-client";
+import { describeSlotOverlapError } from "../../components/schedule/slot-overlap";
 import "./schedule.css";
 
 /* ===========================================================
@@ -447,7 +448,17 @@ export function SchedulePage() {
           `"${taskData.taskTitle}" được gán vào ${start.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })} — ${end.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}.`
         );
       } else {
-        toast.error("Không tạo được lịch", res.error);
+        /*
+         * ⚠️ `409 SLOT_OVERLAP` — khung giờ mới chồng lên slot đang chiếm giờ.
+         * Spec: `FE_CHANGES.md` mục 3.2.
+         */
+        const overlapMsg = describeSlotOverlapError(res, {
+          taskTitle: taskData.taskTitle,
+        });
+        toast.error(
+          overlapMsg ? "Time slot overlaps" : "Không tạo được lịch",
+          overlapMsg ?? res.error,
+        );
       }
 
       // Clear localStorage

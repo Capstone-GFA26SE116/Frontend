@@ -111,18 +111,18 @@ export function AdminOverview() {
   const topPlans = useMemo(() => {
     if (!revenue) return [];
     return [...revenue.rows]
-      .sort((a, b) => b.net - a.net)
+      .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 5)
       .map((row) => ({
         key: row.key,
-        net: row.net,
+        revenue: row.revenue,
         share: row.sharePercent,
         transactions: row.transactions,
       }));
   }, [revenue]);
 
-  const maxNet = useMemo(
-    () => Math.max(1, ...topPlans.map((p) => Math.abs(p.net))),
+  const maxRevenue = useMemo(
+    () => Math.max(1, ...topPlans.map((p) => Math.abs(p.revenue))),
     [topPlans],
   );
 
@@ -184,16 +184,11 @@ export function AdminOverview() {
 
       <section className="adm-kpi-grid" aria-label="Chỉ số chính">
         <article className="adm-kpi adm-kpi--accent">
-          <span className="adm-kpi__label">Doanh thu thuần</span>
+          <span className="adm-kpi__label">Doanh thu</span>
           <strong className="adm-kpi__value adm-mono">
-            {formatShortVnd(totals?.netRevenue ?? 0)}
+            {formatShortVnd(totals?.grossRevenue ?? 0)}
           </strong>
-          <span className="adm-kpi__foot">
-            Tổng {formatVnd(totals?.grossRevenue ?? 0)}
-            {totals && totals.refundedAmount > 0 && (
-              <> · Hoàn {formatVnd(totals.refundedAmount)}</>
-            )}
-          </span>
+          <span className="adm-kpi__foot">Tổng tiền giao dịch thành công</span>
         </article>
 
         <article className="adm-kpi">
@@ -267,14 +262,14 @@ export function AdminOverview() {
                   <div className="adm-barlist__head">
                     <span className="adm-barlist__label">{row.key}</span>
                     <span className="adm-barlist__value adm-mono">
-                      {formatVnd(row.net)}
+                      {formatVnd(row.revenue)}
                     </span>
                   </div>
                   <div className="adm-barlist__track" aria-hidden="true">
                     <div
                       className="adm-barlist__fill"
                       style={{
-                        width: `${Math.max(2, (Math.abs(row.net) / maxNet) * 100)}%`,
+                        width: `${Math.max(2, (Math.abs(row.revenue) / maxRevenue) * 100)}%`,
                       }}
                     />
                   </div>
@@ -328,12 +323,6 @@ export function AdminOverview() {
               <span className="adm-meta-row__label">Kỳ báo cáo</span>
               <span className="adm-meta-row__value adm-mono">
                 {formatDate(revenue?.from)} → {formatDate(revenue?.to)}
-              </span>
-            </div>
-            <div className="adm-meta-row">
-              <span className="adm-meta-row__label">Hoàn tiền đã xử lý</span>
-              <span className="adm-meta-row__value adm-mono">
-                {formatVnd(totals?.refundedAmount ?? 0)}
               </span>
             </div>
             <div className="adm-meta-row">

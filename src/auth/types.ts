@@ -18,6 +18,15 @@ export interface User {
    * `Admin` → được phép vào khu vực quản trị. Các giá trị khác = user thường.
    */
   role?: string | null;
+  /**
+   * User đã hoàn tất onboarding chưa.
+   *
+   * BE **không** chặn API khi `onboardingCompleted = false` → FE phải tự
+   * kiểm tra và không cho vào home cho tới khi `true`.
+   *
+   * Spec: `FE_CHANGES.md` mục 1.3.
+   */
+  onboardingCompleted?: boolean;
 }
 
 /** Kiểm tra user có vai trò Admin hay không (không phân biệt hoa thường). */

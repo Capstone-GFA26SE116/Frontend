@@ -216,7 +216,7 @@ export function useGoogleIdentity({
         setState({
           status: "failed",
           message:
-            "Không tải được dịch vụ đăng nhập Google (lỗi mạng hoặc bị trình duyệt chặn). Hãy thử lại hoặc dùng email & mật khẩu.",
+            "Could not load Google Sign-In (network error or blocked by the browser). Please try again.",
           canUseButton: false,
         });
         return;
@@ -230,7 +230,7 @@ export function useGoogleIdentity({
               setState((prev) => ({
                 ...prev,
                 message:
-                  "Đăng nhập Google không thành công. Vui lòng thử lại hoặc dùng email & mật khẩu.",
+                  "Google Sign-In was not successful. Please try again.",
               }));
               return;
             }
@@ -243,7 +243,7 @@ export function useGoogleIdentity({
         setState({
           status: "failed",
           message:
-            "Không khởi tạo được đăng nhập Google. VITE_GOOGLE_CLIENT_ID có thể chưa hợp lệ.",
+            "Could not initialize Google Sign-In. VITE_GOOGLE_CLIENT_ID may be invalid.",
           canUseButton: false,
         });
         return;
@@ -258,7 +258,7 @@ export function useGoogleIdentity({
       if (!host) {
         setState({
           status: "failed",
-          message: "Không tìm thấy nút đăng nhập Google trên trang.",
+          message: "Could not find the Google Sign-In button on this page.",
           canUseButton: false,
         });
         return;
@@ -277,7 +277,7 @@ export function useGoogleIdentity({
         setState({
           status: "failed",
           message:
-            "Không hiển thị được nút đăng nhập Google. VITE_GOOGLE_CLIENT_ID có thể chưa hợp lệ.",
+            "Could not render the Google Sign-In button. VITE_GOOGLE_CLIENT_ID may be invalid.",
           canUseButton: false,
         });
         return;
@@ -311,7 +311,7 @@ export function useGoogleIdentity({
           setState({
             status: "failed",
             message:
-              "Google không cho phép đăng nhập tại địa chỉ này. Thêm domain vào Authorized JavaScript origins trong Google Cloud Console (kể cả http://localhost:5173).",
+              "Google does not allow sign-in at this address. Add the domain to Authorized JavaScript origins in Google Cloud Console (including http://localhost:5173).",
             canUseButton: false,
           });
           return;

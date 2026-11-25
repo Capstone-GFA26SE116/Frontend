@@ -8,10 +8,20 @@ import {
   listSubscriptionPlans,
   listUserSubscriptions,
   updateProfile,
+  updateSettings,
   type InvoiceDto,
   type MeResponse,
   type UserSubscriptionDto,
 } from "../../lib/api-client";
+import {
+  COMMON_TIME_ZONES,
+  createSettingsFormState,
+  isSettingsFormDirty,
+  toSettingsRequest,
+  validateSettingsForm,
+  type SettingsFieldErrors,
+  type SettingsFormState,
+} from "./profile-settings-logic";
 import "./profile.css";
 
 /* ===========================================================
@@ -111,6 +121,21 @@ export function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
+
+  /* ---- Chỉnh sửa cài đặt giờ làm (PUT /api/me/settings) ---- */
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsForm, setSettingsForm] = useState<SettingsFormState | null>(
+    null,
+  );
+  /** Bản gốc khi mở form — dùng để biết user đã sửa gì chưa. */
+  const [settingsInitial, setSettingsInitial] = useState<SettingsFormState | null>(
+    null,
+  );
+  const [settingsErrors, setSettingsErrors] = useState<SettingsFieldErrors>({});
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  /** Báo thành công (auto ẩn). */
+  const [settingsSaved, setSettingsSaved] = useState(false);
 
   /** Nạp lại hồ sơ — dùng cho nút "Retry" khi lần đầu load lỗi. */
   const reload = useCallback(async () => {
@@ -323,6 +348,76 @@ export function ProfilePage() {
     setNameDraft("");
   }, [nameDraft, me, cancelEdit]);
 
+  /* ---------- Chỉnh sửa cài đặt giờ làm (PUT /api/me/settings) ---------- */
+
+  /** Mở form — điền sẵn giá trị hiện tại từ GET /api/me. */
+  const openSettings = useCallback(() => {
+    if (!me) return;
+    const initial = createSettingsFormState(me);
+    setSettingsInitial(initial);
+    setSettingsForm(initial);
+    setSettingsErrors({});
+    setSettingsError(null);
+    setSettingsSaved(false);
+    setSettingsOpen(true);
+  }, [me]);
+
+  /** Đóng form + reset. */
+  const closeSettings = useCallback(() => {
+    setSettingsOpen(false);
+    setSettingsForm(null);
+    setSettingsInitial(null);
+    setSettingsErrors({});
+    setSettingsError(null);
+    setSettingsSaved(false);
+  }, []);
+
+  /** Cập nhật 1 field của form + xoá lỗi của field đó. */
+  const setSettingsField = useCallback(
+    <K extends keyof SettingsFormState>(
+      key: K,
+      value: SettingsFormState[K],
+    ) => {
+      setSettingsForm((prev) => (prev ? { ...prev, [key]: value } : prev));
+      setSettingsErrors((prev) => {
+        if (!prev[key]) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    },
+    [],
+  );
+
+  /** Lưu cài đặt qua PUT /api/me/settings. */
+  const saveSettings = useCallback(async () => {
+    if (!settingsForm) return;
+
+    const errs = validateSettingsForm(settingsForm);
+    setSettingsErrors(errs);
+    if (Object.keys(errs).length > 0) return;
+
+    setSettingsSaving(true);
+    setSettingsError(null);
+    const res = await updateSettings(toSettingsRequest(settingsForm));
+    setSettingsSaving(false);
+
+    if (!res.ok) {
+      setSettingsError(
+        res.error ?? "Could not save your settings. Please try again.",
+      );
+      return;
+    }
+
+    /* BE trả về MeDto mới — cập nhật luôn để UI phản ánh dữ liệu đã lưu. */
+    setMe(res.data);
+    setSettingsSaved(true);
+    window.setTimeout(() => {
+      setSettingsSaved(false);
+      closeSettings();
+    }, 1200);
+  }, [settingsForm, closeSettings]);
+
   return (
     <section className="prof">
       <div className="prof-ambient" aria-hidden="true" />
@@ -508,73 +603,355 @@ export function ProfilePage() {
             >
               <div className="prof-card__head">
                 <span className="prof-card__eyebrow">Schedule defaults</span>
-                <span className="material-symbols-outlined prof-card__icon">
-                  schedule
-                </span>
+                <div className="prof-card__head-tools">
+                  {settingsSaved ? (
+                    <span className="prof-saved-chip" role="status">
+                      <span className="material-symbols-outlined prof-icon-16">
+                        check_circle
+                      </span>
+                      Saved
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="prof-edit-btn"
+                      onClick={openSettings}
+                      title="Edit schedule defaults"
+                      aria-label="Edit schedule defaults"
+                      aria-expanded={settingsOpen}
+                    >
+                      <span className="material-symbols-outlined prof-icon-16">
+                        edit
+                      </span>
+                    </button>
+                  )}
+                  <span className="material-symbols-outlined prof-card__icon">
+                    schedule
+                  </span>
+                </div>
               </div>
               <h3 className="prof-card__title">Working rhythm</h3>
 
-              {/* Timeline ngày làm việc */}
-              {timeline && (
-                <div className="prof-timeline">
-                  <div className="prof-timeline__track">
-                    <div
-                      className="prof-timeline__fill"
-                      style={{
-                        left: `${timeline.left}%`,
-                        width: `${timeline.width}%`,
-                      }}
+              {/* ---- Form chỉnh sửa cài đặt giờ làm ---- */}
+              {settingsOpen && settingsForm ? (
+                <div className="prof-settings">
+                  <div className="prof-settings__grid">
+                    {/* Giờ bắt đầu */}
+                    <div className="prof-settings__field">
+                      <label className="prof-settings__label" htmlFor="ps-start">
+                        Start time
+                      </label>
+                      <input
+                        id="ps-start"
+                        type="time"
+                        className={
+                          "prof-settings__input prof-mono" +
+                          (settingsErrors.workDayStart
+                            ? " prof-settings__input--error"
+                            : "")
+                        }
+                        value={settingsForm.workDayStart}
+                        onChange={(e) =>
+                          setSettingsField("workDayStart", e.target.value)
+                        }
+                        disabled={settingsSaving}
+                      />
+                      {settingsErrors.workDayStart && (
+                        <span className="prof-settings__error" role="alert">
+                          {settingsErrors.workDayStart}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Giờ kết thúc */}
+                    <div className="prof-settings__field">
+                      <label className="prof-settings__label" htmlFor="ps-end">
+                        End time
+                      </label>
+                      <input
+                        id="ps-end"
+                        type="time"
+                        className={
+                          "prof-settings__input prof-mono" +
+                          (settingsErrors.workDayEnd
+                            ? " prof-settings__input--error"
+                            : "")
+                        }
+                        value={settingsForm.workDayEnd}
+                        onChange={(e) =>
+                          setSettingsField("workDayEnd", e.target.value)
+                        }
+                        disabled={settingsSaving}
+                      />
+                      {settingsErrors.workDayEnd && (
+                        <span className="prof-settings__error" role="alert">
+                          {settingsErrors.workDayEnd}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Múi giờ */}
+                    <div className="prof-settings__field prof-settings__field--wide">
+                      <label className="prof-settings__label" htmlFor="ps-tz">
+                        Time zone
+                      </label>
+                      <select
+                        id="ps-tz"
+                        className={
+                          "prof-settings__input prof-settings__input--select prof-mono" +
+                          (settingsErrors.timeZone
+                            ? " prof-settings__input--error"
+                            : "")
+                        }
+                        value={settingsForm.timeZone}
+                        onChange={(e) =>
+                          setSettingsField("timeZone", e.target.value)
+                        }
+                        disabled={settingsSaving}
+                      >
+                        {/* Luôn giữ giá trị hiện tại trong danh sách (có thể
+                            không nằm trong COMMON_TIME_ZONES). */}
+                        {!COMMON_TIME_ZONES.some(
+                          (tz) => tz.id === settingsForm.timeZone,
+                        ) && (
+                          <option value={settingsForm.timeZone}>
+                            {settingsForm.timeZone}
+                          </option>
+                        )}
+                        {COMMON_TIME_ZONES.map((tz) => (
+                          <option key={tz.id} value={tz.id}>
+                            {tz.label} · {tz.id}
+                          </option>
+                        ))}
+                      </select>
+                      {settingsErrors.timeZone && (
+                        <span className="prof-settings__error" role="alert">
+                          {settingsErrors.timeZone}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Buffer */}
+                    <div className="prof-settings__field">
+                      <label
+                        className="prof-settings__label"
+                        htmlFor="ps-buffer"
+                      >
+                        Default buffer
+                      </label>
+                      <div className="prof-settings__suffix">
+                        <input
+                          id="ps-buffer"
+                          type="number"
+                          min={0}
+                          max={120}
+                          step={5}
+                          className={
+                            "prof-settings__input prof-mono" +
+                            (settingsErrors.defaultBufferMinutes
+                              ? " prof-settings__input--error"
+                              : "")
+                          }
+                          value={settingsForm.defaultBufferMinutes}
+                          onChange={(e) =>
+                            setSettingsField(
+                              "defaultBufferMinutes",
+                              Number(e.target.value),
+                            )
+                          }
+                          disabled={settingsSaving}
+                        />
+                        <span className="prof-settings__unit">min</span>
+                      </div>
+                      {settingsErrors.defaultBufferMinutes && (
+                        <span className="prof-settings__error" role="alert">
+                          {settingsErrors.defaultBufferMinutes}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Reminder */}
+                    <div className="prof-settings__field">
+                      <label
+                        className="prof-settings__label"
+                        htmlFor="ps-reminder"
+                      >
+                        Reminder lead
+                      </label>
+                      <div className="prof-settings__suffix">
+                        <input
+                          id="ps-reminder"
+                          type="number"
+                          min={0}
+                          max={120}
+                          step={5}
+                          className={
+                            "prof-settings__input prof-mono" +
+                            (settingsErrors.reminderLeadMinutes
+                              ? " prof-settings__input--error"
+                              : "")
+                          }
+                          value={settingsForm.reminderLeadMinutes}
+                          onChange={(e) =>
+                            setSettingsField(
+                              "reminderLeadMinutes",
+                              Number(e.target.value),
+                            )
+                          }
+                          disabled={settingsSaving}
+                        />
+                        <span className="prof-settings__unit">min</span>
+                      </div>
+                      {settingsErrors.reminderLeadMinutes && (
+                        <span className="prof-settings__error" role="alert">
+                          {settingsErrors.reminderLeadMinutes}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Cuối tuần */}
+                  <label className="prof-settings__check">
+                    <input
+                      type="checkbox"
+                      checked={settingsForm.worksOnWeekend}
+                      onChange={(e) =>
+                        setSettingsField("worksOnWeekend", e.target.checked)
+                      }
+                      disabled={settingsSaving}
                     />
-                  </div>
-                  <div className="prof-timeline__axis">
-                    <span>06:00</span>
-                    <span>12:00</span>
-                    <span>18:00</span>
-                    <span>22:00</span>
-                  </div>
-                </div>
-              )}
+                    <span className="prof-settings__check-box" aria-hidden="true">
+                      <span className="material-symbols-outlined prof-icon-14">
+                        check
+                      </span>
+                    </span>
+                    <span className="prof-settings__check-text">
+                      I also work on weekends
+                    </span>
+                  </label>
 
-              {/* Chips ngày trong tuần */}
-              <div className="prof-days" role="list" aria-label="Working days">
-                {WEEKDAYS.map((d, i) => (
-                  <span
-                    key={d}
-                    role="listitem"
-                    className={
-                      "prof-day" + (activeDays.has(i) ? " prof-day--on" : "")
-                    }
-                    style={{ animationDelay: `${i * 45}ms` }}
+                  {settingsError && (
+                    <div className="prof-settings__alert" role="alert">
+                      <span className="material-symbols-outlined prof-icon-16">
+                        error
+                      </span>
+                      <span>{settingsError}</span>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="prof-settings__actions">
+                    <button
+                      type="button"
+                      className="prof-btn prof-btn--primary prof-btn--sm"
+                      onClick={() => void saveSettings()}
+                      disabled={settingsSaving}
+                    >
+                      {settingsSaving ? (
+                        <>
+                          <span className="material-symbols-outlined prof-icon-16 prof-spin">
+                            progress_activity
+                          </span>
+                          Saving
+                        </>
+                      ) : (
+                        <>
+                          <span className="material-symbols-outlined prof-icon-16">
+                            check
+                          </span>
+                          Save changes
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      className="prof-btn prof-btn--soft prof-btn--sm"
+                      onClick={closeSettings}
+                      disabled={settingsSaving}
+                    >
+                      Cancel
+                    </button>
+                    {settingsInitial &&
+                      !isSettingsFormDirty(settingsForm, settingsInitial) && (
+                        <span className="prof-settings__hint">No changes yet</span>
+                      )}
+                  </div>
+
+                  <p className="prof-settings__note">
+                    Changing your work hours recalculates the 24 productive-hour
+                    points used when planning your schedule.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {/* Timeline ngày làm việc */}
+                  {timeline && (
+                    <div className="prof-timeline">
+                      <div className="prof-timeline__track">
+                        <div
+                          className="prof-timeline__fill"
+                          style={{
+                            left: `${timeline.left}%`,
+                            width: `${timeline.width}%`,
+                          }}
+                        />
+                      </div>
+                      <div className="prof-timeline__axis">
+                        <span>06:00</span>
+                        <span>12:00</span>
+                        <span>18:00</span>
+                        <span>22:00</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Chips ngày trong tuần */}
+                  <div
+                    className="prof-days"
+                    role="list"
+                    aria-label="Working days"
                   >
-                    {d.slice(0, 1)}
-                  </span>
-                ))}
-              </div>
+                    {WEEKDAYS.map((d, i) => (
+                      <span
+                        key={d}
+                        role="listitem"
+                        className={
+                          "prof-day" +
+                          (activeDays.has(i) ? " prof-day--on" : "")
+                        }
+                        style={{ animationDelay: `${i * 45}ms` }}
+                      >
+                        {d.slice(0, 1)}
+                      </span>
+                    ))}
+                  </div>
 
-              <dl className="prof-hours">
-                <div className="prof-hours__slot">
-                  <dt className="prof-hours__label">Work day</dt>
-                  <dd className="prof-hours__value prof-mono">
-                    {fmtClock(me?.workDayStart)} → {fmtClock(me?.workDayEnd)}
-                  </dd>
-                </div>
-                <div className="prof-hours__slot">
-                  <dt className="prof-hours__label">Days</dt>
-                  <dd className="prof-hours__value">{workDays ?? "—"}</dd>
-                </div>
-                <div className="prof-hours__slot">
-                  <dt className="prof-hours__label">Default buffer</dt>
-                  <dd className="prof-hours__value prof-mono">
-                    {fmtMinutes(me?.defaultBufferMinutes)}
-                  </dd>
-                </div>
-                <div className="prof-hours__slot">
-                  <dt className="prof-hours__label">Reminder lead</dt>
-                  <dd className="prof-hours__value prof-mono">
-                    {fmtMinutes(me?.reminderLeadMinutes)}
-                  </dd>
-                </div>
-              </dl>
+                  <dl className="prof-hours">
+                    <div className="prof-hours__slot">
+                      <dt className="prof-hours__label">Work day</dt>
+                      <dd className="prof-hours__value prof-mono">
+                        {fmtClock(me?.workDayStart)} → {fmtClock(me?.workDayEnd)}
+                      </dd>
+                    </div>
+                    <div className="prof-hours__slot">
+                      <dt className="prof-hours__label">Days</dt>
+                      <dd className="prof-hours__value">{workDays ?? "—"}</dd>
+                    </div>
+                    <div className="prof-hours__slot">
+                      <dt className="prof-hours__label">Default buffer</dt>
+                      <dd className="prof-hours__value prof-mono">
+                        {fmtMinutes(me?.defaultBufferMinutes)}
+                      </dd>
+                    </div>
+                    <div className="prof-hours__slot">
+                      <dt className="prof-hours__label">Reminder lead</dt>
+                      <dd className="prof-hours__value prof-mono">
+                        {fmtMinutes(me?.reminderLeadMinutes)}
+                      </dd>
+                    </div>
+                  </dl>
+                </>
+              )}
             </article>
 
             {/* ============ Subscription ============ */}

@@ -45,3 +45,32 @@ body {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
+
+/* ===========================================================
+ * Brand logo (MetanoiaLogo component)
+ * ----------------------------------------------------------
+ * Dùng class riêng thay vì utility Tailwind để:
+ *  - Không phụ thuộc vào việc Tailwind scan được file component.
+ *  - Kiểm soát chính xác typography theo DESIGN.md (wordmark tracking
+ *    rộng + UPPERCASE, giống `.auth-wordmark`).
+ * =========================================================== */
+.metanoia-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  line-height: 1;
+}
+
+.metanoia-logo svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.metanoia-logo-wordmark {
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}

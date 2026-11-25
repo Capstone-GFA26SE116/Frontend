@@ -1070,3 +1070,75 @@
   .pricing-plan-cta:active { transform: none !important; }
   .pricing-skeleton-card::after { animation: none !important; }
 }
+/* ================= DEMO CTA (guest) ================= */
+/* Khối mời gọi "xem demo trước" — chỉ hiện khi CHƯA đăng nhập. */
+.pricing-demo-cta {
+  padding-top: 0;
+  padding-bottom: 72px;
+}
+
+.pricing-demo-cta-inner {
+  max-width: 42rem;
+  margin: 0 auto;
+  padding: 40px 32px;
+  border: 1px solid var(--pr-primary-glow);
+  border-radius: var(--pr-r-md);
+  background: var(--pr-primary-wash);
+  text-align: center;
+}
+
+.pricing-demo-cta-title {
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 36px;
+  letter-spacing: -0.6px;
+  color: var(--pr-ink-strong);
+  margin: 8px 0 12px;
+}
+@media (max-width: 640px) {
+  .pricing-demo-cta-title { font-size: 22px; line-height: 30px; }
+}
+
+.pricing-demo-cta-desc {
+  font-size: 16px;
+  line-height: 26px;
+  color: var(--pr-body);
+  margin: 0 0 28px;
+}
+
+.pricing-demo-cta-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.pricing-demo-cta-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-radius: var(--pr-r-sm);
+  background: var(--pr-primary);
+  color: var(--pr-on-primary);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 21px;
+  text-decoration: none;
+  transition: background-color 180ms ease;
+}
+.pricing-demo-cta-btn:hover { background: var(--pr-primary-soft); }
+.pricing-demo-cta-btn .material-symbols-outlined { font-size: 18px; }
+
+.pricing-demo-cta-link {
+  font-size: 15px;
+  line-height: 21px;
+  color: var(--pr-primary);
+  text-decoration: none;
+}
+.pricing-demo-cta-link:hover { text-decoration: underline; }
+
+@media (max-width: 640px) {
+  .pricing-demo-cta-inner { padding: 28px 18px; }
+}

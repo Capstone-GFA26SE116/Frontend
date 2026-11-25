@@ -4,6 +4,7 @@ import {
   updateScheduleSlot,
   type OverrunResponse,
 } from "../../lib/api-client";
+import { describeSlotOverlapError } from "../schedule/slot-overlap";
 import { CenterToasts, useCenterToast } from "../Toast";
 import "./overrun-dialog.css";
 
@@ -99,6 +100,8 @@ export function OverrunDialog({
     setApplying(true);
     setError(null);
     let failed = 0;
+    /** Message chồng giờ đầu tiên (BE trả 409 `SLOT_OVERLAP`). */
+    let firstOverlapMsg: string | null = null;
     for (const mv of moves) {
       const res = await updateScheduleSlot(mv.slot_id, {
         startTime: mv.new_start,
@@ -106,13 +109,22 @@ export function OverrunDialog({
         isManualOverride: true,
         explanation: mv.explanation ?? "Kéo dài do overrun",
       });
-      if (!res.ok) failed += 1;
+      if (!res.ok) {
+        failed += 1;
+        /*
+         * ⚠️ `409 SLOT_OVERLAP` — giờ mới chồng lên slot đang chiếm giờ.
+         * Spec: `FE_CHANGES.md` mục 3.2.
+         */
+        if (!firstOverlapMsg) {
+          firstOverlapMsg = describeSlotOverlapError(res) ?? res.error;
+        }
+      }
     }
     setApplying(false);
     if (failed > 0) {
       toast.error(
-        "Cập nhật chưa xong",
-        `${failed}/${moves.length} khung giờ chưa được cập nhật.`,
+        firstOverlapMsg ? "Time slot overlaps" : "Cập nhật chưa xong",
+        firstOverlapMsg ?? `${failed}/${moves.length} khung giờ chưa được cập nhật.`,
       );
     } else {
       toast.success(

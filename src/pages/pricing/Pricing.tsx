@@ -1,11 +1,11 @@
-import {
+﻿import {
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import {
   createPaymentCheckout,
@@ -672,9 +672,9 @@ export function PricingPage() {
                 mounted: faqAnim.mounted,
                 delayStyle: faqAnim.getDelay(1),
               }}
-              icon="verified"
-              q="Chính sách hoàn tiền trong 7 ngày áp dụng ra sao?"
-              a="Nếu hệ thống điều phối AI không giúp bạn cải thiện ít nhất 20% hiệu suất làm việc và xử lý dự án trong 7 ngày đầu, bạn sẽ được hoàn 100% chi phí không cần giải trình."
+              icon="support_agent"
+              q="Giao dịch không hợp lệ thì xử lý thế nào?"
+              a="Nếu tiền đã về nhưng đơn không hợp lệ (sai số tiền, hoặc về sau khi đã hủy), hệ thống sẽ không cấp gói. Vui lòng liên hệ hỗ trợ để chúng tôi xử lý thủ công giúp bạn."
             />
           </div>
         </div>
@@ -725,6 +725,37 @@ export function PricingPage() {
           </div>
         </div>
       </section>
+
+      {/* CTA cho guest — xem trang chủ (dữ liệu mẫu) trước khi quyết định mua gói. */}
+      {!isAuthenticated && (
+        <section className="pricing-section pricing-demo-cta">
+          <div className="pricing-container">
+            <div className="pricing-demo-cta-inner">
+              <span className="pricing-eyebrow pricing-eyebrow--inline">
+                <span className="material-symbols-outlined">visibility</span>
+                Try it before you decide
+              </span>
+              <h2 className="pricing-demo-cta-title">
+                Explore METANOIA with sample data — no account needed
+              </h2>
+              <p className="pricing-demo-cta-desc">
+                Browse the daily schedule, the week, projects and work groups
+                using sample data to see how the product behaves before you
+                sign up.
+              </p>
+              <div className="pricing-demo-cta-actions">
+                <Link to="/" className="pricing-demo-cta-btn">
+                  <span className="material-symbols-outlined">visibility</span>
+                  Open the sample workspace
+                </Link>
+                <Link to="/register" className="pricing-demo-cta-link">
+                  Or create a free account →
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

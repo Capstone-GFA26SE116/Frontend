@@ -24,6 +24,7 @@ import {
   type SubtaskDto,
   type TaskDto,
 } from "../../lib/api-client";
+import { describeSlotOverlapError } from "../../components/schedule/slot-overlap";
 import "./planning.css";
 
 /* ============================================================
@@ -246,7 +247,18 @@ export function PlanningPage() {
             `"${subtasksMap[scheduleModal.taskId]?.find((s) => s.id === scheduleSubtaskId)?.title ?? "Task"}" được lên lịch.`
           );
         } else {
-          toast.error("Không tạo được lịch", res.error);
+          /*
+           * ⚠️ `409 SLOT_OVERLAP` — khung giờ mới chồng lên slot đang chiếm
+           * giờ → báo rõ slot nào đang chiếm, kèm giờ, để user chọn giờ khác.
+           * Spec: `FE_CHANGES.md` mục 3.2.
+           */
+          const overlapMsg = describeSlotOverlapError(res, {
+            taskTitle: scheduleModal.taskTitle,
+          });
+          toast.error(
+            overlapMsg ? "Time slot overlaps" : "Không tạo được lịch",
+            overlapMsg ?? res.error,
+          );
         }
         return;
       }
@@ -276,7 +288,13 @@ export function PlanningPage() {
             `"${scheduleModal.taskTitle}" · ${new Date(scheduleStart).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })} — ${new Date(scheduleEnd).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}`
           );
         } else {
-          toast.error("Không tạo được lịch", res.error);
+          const overlapMsg = describeSlotOverlapError(res, {
+            taskTitle: scheduleModal.taskTitle,
+          });
+          toast.error(
+            overlapMsg ? "Time slot overlaps" : "Không tạo được lịch",
+            overlapMsg ?? res.error,
+          );
         }
         return;
       }
@@ -307,7 +325,13 @@ export function PlanningPage() {
             `"${scheduleModal.taskTitle}" · ${new Date(scheduleStart).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })} — ${new Date(scheduleEnd).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}`
           );
         } else {
-          toast.error("Không tạo được lịch", res.error);
+          const overlapMsg = describeSlotOverlapError(res, {
+            taskTitle: scheduleModal.taskTitle,
+          });
+          toast.error(
+            overlapMsg ? "Time slot overlaps" : "Không tạo được lịch",
+            overlapMsg ?? res.error,
+          );
         }
         return;
       }
@@ -315,6 +339,8 @@ export function PlanningPage() {
       // Tạo slot cho từng subtask, mỗi slot chiếm tỉ lệ estimatedMinutes / totalMinutes
       let successCount = 0;
       let failedCount = 0;
+      /** Lỗi chồng giờ đầu tiên gặp (để báo cụ thể cho user). */
+      let firstOverlapMsg: string | null = null;
       let cursor = totalStart;
       for (const sub of subs) {
         const minutes = sub.estimatedMinutes || 0;
@@ -334,7 +360,19 @@ export function PlanningPage() {
           status: "Approved",
         });
         if (res.ok) successCount++;
-        else failedCount++;
+        else {
+          failedCount++;
+          /*
+           * ⚠️ `409 SLOT_OVERLAP` — slot chồng giờ với slot đang chiếm giờ.
+           * Ghi nhớ message đầu tiên để báo rõ. Spec: `FE_CHANGES.md` mục 3.2.
+           */
+          if (!firstOverlapMsg) {
+            firstOverlapMsg =
+              describeSlotOverlapError(res, {
+                taskTitle: `${scheduleModal.taskTitle} · ${sub.title}`,
+              }) ?? res.error;
+          }
+        }
       }
 
       setScheduleSubmitting(false);
@@ -343,6 +381,11 @@ export function PlanningPage() {
         toast.success(
           "Đã tạo lịch thành công!",
           `${successCount} subtask đã được chia lịch từ ${new Date(scheduleStart).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })} đến ${new Date(scheduleEnd).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}.`
+        );
+      } else if (firstOverlapMsg) {
+        toast.error(
+          "Time slot overlaps",
+          `${firstOverlapMsg} (${successCount}/${subs.length} subtask scheduled)`
         );
       } else {
         toast.error(

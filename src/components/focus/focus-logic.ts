@@ -440,7 +440,7 @@ export const CHECK_IN_OPTIONS = [
  *
  * ```ts
  * type FocusStartBody = { taskId: string; scheduleSlotId?: string;
- *                         subTaskId?: string; focusTrackId?: string };
+ *                         subTaskId?: string };
  *
  * function buildStartBody(task, opts) {
  *   const body = { taskId: task.id };
@@ -451,6 +451,9 @@ export const CHECK_IN_OPTIONS = [
  *   return body;
  * }
  * ```
+ *
+ * ⚠️ `focusTrackId` đã bị BE **xoá** (bỏ nhạc tập trung) — body chỉ còn
+ * `{ taskId, subTaskId?, scheduleSlotId? }`. Spec: `FE_CHANGES.md` mục 5.
  *
  * ⚠️ Điểm dễ sai nhất (spec mục 6.1 + bảng "kết quả đã kiểm tra" #9):
  *   *"Slot gắn subtask nhưng **không gửi** `subTaskId` khi Start → Phiên

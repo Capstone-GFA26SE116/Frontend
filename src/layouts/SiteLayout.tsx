@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { isAdminUser } from "../auth/types";
@@ -124,65 +124,82 @@ export function SiteLayout() {
             </Link>
 
             <nav className="site-nav" aria-label="Primary">
-              <NavLink
-                to="/dashboard"
-                className={({ isActive }) =>
-                  "site-nav-link" + (isActive ? " site-nav-link--active" : "")
-                }
-              >
-                <span className="material-symbols-outlined site-nav-icon" aria-hidden="true">today</span>
-                <span>Today</span>
-              </NavLink>
-              <NavLink
-                to="/projects"
-                className={({ isActive }) => {
-                  // Active on /projects AND any /projects/:projectId subroute
-                  const active =
-                    isActive ||
-                    (typeof window !== "undefined" &&
-                      window.location.pathname.startsWith("/projects/"));
-                  return (
-                    "site-nav-link" + (active ? " site-nav-link--active" : "")
-                  );
-                }}
-              >
-                <span className="material-symbols-outlined site-nav-icon" aria-hidden="true">space_dashboard</span>
-                <span>Projects</span>
-              </NavLink>
-              <NavLink
-                to="/groups"
-                className={({ isActive }) => {
-                  // Active on /groups AND any /groups/:groupId subroute
-                  const active =
-                    isActive ||
-                    (typeof window !== "undefined" &&
-                      window.location.pathname.startsWith("/groups/"));
-                  return (
-                    "site-nav-link" + (active ? " site-nav-link--active" : "")
-                  );
-                }}
-              >
-                <span className="material-symbols-outlined site-nav-icon" aria-hidden="true">groups</span>
-                <span>Groups</span>
-              </NavLink>
-              <NavLink
-                to="/schedule"
-                className={({ isActive }) =>
-                  "site-nav-link" + (isActive ? " site-nav-link--active" : "")
-                }
-              >
-                <span className="material-symbols-outlined site-nav-icon" aria-hidden="true">event</span>
-                <span>Schedule &amp; Tasks</span>
-              </NavLink>
-              <NavLink
-                to="/pricing"
-                className={({ isActive }) =>
-                  "site-nav-link" + (isActive ? " site-nav-link--active" : "")
-                }
-              >
-                <span className="material-symbols-outlined site-nav-icon" aria-hidden="true">workspace_premium</span>
-                <span>Upgrade</span>
-              </NavLink>
+              {isAuthenticated ? (
+                <>
+                  <NavLink
+                    to="/dashboard"
+                    className={({ isActive }) =>
+                      "site-nav-link" + (isActive ? " site-nav-link--active" : "")
+                    }
+                  >
+                    <span className="material-symbols-outlined site-nav-icon" aria-hidden="true">today</span>
+                    <span>Today</span>
+                  </NavLink>
+                  <NavLink
+                    to="/projects"
+                    className={({ isActive }) => {
+                      // Active on /projects AND any /projects/:projectId subroute
+                      const active =
+                        isActive ||
+                        (typeof window !== "undefined" &&
+                          window.location.pathname.startsWith("/projects/"));
+                      return (
+                        "site-nav-link" + (active ? " site-nav-link--active" : "")
+                      );
+                    }}
+                  >
+                    <span className="material-symbols-outlined site-nav-icon" aria-hidden="true">space_dashboard</span>
+                    <span>Projects</span>
+                  </NavLink>
+                  <NavLink
+                    to="/groups"
+                    className={({ isActive }) => {
+                      // Active on /groups AND any /groups/:groupId subroute
+                      const active =
+                        isActive ||
+                        (typeof window !== "undefined" &&
+                          window.location.pathname.startsWith("/groups/"));
+                      return (
+                        "site-nav-link" + (active ? " site-nav-link--active" : "")
+                      );
+                    }}
+                  >
+                    <span className="material-symbols-outlined site-nav-icon" aria-hidden="true">groups</span>
+                    <span>Groups</span>
+                  </NavLink>
+                  <NavLink
+                    to="/schedule"
+                    className={({ isActive }) =>
+                      "site-nav-link" + (isActive ? " site-nav-link--active" : "")
+                    }
+                  >
+                    <span className="material-symbols-outlined site-nav-icon" aria-hidden="true">event</span>
+                    <span>Schedule &amp; Tasks</span>
+                  </NavLink>
+                  <NavLink
+                    to="/pricing"
+                    className={({ isActive }) =>
+                      "site-nav-link" + (isActive ? " site-nav-link--active" : "")
+                    }
+                  >
+                    <span className="material-symbols-outlined site-nav-icon" aria-hidden="true">workspace_premium</span>
+                    <span>Upgrade</span>
+                  </NavLink>
+                </>
+              ) : (
+                /* ---- Guest: chỉ hiện link công khai ---- */
+                <>
+                  <NavLink
+                    to="/pricing"
+                    className={({ isActive }) =>
+                      "site-nav-link" + (isActive ? " site-nav-link--active" : "")
+                    }
+                  >
+                    <span className="material-symbols-outlined site-nav-icon" aria-hidden="true">workspace_premium</span>
+                    <span>Upgrade</span>
+                  </NavLink>
+                </>
+              )}
             </nav>
           </div>
 
@@ -489,18 +506,32 @@ export function SiteLayout() {
             <span className="site-footer-version">v2.4 Neural Sync</span>
           </div>
           <nav className="site-footer-nav" aria-label="Secondary">
-            <Link to="/dashboard" className="site-footer-link">
-              Today
-            </Link>
-            <Link to="/projects" className="site-footer-link">
-              Projects
-            </Link>
-            <Link to="/schedule" className="site-footer-link">
-              Schedule &amp; Tasks
-            </Link>
-            <Link to="/copilot" className="site-footer-link">
-              Chat AI
-            </Link>
+            {isAuthenticated ? (
+              <>
+                <Link to="/dashboard" className="site-footer-link">
+                  Today
+                </Link>
+                <Link to="/projects" className="site-footer-link">
+                  Projects
+                </Link>
+                <Link to="/schedule" className="site-footer-link">
+                  Schedule &amp; Tasks
+                </Link>
+                <Link to="/copilot" className="site-footer-link">
+                  Chat AI
+                </Link>
+              </>
+            ) : (
+              /* ---- Guest: chỉ link không cần đăng nhập ---- */
+              <>
+                <Link to="/#today" className="site-footer-link">
+                  Today
+                </Link>
+                <Link to="/#projects" className="site-footer-link">
+                  Features
+                </Link>
+              </>
+            )}
             <Link to="/pricing" className="site-footer-link">
               Pricing
             </Link>

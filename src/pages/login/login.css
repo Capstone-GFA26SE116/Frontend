@@ -2,8 +2,8 @@
  * Trang đăng nhập — Login (Voltagent — trích từ DESIGN.md)
  *
  * Tokens bind (single source of truth: auth-layout.css :root):
- *   --voltagent-canvas        nền form  (dark)
- *   --voltagent-canvas-soft   input fill
+ *   --voltagent-canvas        nền card  (dark)
+ *   --voltagent-canvas-soft   surface phụ
  *   --voltagent-hairline      1px borders (input/divider/card)
  *   --voltagent-primary       electric-green CTA accent
  *   --voltagent-primary-soft  text on dark ghost CTA
@@ -11,7 +11,13 @@
  *   --voltagent-ink           text on canvas
  *   --voltagent-mute          captions
  *
- * Giữ nguyên layout, structure, animation cascade (timing + delays).
+ * Thiết kế (theo mẫu split-screen):
+ *   - 1 khung card duy nhất, bên trong chia 2 cột:
+ *       trái  = visual panel (logo, "Back to website", quote, dots)
+ *       phải  = form panel (eyebrow, title, Google CTA, đăng ký)
+ *   - `button-outline-on-dark` — Google CTA: canvas fill + hairline border.
+ *   - Hairline chrome là elevation DUY NHẤT — KHÔNG box-shadow material.
+ *   - Eyebrow-mono: Inter 600, tracking 2.52px, UPPERCASE.
  *
  * OAuth Google button (.metanoia-google-btn / -icon) được share qua file chung
  * để đảm bảo /login và /register hiển thị GIỐNG HỆT nhau 100%.
@@ -21,10 +27,248 @@
 .login {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  align-items: stretch;
+  justify-content: center;
   width: 100%;
+  min-height: 100vh;
   color: var(--voltagent-ink);
   font-family: "Inter", system-ui, sans-serif;
+}
+
+/* ===========================================================
+ * Split — FULL SCREEN 2 cột (không card ở giữa)
+ * =========================================================== */
+
+.login-split {
+  display: grid;
+  grid-template-columns: 1fr;
+  width: 100%;
+  min-height: 100vh;
+  overflow: hidden;
+  background-color: var(--voltagent-canvas);
+}
+
+/* ---------- LEFT: visual panel ---------- */
+.login-visual {
+  position: relative;
+  display: none;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 2rem;
+  overflow: hidden;
+  /* Nền visual: canvas-soft + gợn xanh nhẹ ở góc trên-trái (đọc depth,
+     không dùng gradient mesh nặng theo DESIGN.md). */
+  background-color: var(--voltagent-canvas-soft);
+  background-image: radial-gradient(
+    ellipse 80% 60% at 25% 15%,
+    rgba(0, 217, 146, 0.07),
+    transparent 70%
+  );
+}
+
+/*
+ * Ảnh minh hoạ sản phẩm — lấp phần "trống" của visual panel.
+ *
+ * ⚠️ `object-position: left center` — KHI KHÔNG ĐỦ CHỖ (panel hẹp / màn
+ * hình nhỏ) ảnh bị crop từ phía BÊN TRÁI, KHÔNG lấy ở giữa. Đây là yêu cầu
+ * của user: phần quan trọng (robot + logo + callout bên trái) nằm ở mép
+ * trái ảnh nên luôn được giữ khi crop.
+ *
+ * Ảnh gốc 1672×941 (đã resize 1280px). Dùng `object-fit: cover` +
+ * `width/height: 100%` để phủ kín panel ở mọi kích thước.
+ */
+.login-visual picture {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
+}
+
+.login-visual-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: left center;
+  /* Nền tối dưới ảnh → nếu ảnh chưa load vẫn có màu canvas, không
+     nháy trắng. */
+  background-color: var(--voltagent-canvas-soft);
+}
+
+/* Dot-grid depth cue — hairline mờ, mask fade ra rìa. Nằm TRÊN ảnh (z 2)
+   để tạo texture chung, nhưng rất nhạt. */
+
+/*
+ * Scram phủ lên ảnh (z 3) → giữ logo + quote đọc được.
+ * Gradient đen mờ từ trên (logo) và từ dưới (quote), ở giữa trong suốt
+ * để robot + callout vẫn nổi bật.
+ */
+.login-visual-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  /* Đã bỏ quote ở đáy → chỉ cần scrim nhẹ phía TRÊN để logo METANOIA
+     trong ảnh nổi bật; phía dưới giữ sạch để robot + app mock hiện rõ. */
+  background: linear-gradient(
+    to bottom,
+    rgba(8, 8, 8, 0.5) 0%,
+    rgba(8, 8, 8, 0.12) 18%,
+    rgba(8, 8, 8, 0) 34%
+  );
+}
+
+/* Viền phân cách giữa 2 nửa — hairline dọc (thay cho card border đã bỏ). */
+.login-visual::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  background-color: var(--voltagent-hairline);
+  z-index: 20;
+}
+
+@media (min-width: 900px) {
+  .login-split {
+    grid-template-columns: 1fr 1fr;
+  }
+  .login-visual {
+    display: flex;
+  }
+}
+
+@media (min-width: 1280px) {
+  .login-visual {
+    padding: 3rem;
+  }
+}
+
+/* Dot-grid depth cue — 1px primary @ 7%, mask fade ra rìa.
+   z-index 2 (trên ảnh z1) nhưng rất nhạt → texture chung, không che ảnh. */
+.login-visual-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background-image: radial-gradient(
+    rgba(0, 217, 146, 0.09) 1px,
+    transparent 1px
+  );
+  background-size: 22px 22px;
+  opacity: 0.4;
+  -webkit-mask-image: radial-gradient(
+    ellipse at 30% 40%,
+    black 20%,
+    transparent 78%
+  );
+  mask-image: radial-gradient(ellipse at 30% 40%, black 20%, transparent 78%);
+}
+
+/* Thanh trên — brand + "Back to website" pill. */
+.login-visual-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--voltagent-hairline);
+  border-radius: var(--voltagent-radius-pill);
+  background-color: var(--voltagent-canvas);
+  color: var(--voltagent-body);
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition:
+    border-color 200ms ease,
+    color 200ms ease,
+    transform 200ms ease;
+}
+
+.login-visual-back:hover {
+  border-color: var(--voltagent-primary);
+  color: var(--voltagent-primary);
+  transform: translateX(-2px);
+}
+
+.login-visual-back .material-symbols-outlined {
+  font-size: 1rem;
+}
+
+/* Đáy — quote + dots. */
+/* ---------- RIGHT: form panel ---------- */
+.login-form-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1.5rem;
+  padding: 2rem;
+  background-color: var(--voltagent-canvas);
+  /*
+   * Nền lưới ca-rô rất nhạt — copy từ trang /groups (`.grp`) để đồng bộ
+   * cảm giác "ca rô đằng sau" mà bạn thấy ở đó:
+   *   linear-gradient 1px ở 2.2% alpha, ô 64×64, background-attachment: fixed.
+   * KHÔNG dùng box-shadow để tạo chiều sâu (DESIGN.md: hairline là
+   * elevation duy nhất).
+   */
+  background-image:
+    linear-gradient(
+      to right,
+      rgba(255, 255, 255, 0.022) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.022) 1px,
+      transparent 1px
+    );
+  background-size: 64px 64px;
+  background-attachment: fixed;
+}
+
+/*
+ * Nội dung form canh giữa trong cột, giới hạn bề rộng để dễ đọc.
+ *
+ * ⚠️ Dùng `align-items: center` trên flex container + `width: 100%` cho
+ * con — KHÔNG dùng `margin-left/right: auto` vì nó đẩy con lệch sang phải
+ * (auto margin hấp thụ toàn bộ free space, phá vỡ text-align:center của
+ * các phần tử con bên trong).
+ */
+.login-form-panel {
+  align-items: center;
+}
+
+.login-form-panel > * {
+  width: 100%;
+  max-width: 24rem;
+}
+
+@media (min-width: 640px) {
+  .login-form-panel {
+    padding: 2.5rem;
+  }
+}
+
+/* Thanh trên của form panel — nút "Back to website" ở góc phải.
+   Được kéo ra ngoài `max-width: 24rem` để nằm sát mép phải của panel. */
+.login-panel-top {
+  position: absolute !important;
+  top: 2rem;
+  right: 2rem;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  max-width: none !important;
+  width: auto !important;
+}
+
+@media (min-width: 640px) {
+  .login-panel-top {
+    top: 2.5rem;
+    right: 2.5rem;
+  }
 }
 
 /* ---------- Header ---------- */
@@ -32,33 +276,44 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.5rem;
+  gap: 0.625rem;
+  /* Khoảng cách thêm dưới eyebrow — tách khỏi nút "Tiếp tục với Google"
+     (panel gap mặc định là 1.5rem, eyebrow cần thêm để không sát). */
+  margin-bottom: 1.5rem;
 }
 
 /* eyebrow-mono token (DESIGN.md): Inter weight 600, tracked, UPPERCASE.
    Đổi font từ JetBrains Mono sang Inter — eyebrow của Voltagent LUÔN là Inter,
    mono chỉ dành cho code blocks / inline command snippets. */
+/*
+ * Eyebrow — làm điểm nhấn chính của form (đã bỏ tiêu đề "Đăng nhập").
+ * Bám style `.grp-eyebrow` của trang /groups: pill xanh, tracking 2.52px,
+ * weight 700, cỡ chữ lớn hơn để nổi bật.
+ */
 .login-eyebrow {
+  display: inline-flex;
+  align-items: center;
   font-family: "Inter", system-ui, sans-serif;
-  font-size: 0.75rem;
-  letter-spacing: 0.18em;
+  font-size: 0.9375rem; /* 15px */
+  line-height: 22px;
+  letter-spacing: 0.1575em; /* 2.52px ở 15px — chuẩn DESIGN.md */
   text-transform: uppercase;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--voltagent-primary);
-  padding: 0.25rem 0.625rem;
+  padding: 0.4375rem 1rem;
   border-radius: var(--voltagent-radius-pill);
   background-color: rgba(0, 217, 146, 0.1);
-  border: 1px solid rgba(0, 217, 146, 0.3);
+  border: 1px solid rgba(0, 217, 146, 0.4);
 }
 
-/* display-md (mobile → 24px) → display-lg (sm → 36px), weight 400 (Voltagent calm) */
+/* Tiêu đề (đã bỏ khỏi UI — giữ style để dùng lại sau nếu cần) */
 .login-title {
   font-family: "Inter", system-ui, sans-serif;
   font-size: var(--voltagent-display-md-size);
   font-weight: 400;
   color: var(--voltagent-ink-strong);
   letter-spacing: var(--voltagent-display-md-tracking);
-  margin: 0.25rem 0 0;
+  margin: 0;
   line-height: var(--voltagent-display-md-lh);
 }
 
@@ -70,19 +325,14 @@
   }
 }
 
-.login-subtitle {
-  font-size: 0.875rem;
-  color: var(--voltagent-body);
-  line-height: 1.5;
-  margin: 0;
-}
+/* ===========================================================
+ * Google SSO (button-outline-on-dark token)
+ * =========================================================== */
 
-/* ---------- Google SSO (button-outline-on-dark token) ---------- */
 .login-sso {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  padding-top: 0.25rem;
   position: relative; /* cho absolute GIS host overlay */
 }
 
@@ -105,11 +355,9 @@
 .login-google-btn {
   position: relative;
   display: inline-flex;
-  /* width: 100% → max-width: 320px để button OAuth nằm giữa form-shell
-     (form-shell max-width 28rem = 448px). Center với margin auto. */
+  /* `border-box` — app không có global reset, width:100% + padding sẽ vượt card. */
+  box-sizing: border-box;
   width: 100%;
-  max-width: 20rem;            /* 320px — đủ chứa icon + label, không full-width */
-  margin: 0 auto;
   align-items: center;
   justify-content: center;
   gap: 0.625rem;
@@ -117,22 +365,25 @@
      No box-shadow. */
   background-color: var(--voltagent-canvas);
   border: 1px solid var(--voltagent-hairline);
-  padding: 0.75rem 1rem;
+  padding: 0.875rem 1rem;
   border-radius: var(--voltagent-radius-sm);
   color: var(--voltagent-ink-strong);
-  font-size: 0.875rem;
-  font-weight: 500;
-  line-height: 1.25rem;        /* 20px — khớp icon height để baseline cân */
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.5rem;
   font-family: "Inter", system-ui, sans-serif;
   cursor: pointer;
-  text-decoration: none;       /* chặn underline nếu là <a> */
-  transition: border-color 200ms ease, background-color 200ms ease,
+  text-decoration: none; /* chặn underline nếu là <a> */
+  transition:
+    border-color 200ms ease,
+    background-color 200ms ease,
     transform 200ms ease;
 }
 
 .login-google-btn:hover:not(:disabled) {
   background-color: var(--voltagent-canvas-soft);
-  border-color: var(--voltagent-body);
+  border-color: var(--voltagent-primary);
+  transform: translateY(-1px);
 }
 
 .login-google-btn:active:not(:disabled) {
@@ -145,9 +396,10 @@
 }
 
 /* "Continue with Google" di chuyển vô giữa:
-   slide từ trái (translateX(-12px)) → vị trí gốc (translateX(0), đã margin: 0 auto).
-   Chạy SAU khi .login-sso parent fade-up xong (delay 140ms) → button con delay thêm 80ms = 220ms tổng.
-   Chỉ chạy 1 lần (forwards) để không gây khó chịu khi re-render. */
+   slide từ trái (translateX(-12px)) → vị trí gốc (translateX(0)).
+   Chạy SAU khi .login-sso parent fade-up xong (delay 140ms) → button con delay
+   thêm 80ms = 220ms tổng. Chỉ chạy 1 lần (forwards) để không gây khó chịu
+   khi re-render. */
 .login-google-btn {
   opacity: 0;
   animation: login-slide-in-center 520ms cubic-bezier(0.22, 1, 0.36, 1) 220ms forwards;
@@ -168,11 +420,11 @@
   display: block !important;
   width: 1.25rem !important;
   height: 1.25rem !important;
-  max-width: 1.25rem !important;          /* hard-cap chống SVG intrinsic phình ra */
+  max-width: 1.25rem !important; /* hard-cap chống SVG intrinsic phình ra */
   max-height: 1.25rem !important;
-  flex: 0 0 1.25rem !important;            /* chống icon bị nén do text dài */
+  flex: 0 0 1.25rem !important; /* chống icon bị nén do text dài */
   flex-shrink: 0 !important;
-  object-fit: contain !important;          /* SVG vẽ chính giữa box 20px */
+  object-fit: contain !important; /* SVG vẽ chính giữa box 20px */
   align-self: center !important;
 }
 
@@ -181,18 +433,19 @@
 .login-google-btn > span {
   display: inline-flex;
   align-items: center;
-  line-height: 1.25rem;          /* = 20px = icon height */
-  font-size: 0.875rem;
-  font-weight: 500;
+  line-height: 1.5rem; /* = 24px = icon height */
+  font-size: 0.9375rem;
+  font-weight: 600;
   color: var(--voltagent-ink-strong);
   flex: 0 1 auto;
 }
 
+/* Hint dưới nút — dot xanh + caption mono. */
 .login-sso-hint {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.375rem;
+  gap: 0.5rem;
   color: var(--voltagent-mute);
   font-family: "SFMono-Regular", "JetBrains Mono", "Inter", monospace;
   font-size: 0.75rem;
@@ -206,12 +459,15 @@
   background-color: var(--voltagent-primary);
 }
 
-/* ---------- Divider ---------- */
+/* ===========================================================
+ * Divider
+ * =========================================================== */
+
 .login-divider {
   position: relative;
   display: flex;
   align-items: center;
-  padding: 0.25rem 0;
+  gap: 1rem;
 }
 
 .login-divider-line {
@@ -222,7 +478,6 @@
 
 .login-divider-text {
   flex-shrink: 0;
-  margin: 0 1rem;
   font-family: "Inter", system-ui, sans-serif;
   font-size: 0.6875rem;
   color: var(--voltagent-mute);
@@ -231,185 +486,92 @@
   font-weight: 600;
 }
 
-/* ---------- Form ---------- */
-.login-form {
+/* ===========================================================
+ * CTA đăng ký — button-ghost-green + arrow
+ * =========================================================== */
+
+.login-register {
   display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-/* ---------- Field ---------- */
-.login-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-}
-
-.login-field-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-/* caption-strong token: 12px, weight 500 */
-.login-field-label {
-  font-family: "Inter", system-ui, sans-serif;
-  font-size: 0.75rem;
-  color: var(--voltagent-mute);
-  letter-spacing: 0.01em;
-  font-weight: 500;
-}
-
-.login-field-error {
-  font-size: 0.75rem;
-  color: var(--voltagent-red-text);
-}
-
-/* ---------- Input (text-input token: canvas-soft fill, hairline border, 6px radius) ---------- */
-.login-input-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.login-input {
-  display: block;
-  width: 100%;
-  background-color: var(--voltagent-canvas-soft);
-  color: var(--voltagent-ink-strong);
-  font-size: 0.875rem;
-  font-family: "Inter", system-ui, sans-serif;
-  padding: 0.75rem 0.875rem;
-  border-radius: var(--voltagent-radius-sm);
-  border: 1px solid var(--voltagent-hairline);
-  outline: none;
-  transition: border-color 150ms ease, box-shadow 200ms ease;
-}
-
-.login-input::placeholder {
-  color: var(--voltagent-mute);
-  opacity: 0.55;
-}
-
-/* Focus: DESIGN.md Level 2 Inset Glow — hairline đậm + 1px primary ring.
-   KHÔNG box-shadow material. */
-.login-input:focus {
-  border-color: var(--voltagent-primary);
-  box-shadow: 0 0 0 1px var(--voltagent-primary);
-}
-
-.login-input--with-toggle {
-  padding-right: 2.75rem;
-}
-
-.login-input-icon {
-  position: absolute;
-  right: 0.875rem;
-  color: var(--voltagent-mute);
-  pointer-events: none;
-  font-size: 1.125rem;
-}
-
-/* ---------- Toggle password ---------- */
-.login-toggle {
-  position: absolute;
-  right: 0.5rem;
-  display: flex;
+  box-sizing: border-box;
   align-items: center;
   justify-content: center;
-  padding: 0.25rem;
-  color: var(--voltagent-mute);
-  background: transparent;
-  border: none;
-  border-radius: var(--voltagent-radius-xs);
-  cursor: pointer;
-  transition: color 150ms ease, background-color 150ms ease;
-}
-
-.login-toggle:hover {
-  color: var(--voltagent-ink-strong);
-  background-color: rgba(255, 255, 255, 0.06);
-}
-
-.login-toggle .material-symbols-outlined {
-  font-size: 1.125rem;
-}
-
-/* ---------- Remember (custom checkbox, electric-green when checked) ---------- */
-.login-remember {
-  display: flex;
-  align-items: center;
-  padding-top: 0.25rem;
-}
-
-.login-checkbox-input {
-  position: absolute;
-  opacity: 0;
-  width: 0;
-  height: 0;
-  pointer-events: none;
-}
-
-.login-checkbox-label {
-  display: inline-flex;
-  align-items: center;
   gap: 0.625rem;
-  cursor: pointer;
-  user-select: none;
-  font-size: 0.75rem;
-  color: var(--voltagent-mute);
-  transition: color 150ms ease;
-}
-
-.login-checkbox-label:hover {
-  color: var(--voltagent-ink);
-}
-
-.login-checkbox-box {
-  width: 1rem;
-  height: 1rem;
-  border-radius: var(--voltagent-radius-xs);
-  background-color: var(--voltagent-canvas-soft);
+  padding: 0.875rem 1rem;
   border: 1px solid var(--voltagent-hairline);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: border-color 150ms ease, background-color 150ms ease;
+  border-radius: var(--voltagent-radius-sm);
+  background-color: transparent;
+  color: var(--voltagent-primary-soft);
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.5rem;
+  text-decoration: none;
+  transition:
+    border-color 200ms ease,
+    background-color 200ms ease,
+    color 200ms ease,
+    transform 200ms ease;
+}
+
+.login-register:hover {
+  border-color: var(--voltagent-primary);
+  background-color: rgba(0, 217, 146, 0.07);
+  color: var(--voltagent-primary);
+  transform: translateY(-1px);
+}
+
+.login-register > .material-symbols-outlined {
+  font-size: 1.125rem;
   flex-shrink: 0;
 }
 
-.login-checkbox-check {
-  width: 0.75rem;
-  height: 0.75rem;
-  color: var(--voltagent-on-primary);
-  opacity: 0;
-  transition: opacity 150ms ease;
+/* Arrow đẩy sang phải khi hover — feedback nhẹ. */
+.login-register-arrow {
+  transition: transform 200ms ease;
+}
+.login-register:hover .login-register-arrow {
+  transform: translateX(3px);
 }
 
-.login-checkbox-input:checked + .login-checkbox-label .login-checkbox-box {
-  background-color: var(--voltagent-primary);
-  border-color: var(--voltagent-primary);
+.login-register-text {
+  flex: 0 1 auto;
 }
 
-.login-checkbox-input:checked + .login-checkbox-label .login-checkbox-check {
-  opacity: 1;
+/* Link chuyển đổi (đã có tài khoản → đăng nhập). */
+.login-switch {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--voltagent-mute);
+  text-align: center;
 }
 
-.login-checkbox-input:focus-visible + .login-checkbox-label .login-checkbox-box {
-  box-shadow: 0 0 0 1px var(--voltagent-primary);
-}
+/* ===========================================================
+ * Alert
+ * =========================================================== */
 
-/* ---------- Alert (Voltagent không có semantic palette riêng; dùng red subtle) ---------- */
 .login-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
   border-radius: var(--voltagent-radius-sm);
   border: 1px solid var(--voltagent-red-border);
   background-color: var(--voltagent-red-bg);
   color: var(--voltagent-red-text);
-  padding: 0.5rem 0.75rem;
-  font-size: 0.875rem;
+  padding: 0.75rem 0.875rem;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
 }
 
-/* ---------- Links (DESIGN.md: link color = primary-deep) ---------- */
+.login-alert-icon {
+  font-size: 1.125rem;
+  flex-shrink: 0;
+  margin-top: 0.0625rem;
+}
+
+/* ===========================================================
+ * Links (DESIGN.md: link color = primary-deep)
+ * =========================================================== */
+
 .login-link {
   font-family: "Inter", system-ui, sans-serif;
   font-size: 0.75rem;
@@ -428,61 +590,6 @@
   font-weight: 600;
 }
 
-/* ---------- Submit (button-primary token: electric-green fill + on-primary text, 6px, NO shadow) ---------- */
-.login-submit {
-  margin-top: 0.5rem;
-  display: flex;
-  width: 100%;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  background-color: var(--voltagent-primary);
-  color: var(--voltagent-on-primary);
-  font-size: 0.875rem;
-  font-weight: 600;
-  font-family: "Inter", system-ui, sans-serif;
-  padding: 0.75rem 1rem;
-  border-radius: var(--voltagent-radius-sm);
-  border: none;
-  cursor: pointer;
-  transition: background-color 200ms ease, transform 200ms ease, box-shadow 200ms ease;
-}
-
-.login-submit:hover:not(:disabled) {
-  /* DESIGN.md Level 2 Inset Glow — 0 0 15px rgba(92,88,85,0.2). KHÔNG material shadow. */
-  background-color: var(--voltagent-primary-soft);
-  transform: translateY(-1px);
-  box-shadow: 0 0 15px rgba(92, 88, 85, 0.2);
-}
-
-.login-submit:active:not(:disabled) {
-  transform: scale(0.99) translateY(0);
-}
-
-.login-submit:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.login-submit .material-symbols-outlined {
-  font-size: 1rem;
-}
-
-/* ---------- Mobile-only link (hiện <lg khi topbar bị ẩn) ---------- */
-.login-mobile-link {
-  display: block;
-  font-size: 0.875rem;
-  color: var(--voltagent-mute);
-  text-align: center;
-  margin: 0;
-}
-
-@media (min-width: 1024px) {
-  .login-mobile-link {
-    display: none;
-  }
-}
-
 /* ===========================================================
  * Animation layer
  * - Entry: fade + slide-up theo cascade khi component mount.
@@ -499,15 +606,6 @@
   to {
     opacity: 1;
     transform: translateY(0);
-  }
-}
-
-@keyframes login-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
   }
 }
 
@@ -536,17 +634,6 @@
   }
   80% {
     transform: translateX(4px);
-  }
-}
-
-@keyframes login-pulse {
-  0%,
-  100% {
-    /* CHECKBOX check ripple — Voltagent primary tint thay vì indigo */
-    box-shadow: 0 0 0 0 rgba(0, 217, 146, 0.45);
-  }
-  50% {
-    box-shadow: 0 0 0 8px rgba(0, 217, 146, 0);
   }
 }
 
@@ -587,9 +674,9 @@
   }
 }
 
-/* "Continue with Google" — slide từ trái vào vị trí giữa (di chuyển vô giữa).
-   Bắt đầu translateX(-12px) + opacity 0, kết thúc ở vị trí gốc (đã margin: 0 auto).
-   520ms với ease-out-expo để "chạm tâm" rồi từ từ đứng yên — calm motion của Voltagent. */
+/* "Continue with Google" — slide từ trái vào vị trí giữa.
+   Bắt đầu translateX(-12px) + opacity 0, kết thúc ở vị trí gốc.
+   520ms với ease-out-expo để "chạm tâm" rồi từ từ đứng yên — calm motion. */
 @keyframes login-slide-in-center {
   0% {
     transform: translateX(-12px);
@@ -605,55 +692,19 @@
 }
 
 /* ----- Entry cascade (auto chạy khi render) ----- */
-.login-header,
-.login-sso,
-.login-divider,
-.login-form,
-.login-mobile-link {
+.login-split {
   opacity: 0;
   animation: login-fade-up 480ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
-.login-header {
-  animation-delay: 60ms;
-}
-.login-sso {
-  animation-delay: 140ms;
-}
-.login-divider {
-  animation-delay: 220ms;
-}
-.login-form {
-  animation-delay: 300ms;
-}
-.login-mobile-link {
-  animation-delay: 420ms;
-}
-
-/* Các field bên trong form: stagger thêm */
-.login-field {
-  opacity: 0;
-  animation: login-fade-up 380ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
-.login-field:nth-of-type(1) {
-  animation-delay: 360ms;
-}
-.login-field:nth-of-type(2) {
-  animation-delay: 420ms;
-}
-.login-field + .login-remember {
-  animation: login-fade-up 380ms cubic-bezier(0.22, 1, 0.36, 1) 480ms forwards;
-  opacity: 0;
-}
-.login-submit {
-  animation: login-fade-up 420ms cubic-bezier(0.22, 1, 0.36, 1) 540ms forwards;
-  opacity: 0;
-}
-
-/* ----- Ambient glow phía sau form ----- */
+/* ----- Ambient glow: bỏ trong split full-screen -----
+   Split 2 cột đã chiếm trọn viewport → 2 blob `::before`/`::after` của
+   `.login` chỉ gây horizontal scrollbar (offset âm). Giữ lại nhưng clip
+   trong chính nó để không ảnh hưởng layout. */
 .login {
   position: relative;
   isolation: isolate;
+  overflow: hidden;
 }
 
 .login::before,
@@ -674,7 +725,7 @@
   right: -6rem;
   background: radial-gradient(
     circle,
-    rgba(0, 217, 146, 0.1),  /* primary green tint */
+    rgba(0, 217, 146, 0.1), /* primary green tint */
     transparent 70%
   );
   animation: login-blob-a 14s ease-in-out infinite;
@@ -685,41 +736,10 @@
   left: -5rem;
   background: radial-gradient(
     circle,
-    rgba(61, 58, 57, 0.14),   /* hairline hue */
+    rgba(61, 58, 57, 0.14), /* hairline hue */
     transparent 70%
   );
   animation: login-blob-b 18s ease-in-out infinite;
-}
-
-/* ----- Input: glow + caret shimmer khi focus ----- */
-.login-input {
-  transition: border-color 150ms ease, box-shadow 200ms ease,
-    background-color 200ms ease;
-}
-
-.login-input:focus {
-  border-color: var(--voltagent-primary);
-  box-shadow:
-    0 0 0 1px var(--voltagent-primary),
-    0 0 24px -8px rgba(0, 217, 146, 0.35);
-}
-
-.login-input:hover:not(:focus) {
-  border-color: var(--voltagent-body);
-  background-color: var(--voltagent-canvas);
-}
-
-/* ----- Toggle visibility: rotate icon khi đổi trạng thái ----- */
-.login-toggle .material-symbols-outlined {
-  transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-.login-toggle:hover .material-symbols-outlined {
-  transform: scale(1.1);
-}
-
-/* ----- Checkbox: ripple khi check ----- */
-.login-checkbox-input:checked + .login-checkbox-label .login-checkbox-box {
-  animation: login-pulse 600ms ease-out;
 }
 
 /* ----- Alert: shake ngắn khi xuất hiện ----- */
@@ -727,39 +747,7 @@
   animation: login-shake 420ms cubic-bezier(0.36, 0.07, 0.19, 0.97);
 }
 
-/* ----- Submit: shimmer overlay khi đang loading ----- */
-.login-submit {
-  position: relative;
-  overflow: hidden;
-}
-
-.login-submit[aria-busy="true"]::after,
-.login-submit:disabled::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image: linear-gradient(
-    100deg,
-    transparent 20%,
-    rgba(255, 255, 255, 0.18) 50%,
-    transparent 80%
-  );
-  background-size: 200% 100%;
-  animation: login-shimmer 1.4s linear infinite;
-  pointer-events: none;
-}
-
-.login-submit:hover:not(:disabled) {
-  /* DESIGN.md Level 2 Inset Glow — single soft glow, no material shadow.
-     Đã set ở static block trên; giữ transform translateY để có tactile feedback. */
-  transform: translateY(-1px);
-}
-
-.login-submit:active:not(:disabled) {
-  transform: scale(0.985) translateY(0);
-}
-
-/* ----- Google button: subtle lift ----- */
+/* ----- Google button: shimmer overlay khi đang loading ----- */
 .login-google-btn {
   position: relative;
   overflow: hidden;
@@ -771,24 +759,43 @@
      Các property khác (max-width, padding, font-size, border-radius) vẫn cần
      !important để chống bị override bởi cascade. */
   width: 100% !important;
-  max-width: 20rem !important;            /* 320px */
+  max-width: none !important;
   margin: 0 auto !important;
-  padding: 0.75rem 1rem !important;       /* chống bất kỳ breakpoint nào đè padding */
-  font-size: 0.875rem !important;         /* chống bất kỳ typography scale nào đè */
-  line-height: 1.25rem !important;        /* = icon height */
+  padding: 0.875rem 1rem !important; /* chống bất kỳ breakpoint nào đè padding */
+  font-size: 0.9375rem !important; /* chống bất kỳ typography scale nào đè */
+  line-height: 1.5rem !important; /* = icon height */
   border-radius: var(--voltagent-radius-sm) !important;
-  transition: background-color 200ms ease, border-color 200ms ease,
-    transform 200ms ease, box-shadow 200ms ease;
+  transition:
+    background-color 200ms ease,
+    border-color 200ms ease,
+    transform 200ms ease,
+    box-shadow 200ms ease;
 }
 
 .login-google-btn:hover:not(:disabled) {
   transform: translateY(-1px);
   background-color: var(--voltagent-canvas-soft);
-  border-color: var(--voltagent-body);
+  border-color: var(--voltagent-primary);
 }
 
 .login-google-btn:active:not(:disabled) {
   transform: scale(0.99);
+}
+
+.login-google-btn[aria-busy="true"]::after,
+.login-google-btn:disabled::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.12) 50%,
+    transparent 80%
+  );
+  background-size: 200% 100%;
+  animation: login-shimmer 1.4s linear infinite;
+  pointer-events: none;
 }
 
 /* ----- SSO hint dot: pulse (Voltagent primary green) ----- */
@@ -831,7 +838,9 @@
   background-size: 0% 1px;
   background-repeat: no-repeat;
   background-position: 0 100%;
-  transition: background-size 250ms ease, color 150ms ease;
+  transition:
+    background-size 250ms ease,
+    color 150ms ease;
 }
 .login-link:hover {
   background-size: 100% 1px;
@@ -841,29 +850,23 @@
 
 /* ----- Respect prefers-reduced-motion ----- */
 @media (prefers-reduced-motion: reduce) {
-  .login-header,
-  .login-sso,
-  .login-divider,
-  .login-form,
-  .login-mobile-link,
-  .login-field,
-  .login-submit {
+  .login-split,
+  .login-google-btn {
     animation: none !important;
     opacity: 1 !important;
   }
   .login::before,
   .login::after,
   .login-eyebrow::after,
-  .login-submit::after,
+  .login-google-btn::after,
   .login-sso-dot::after {
     animation: none !important;
   }
-  .login-input:focus,
-  .login-submit:hover,
   .login-google-btn:hover {
     transform: none !important;
   }
-  .login-banner {
+  .login-banner,
+  .login-alert {
     animation: none !important;
   }
 }
@@ -888,11 +891,10 @@
   border-radius: var(--voltagent-radius-sm);
   font-size: 0.8125rem;
   line-height: 1.25rem;
-  background-color: rgba(0, 217, 146, 0.08);  /* primary 8% */
+  background-color: rgba(0, 217, 146, 0.08); /* primary 8% */
   border: 1px solid rgba(0, 217, 146, 0.3);
   color: var(--voltagent-body);
   animation: login-banner-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  margin-top: 0.25rem;
 }
 
 .login-banner--success {
@@ -953,7 +955,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: color 150ms ease, background-color 150ms ease;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease;
   flex-shrink: 0;
 }
 
@@ -964,4 +968,14 @@
 
 .login-banner-close .material-symbols-outlined {
   font-size: 1rem;
+}
+
+/* ===========================================================
+ * Responsive
+ * =========================================================== */
+
+@media (max-width: 480px) {
+  .login-form-panel {
+    padding: 1.5rem;
+  }
 }

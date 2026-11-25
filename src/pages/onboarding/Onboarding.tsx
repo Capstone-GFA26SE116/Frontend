@@ -3,108 +3,71 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import { MetanoiaLogo } from "../../components/MetanoiaLogo";
 import {
-  GOAL_OPTIONS,
-  ROLE_OPTIONS,
-  SECTOR_OPTIONS,
-  writeOnboarding,
-  type GoalId,
-  type OnboardingProfile,
-  type RoleId,
-  type SectorId,
-} from "./storage";
+  COMMON_TIME_ZONES,
+  OVERRUN_LEVELS,
+  OVERRUN_LEVEL_META,
+  useOnboardingForm,
+  type OnboardingFieldErrors,
+} from "./onboarding-form-logic";
 import "./onboarding.css";
 
 /**
- * Onboarding — Khảo sát & Cá nhân hoá sau Đăng nhập.
+ * Onboarding — Thiết lập lịch làm việc lần đầu.
  *
- * Flow: user vừa login lần đầu -> ProtectedRoute redirect về đây.
- *  - Bước 1: chọn 1 role (single-select card).
- *  - Bước 2: chọn nhiều sector (pill toggle).
- *  - Bước 3: chọn nhiều goal (checkbox card).
- *  - Cuối: CTA "Tiếp tục vào Không gian làm việc" lưu profile -> /dashboard.
- *  - "Bỏ qua bước này" lưu profile rỗng (đánh dấu completed) -> /dashboard.
+ * ⚠️ Contract BE mới (`POST /api/me/onboarding`):
+ *   • 6 trường **BẮT BUỘC**: `timeZone`, `workDayStart`, `workDayEnd`,
+ *     `worksOnWeekend`, `defaultBufferMinutes`, `reminderLeadMinutes`.
+ *     Thiếu bất kỳ → BE trả `400` và **không lưu gì**.
+ *   • `productiveHours`, `domainIds` — tuỳ chọn, có thể để trống.
+ *   • `overrunLevel` — tuỳ chọn, CHỈ hiện khi đã chọn ít nhất 1 loại
+ *     công việc (vì nó được lưu riêng cho từng loại đã chọn).
  *
- * Lưu ý UX:
- *  - Mặc định: role=student, sector đầu tiên đã chọn, goal đầu tiên đã chọn.
- *  - Không bắt buộc chọn — CTA luôn enabled.
- *  - Header cố định, footer cố định (giống design mẫu).
+ * BE **không** chặn API khi chưa onboarding → `ProtectedRoute` tự gate,
+ * nên màn này là bắt buộc để vào được home.
+ *
+ * Spec: `FE_CHANGES.md` mục 1.2 + 1.3.
  */
 export function OnboardingPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, markOnboardingCompleted } = useAuth();
+  const [done, setDone] = useState(false);
 
-  const [role, setRole] = useState<RoleId>("student");
-  const [sectors, setSectors] = useState<Set<SectorId>>(
-    () => new Set<SectorId>(["it_programming"]),
-  );
-  const [goals, setGoals] = useState<Set<GoalId>>(
-    () => new Set<GoalId>(["deep_work"]),
-  );
+  const { form, setField, toggleProductiveHour, toggleDomain, domains, loadingDomains, errors, submitting, submitError, submit } =
+    useOnboardingForm(() => {
+      // Đánh dấu onboarding hoàn tất → cỡng cổng gate ngay, không chờ
+      // refetch `/api/me`.
+      markOnboardingCompleted();
+      setDone(true);
+    });
 
   // Scroll lên đầu mỗi lần vào.
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
   }, []);
 
-  function toggleSector(id: SectorId) {
-    setSectors((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  function toggleGoal(id: GoalId) {
-    setGoals((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  function buildProfile(): OnboardingProfile {
-    return {
-      role,
-      sectors: Array.from(sectors),
-      goals: Array.from(goals),
-      completedAt: new Date().toISOString(),
-    };
-  }
-
-  function handleContinue() {
-    writeOnboarding(buildProfile());
-    navigate("/dashboard", { replace: true });
-  }
-
-  function handleSkip() {
-    // Đánh dấu đã hoàn tất để không redirect lại, nhưng lưu role mặc định
-    // (nếu user chưa chọn gì) để Dashboard có dữ liệu dùng được.
-    writeOnboarding(buildProfile());
-    navigate("/dashboard", { replace: true });
-  }
-
   const greeting = useMemo(
     () => user?.name?.split(/\s+/)[0] ?? "bạn",
     [user?.name],
   );
 
-  /**
-   * Tiến trình 3 bước — bước đang làm = 1, các bước đã trả lời trước đó = 2.
-   * Dùng để user biết còn bao nhiêu việc phía trước.
-   */
-  const completedSteps = useMemo(() => {
-    let count = 0;
-    if (role) count += 1;
-    if (sectors.size > 0) count += 1;
-    if (goals.size > 0) count += 1;
-    return count;
-  }, [role, sectors.size, goals.size]);
+  /** Chuyển tới home sau khi lưu thành công (delay nhẹ để user thấy confirm). */
+  useEffect(() => {
+    if (!done) return;
+    const t = window.setTimeout(() => {
+      navigate("/dashboard", { replace: true });
+    }, 900);
+    return () => window.clearTimeout(t);
+  }, [done, navigate]);
+
+  /** `overrunLevel` chỉ hiện khi đã chọn ít nhất 1 loại công việc. */
+  const showOverrun = form.domainIds.length > 0;
+
+  const fieldError = (key: keyof OnboardingFieldErrors): string | undefined =>
+    errors[key];
 
   return (
     <div className="onboarding">
-      {/* HEADER cố định */}
+      {/* ================= HEADER ================= */}
       <header className="onboarding-header">
         <div className="onboarding-header-inner">
           <div className="onboarding-brand">
@@ -112,36 +75,19 @@ export function OnboardingPage() {
             <span className="onboarding-brand-name">METANOIA</span>
           </div>
 
-          <nav
-            className="onboarding-stepnav"
-            aria-label="Tiến trình onboarding"
-          >
+          <nav className="onboarding-stepnav" aria-label="Tiến trình onboarding">
             <span className="onboarding-stepnav-item onboarding-stepnav-item--active">
-              01 · Vai trò &amp; Mục tiêu
+              01 · Khung giờ làm việc
             </span>
             <span className="onboarding-stepnav-sep" aria-hidden="true">
               /
             </span>
             <span className="onboarding-stepnav-item onboarding-stepnav-item--muted">
-              02 · Nhịp độ Tư duy
-            </span>
-            <span className="onboarding-stepnav-sep" aria-hidden="true">
-              /
-            </span>
-            <span className="onboarding-stepnav-item onboarding-stepnav-item--muted">
-              03 · Đồng bộ Không gian
+              02 · Loại công việc
             </span>
           </nav>
 
           <div className="onboarding-header-right">
-            <button
-              type="button"
-              onClick={handleSkip}
-              className="onboarding-skip"
-            >
-              Bỏ qua
-            </button>
-            <span className="onboarding-divider" aria-hidden="true" />
             {user?.avatarUrl ? (
               <img
                 alt={user.name ?? "Profile"}
@@ -152,7 +98,10 @@ export function OnboardingPage() {
                 }}
               />
             ) : (
-              <span className="onboarding-avatar onboarding-avatar--fallback" aria-hidden="true">
+              <span
+                className="onboarding-avatar onboarding-avatar--fallback"
+                aria-hidden="true"
+              >
                 <span className="material-symbols-outlined">person</span>
               </span>
             )}
@@ -160,295 +109,322 @@ export function OnboardingPage() {
         </div>
       </header>
 
-      {/* MAIN */}
+      {/* ================= MAIN ================= */}
       <main className="onboarding-main">
         <div className="onboarding-shell">
           <div className="onboarding-card">
-            {/* Tiến trình 3 bước */}
-            <div
-              className="onboarding-progress"
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={3}
-              aria-valuenow={completedSteps}
-              aria-label="Tiến trình thiết lập"
-            >
-              {["Vai trò", "Lĩnh vực", "Mục tiêu"].map((label, i) => (
-                <div
-                  key={label}
-                  className={
-                    "onboarding-progress__step" +
-                    (i === completedSteps
-                      ? " onboarding-progress__step--active"
-                      : "")
-                  }
-                >
-                  <span
-                    className={
-                      "onboarding-progress__bar" +
-                      (i < completedSteps
-                        ? " onboarding-progress__bar--done"
-                        : "")
-                    }
-                  />
-                  <span className="onboarding-progress__label">{label}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Header intro */}
+            {/* Intro */}
             <div className="onboarding-intro">
               <span className="onboarding-badge">
                 <span className="onboarding-badge-dot" />
                 Chào mừng {greeting}
               </span>
               <h1 className="onboarding-title">
-                Hãy cá nhân hoá không gian làm việc nhận thức của bạn
+                Thiết lập khung giờ làm việc của bạn
               </h1>
               <p className="onboarding-subtitle">
-                Trả lời nhanh 3 câu hỏi để AI điều phối lịch trình học tập và
-                làm việc chuẩn xác nhất theo thói quen sinh học của bạn.
+                METANOIA cần 6 thông tin này để xếp lịch đúng nhịp làm việc
+                thật của bạn. Bạn luôn có thể đổi lại trong phần Cài đặt.
               </p>
-              <div className="onboarding-rhythm">
-                <span className="onboarding-rhythm-label">
-                  Đồng bộ nhịp tư duy
-                </span>
-                <div className="onboarding-rhythm-bars" aria-hidden="true">
-                  <span
-                    className="onboarding-rhythm-bar"
-                    style={{
-                      height: 6,
-                      animationDelay: "0ms",
-                    }}
-                  />
-                  <span
-                    className="onboarding-rhythm-bar"
-                    style={{
-                      height: 12,
-                      animationDelay: "150ms",
-                    }}
-                  />
-                  <span
-                    className="onboarding-rhythm-bar"
-                    style={{
-                      height: 8,
-                      animationDelay: "300ms",
-                    }}
-                  />
-                  <span
-                    className="onboarding-rhythm-bar"
-                    style={{
-                      height: 10,
-                      animationDelay: "450ms",
-                    }}
-                  />
-                </div>
-              </div>
             </div>
 
-            {/* 3 bước */}
+            {/* Bước 1 — Khung giờ làm việc */}
             <div className="onboarding-steps">
-              {/* Bước 1: Role */}
-              <section className="onboarding-step" aria-labelledby="step-1">
+              <section className="onboarding-step" aria-labelledby="ob-work">
                 <div className="onboarding-step-head">
                   <div className="onboarding-step-title">
                     <span className="onboarding-step-number">1</span>
-                    <h2 id="step-1">Bạn hiện đang là ai?</h2>
+                    <h2 id="ob-work">Khung giờ làm việc</h2>
                   </div>
                   <span className="onboarding-step-hint">
-                    Chọn một vai trò chính
+                    Các trường có dấu * là bắt buộc
                   </span>
                 </div>
-                <div className="onboarding-role-grid">
-                  {ROLE_OPTIONS.map((opt) => {
-                    const isActive = role === opt.id;
-                    return (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        onClick={() => setRole(opt.id)}
-                        aria-pressed={isActive}
-                        className={
-                          "onboarding-role-card" +
-                          (isActive
-                            ? " onboarding-role-card--active"
-                            : "")
-                        }
-                      >
-                        <div className="onboarding-role-top">
-                          <div
-                            className={
-                              "onboarding-role-icon" +
-                              (isActive
-                                ? " onboarding-role-icon--active"
-                                : "")
-                            }
-                          >
-                            <span
-                              className="material-symbols-outlined"
-                              style={
-                                isActive
-                                  ? { fontVariationSettings: "'FILL' 1" }
-                                  : undefined
-                              }
-                            >
-                              {opt.icon}
-                            </span>
-                          </div>
-                          <div
-                            className={
-                              "onboarding-role-check" +
-                              (isActive
-                                ? " onboarding-role-check--active"
-                                : "")
-                            }
-                            aria-hidden="true"
-                          >
-                            <span className="material-symbols-outlined onboarding-role-check-icon">
-                              check
-                            </span>
-                          </div>
-                        </div>
-                        <div>
-                          <h3 className="onboarding-role-title">{opt.title}</h3>
-                          <p className="onboarding-role-desc">{opt.desc}</p>
-                        </div>
-                      </button>
-                    );
-                  })}
+
+                <div className="ob-field">
+                  <label className="ob-label" htmlFor="ob-tz">
+                    Múi giờ <span className="ob-required">*</span>
+                  </label>
+                  <select
+                    id="ob-tz"
+                    className={"ob-input" + (fieldError("timeZone") ? " ob-input--error" : "")}
+                    value={form.timeZone}
+                    onChange={(e) => setField("timeZone", e.target.value)}
+                  >
+                    {/* Nếu múi giờ detect ra không nằm trong danh sách phổ biến
+                        → thêm vào đầu để không mất giá trị đang chọn. */}
+                    {COMMON_TIME_ZONES.some((t) => t.id === form.timeZone) ? null : (
+                      <option value={form.timeZone}>{form.timeZone}</option>
+                    )}
+                    {COMMON_TIME_ZONES.map((tz) => (
+                      <option key={tz.id} value={tz.id}>
+                        {tz.label}
+                      </option>
+                    ))}
+                  </select>
+                  {fieldError("timeZone") ? (
+                    <span className="ob-error">{fieldError("timeZone")}</span>
+                  ) : (
+                    <span className="ob-hint">
+                      Đã tự nhận diện từ thiết bị — bạn có thể đổi.
+                    </span>
+                  )}
+                </div>
+
+                <div className="ob-grid-2">
+                  <div className="ob-field">
+                    <label className="ob-label" htmlFor="ob-start">
+                      Bắt đầu làm việc <span className="ob-required">*</span>
+                    </label>
+                    <input
+                      id="ob-start"
+                      type="time"
+                      className="ob-input"
+                      value={form.workDayStart}
+                      onChange={(e) => setField("workDayStart", e.target.value)}
+                    />
+                  </div>
+                  <div className="ob-field">
+                    <label className="ob-label" htmlFor="ob-end">
+                      Kết thúc làm việc <span className="ob-required">*</span>
+                    </label>
+                    <input
+                      id="ob-end"
+                      type="time"
+                      className={"ob-input" + (fieldError("workDayEnd") ? " ob-input--error" : "")}
+                      value={form.workDayEnd}
+                      onChange={(e) => setField("workDayEnd", e.target.value)}
+                    />
+                    {fieldError("workDayEnd") ? (
+                      <span className="ob-error">{fieldError("workDayEnd")}</span>
+                    ) : null}
+                  </div>
+                </div>
+
+                <label className="ob-check">
+                  <input
+                    type="checkbox"
+                    checked={form.worksOnWeekend}
+                    onChange={(e) => setField("worksOnWeekend", e.target.checked)}
+                  />
+                  <span className="ob-check-box" aria-hidden="true">
+                    <span className="material-symbols-outlined">check</span>
+                  </span>
+                  <span className="ob-check-text">
+                    Tôi cũng làm việc vào cuối tuần
+                  </span>
+                </label>
+
+                <div className="ob-grid-2">
+                  <div className="ob-field">
+                    <label className="ob-label" htmlFor="ob-buffer">
+                      Đệm giữa các khung giờ (phút){" "}
+                      <span className="ob-required">*</span>
+                    </label>
+                    <input
+                      id="ob-buffer"
+                      type="number"
+                      min={0}
+                      max={120}
+                      className={"ob-input" + (fieldError("defaultBufferMinutes") ? " ob-input--error" : "")}
+                      value={form.defaultBufferMinutes}
+                      onChange={(e) =>
+                        setField("defaultBufferMinutes", Number(e.target.value))
+                      }
+                    />
+                    {fieldError("defaultBufferMinutes") ? (
+                      <span className="ob-error">
+                        {fieldError("defaultBufferMinutes")}
+                      </span>
+                    ) : (
+                      <span className="ob-hint">Khoảng nghỉ giữa 2 khung làm việc.</span>
+                    )}
+                  </div>
+                  <div className="ob-field">
+                    <label className="ob-label" htmlFor="ob-reminder">
+                      Nhắc trước (phút) <span className="ob-required">*</span>
+                    </label>
+                    <input
+                      id="ob-reminder"
+                      type="number"
+                      min={0}
+                      max={120}
+                      className={"ob-input" + (fieldError("reminderLeadMinutes") ? " ob-input--error" : "")}
+                      value={form.reminderLeadMinutes}
+                      onChange={(e) =>
+                        setField("reminderLeadMinutes", Number(e.target.value))
+                      }
+                    />
+                    {fieldError("reminderLeadMinutes") ? (
+                      <span className="ob-error">
+                        {fieldError("reminderLeadMinutes")}
+                      </span>
+                    ) : (
+                      <span className="ob-hint">Báo trước khi khung giờ bắt đầu.</span>
+                    )}
+                  </div>
                 </div>
               </section>
 
-              {/* Bước 2: Sector */}
-              <section className="onboarding-step" aria-labelledby="step-2">
+              {/* Bước 2 — Giờ hiệu quả (tuỳ chọn) */}
+              <section className="onboarding-step" aria-labelledby="ob-hours">
                 <div className="onboarding-step-head">
                   <div className="onboarding-step-title">
                     <span className="onboarding-step-number">2</span>
-                    <h2 id="step-2">
-                      Lĩnh vực hoặc chuyên ngành chính của bạn?
-                    </h2>
+                    <h2 id="ob-hours">Giờ bạn làm hiệu quả nhất</h2>
                   </div>
-                  <span className="onboarding-step-hint">
-                    Có thể chọn nhiều
-                  </span>
+                  <span className="onboarding-step-hint">Tuỳ chọn — bỏ qua được</span>
                 </div>
-                <div className="onboarding-tagcloud">
-                  {SECTOR_OPTIONS.map((opt) => {
-                    const isActive = sectors.has(opt.id);
+                <p className="ob-note">
+                  METANOIA tự chấm điểm 24 giờ làm việc từ khung giờ làm và
+                  những giờ bạn chọn ở đây. Không chọn cũng được.
+                </p>
+                <div className="ob-hours-grid" role="group" aria-label="Chọn giờ hiệu quả">
+                  {Array.from({ length: 24 }, (_, h) => {
+                    const active = form.productiveHours.includes(h);
                     return (
                       <button
-                        key={opt.id}
+                        key={h}
                         type="button"
-                        onClick={() => toggleSector(opt.id)}
-                        aria-pressed={isActive}
+                        aria-pressed={active}
                         className={
-                          "onboarding-tag" +
-                          (isActive ? " onboarding-tag--active" : "")
+                          "ob-hour" + (active ? " ob-hour--active" : "")
                         }
+                        onClick={() => toggleProductiveHour(h)}
                       >
-                        {opt.label}
+                        {h.toString().padStart(2, "0")}
                       </button>
                     );
                   })}
                 </div>
               </section>
 
-              {/* Bước 3: Goal */}
-              <section className="onboarding-step" aria-labelledby="step-3">
+              {/* Bước 3 — Loại công việc + mức làm lố */}
+              <section className="onboarding-step" aria-labelledby="ob-domain">
                 <div className="onboarding-step-head">
                   <div className="onboarding-step-title">
                     <span className="onboarding-step-number">3</span>
-                    <h2 id="step-3">
-                      Mục tiêu lớn nhất của bạn khi dùng METANOIA?
-                    </h2>
+                    <h2 id="ob-domain">Loại công việc bạn hay làm</h2>
                   </div>
                   <span className="onboarding-step-hint">
-                    Tùy chọn đa mục tiêu
+                    Tuỳ chọn — có thể chọn nhiều
                   </span>
                 </div>
-                <div className="onboarding-goal-grid">
-                  {GOAL_OPTIONS.map((opt) => {
-                    const isActive = goals.has(opt.id);
-                    return (
-                      <div
-                        key={opt.id}
-                        role="checkbox"
-                        tabIndex={0}
-                        aria-checked={isActive}
-                        onClick={() => toggleGoal(opt.id)}
-                        onKeyDown={(e) => {
-                          if (e.key === " " || e.key === "Enter") {
-                            e.preventDefault();
-                            toggleGoal(opt.id);
-                          }
-                        }}
-                        className={
-                          "onboarding-goal" +
-                          (isActive ? " onboarding-goal--active" : "")
-                        }
-                      >
-                        <div
-                          className={
-                            "onboarding-goal-box" +
-                            (isActive
-                              ? " onboarding-goal-box--active"
-                              : "")
-                          }
-                          aria-hidden="true"
+
+                {loadingDomains ? (
+                  <p className="ob-note">Đang tải danh sách loại công việc…</p>
+                ) : domains.length === 0 ? (
+                  <p className="ob-note">
+                    Chưa có loại công việc nào trong hệ thống — bạn có thể bỏ
+                    qua bước này.
+                  </p>
+                ) : (
+                  <div className="ob-tagcloud">
+                    {domains.map((d) => {
+                      const active = form.domainIds.includes(d.id);
+                      return (
+                        <button
+                          key={d.id}
+                          type="button"
+                          aria-pressed={active}
+                          className={"ob-tag" + (active ? " ob-tag--active" : "")}
+                          onClick={() => toggleDomain(d.id)}
                         >
-                          <span className="material-symbols-outlined onboarding-goal-check">
-                            done
-                          </span>
-                        </div>
-                        <div className="onboarding-goal-text">
-                          <span className="onboarding-goal-title">
-                            {opt.title}
-                          </span>
-                          <span className="onboarding-goal-desc">
-                            {opt.desc}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                          {d.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/*
+                 * ⚠️ `overrunLevel` CHỈ hiện khi đã chọn ít nhất 1 loại công
+                 * việc — vì BE lưu hệ số "làm lố" riêng cho TỪNG loại đã chọn.
+                 */}
+                {showOverrun && (
+                  <div className="ob-overrun">
+                    <div className="ob-overrun-head">
+                      <span className="ob-label">
+                        Bạn thường làm lố khung giờ ra sao?
+                      </span>
+                      <span className="ob-hint">
+                        Áp dụng cho {form.domainIds.length} loại công việc đã
+                        chọn
+                      </span>
+                    </div>
+                    <div className="ob-overrun-grid">
+                      {OVERRUN_LEVELS.map((level) => {
+                        const meta = OVERRUN_LEVEL_META[level];
+                        const active = form.overrunLevel === level;
+                        return (
+                          <button
+                            key={level}
+                            type="button"
+                            aria-pressed={active}
+                            className={
+                              "ob-overrun-card" +
+                              (active ? " ob-overrun-card--active" : "")
+                            }
+                            onClick={() => setField("overrunLevel", level)}
+                          >
+                            <span className="ob-overrun-label">
+                              {meta.label}
+                            </span>
+                            <span className="ob-overrun-factor adm-mono">
+                              {meta.factor}
+                            </span>
+                            <span className="ob-overrun-desc">{meta.desc}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="ob-note">
+                      Không chọn → hệ thống dùng mặc định “Thỉnh thoảng”.
+                    </p>
+                  </div>
+                )}
               </section>
             </div>
 
             {/* Footer actions */}
             <div className="onboarding-actions">
+              {submitError && (
+                <div className="ob-alert" role="alert">
+                  <span className="material-symbols-outlined">error</span>
+                  <span>{submitError}</span>
+                </div>
+              )}
               <div className="onboarding-actions-row">
+                <span className="onboarding-reassure">
+                  Bạn luôn có thể tuỳ chỉnh lại thông tin này trong phần Cài đặt.
+                </span>
                 <button
                   type="button"
-                  onClick={handleSkip}
-                  className="onboarding-skip-action"
-                >
-                  Bỏ qua bước này
-                </button>
-                <button
-                  type="button"
-                  onClick={handleContinue}
+                  onClick={() => void submit()}
                   className="onboarding-cta"
+                  disabled={submitting || done}
                 >
-                  <span>Tiếp tục vào Không gian làm việc</span>
+                  <span>
+                    {done
+                      ? "Đã lưu thiết lập!"
+                      : submitting
+                        ? "Đang lưu…"
+                        : "Hoàn tất thiết lập"}
+                  </span>
                   <span
                     className="material-symbols-outlined onboarding-cta-icon"
                     aria-hidden="true"
                   >
-                    arrow_forward
+                    {done ? "check" : "arrow_forward"}
                   </span>
                 </button>
               </div>
-              <p className="onboarding-reassure">
-                Bạn luôn có thể tuỳ chỉnh lại thông tin này bất kỳ lúc nào
-                trong phần Cài đặt.
-              </p>
             </div>
           </div>
         </div>
       </main>
 
-      {/* FOOTER cố định */}
+      {/* ================= FOOTER ================= */}
       <footer className="onboarding-footer">
         <div className="onboarding-footer-inner">
           <div className="onboarding-footer-left">

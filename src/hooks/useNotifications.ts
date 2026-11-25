@@ -237,6 +237,21 @@ export function useNotifications(enabled: boolean = true): UseNotificationsResul
         connection = new signalR.HubConnectionBuilder()
           .withUrl(HUB_URL, {
             accessTokenFactory: () => getAccessToken() ?? "",
+            /**
+             * ⚠️ `withCredentials: false` — BẮT BUỘC.
+             *
+             * SignalR mặc định gửi `credentials: "include"` (kèm cookie) cho
+             * request `negotiate`. Browser chỉ cho đọc response khi server
+             * trả `Access-Control-Allow-Credentials: true`; BE hiện KHÔNG trả
+             * header đó (chỉ có `Access-Control-Allow-Origin`) → browser chặn
+             * → `net::ERR_FAILED` / "Failed to complete negotiation".
+             *
+             * BE xác thực bằng `Authorization: Bearer` (đã xác nhận: response
+             * 401 trả `WWW-Authenticate: Bearer`, KHÔNG set cookie) → không
+             * cần cookie → tắt credentials là cách đúng và cũng tránh lộ
+             * cookie sang domain khác.
+             */
+            withCredentials: false,
           })
           .withAutomaticReconnect()
           .configureLogging(signalR.LogLevel.Error)
@@ -271,8 +286,10 @@ export function useNotifications(enabled: boolean = true): UseNotificationsResul
         setSignalStatus("connecting");
         await connection.start();
         if (!disposed && alive.current) setSignalStatus("connected");
-      } catch {
+      } catch (err) {
         if (!disposed && alive.current) setSignalStatus("disconnected");
+        // Ghi log để dev thấy nguyên nhân thật (CORS / 401 / mạng).
+        console.error("[useNotifications] SignalR connect failed:", err);
       }
     }
 

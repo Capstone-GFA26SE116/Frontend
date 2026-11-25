@@ -143,7 +143,7 @@ export function GroupErrorDialog({
             </div>
           )}
 
-          {rawMessage && (
+          {rawMessage && rawMessage !== error.message && (
             <details className="gerr-raw">
               <summary className="gerr-raw-summary">Server details</summary>
               <p className="gerr-raw-text">{rawMessage}</p>

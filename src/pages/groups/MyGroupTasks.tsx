@@ -9,24 +9,36 @@ import {
 import { Link } from "react-router-dom";
 import { CenterToasts, useCenterToast } from "../../components/Toast";
 import { useAuth } from "../../auth/AuthContext";
+import { useNotificationsContext } from "../../components/focus/notifications-context-state";
+import { signalAffectsSchedule } from "../../hooks/useNotifications";
 import type { ApiErr } from "../../lib/api-client";
 import {
   approveGroupChangeRequest,
   cancelGroupChangeRequest,
   createGroupChangeRequest,
+  createGroupScheduleSlot,
   getCurrentGroupFocus,
   getGroupTaskTime,
   listGroupChangeRequests,
+  listGroupScheduleSlots,
   listMyGroupWork,
   rejectGroupChangeRequest,
   startGroupFocus,
   stopGroupFocus,
   type GroupChangeRequestDto,
   type GroupFocusCurrentDto,
+  type GroupScheduleSlotDto,
   type GroupTaskTimeDto,
   type MyGroupSubTaskDto,
   type MyGroupTaskDto,
 } from "../../lib/group-api";
+import {
+  getGroupSlotSuggestions,
+  type GroupSlotSuggestionDto,
+  type GroupSlotSuggestionsDto,
+} from "../../lib/group-ai-api";
+import { GroupSlotSuggestionsModal } from "./GroupSlotSuggestionsModal";
+import { toGroupAiErrorView, type GroupAiErrorView } from "./group-ai-errors";
 import {
   canStartFocus,
   fmtGroupDateTime,
@@ -68,6 +80,14 @@ import "./my-group-tasks.css";
 const RESYNC_MS = 20_000;
 /** Chu kỳ tick hiển thị (ms). */
 const TICK_MS = 1_000;
+
+/**
+ * Slot đã huỷ / bỏ lỡ / xong → không chọn được khi bấm Start.
+ */
+function isClosedSlotStatus(status: string): boolean {
+  const s = (status ?? "").trim().toLowerCase();
+  return s === "cancelled" || s === "skipped" || s === "done";
+}
 
 export function MyGroupTasksPage() {
   const { user } = useAuth();
@@ -112,10 +132,37 @@ export function MyGroupTasksPage() {
   const [timeData, setTimeData] = useState<GroupTaskTimeDto | null>(null);
   const [timeLoading, setTimeLoading] = useState(false);
 
+  /* ---------- Chọn slot khi bấm Start (mục 10 của cập nhật BE) ---------- */
+  /** Slot theo việc nhóm: `groupTaskId -> slot[]`. */
+  const [slotsByTask, setSlotsByTask] = useState<
+    Record<string, GroupScheduleSlotDto[]>
+  >({});
+  /** Việc nhóm đang mở hộp thoại chọn slot (null = đóng). */
+  const [slotPickerFor, setSlotPickerFor] = useState<string | null>(null);
+  /** Slot được chọn trong hộp thoại. */
+  const [slotPickerValue, setSlotPickerValue] = useState("");
+
   /* ---------- Hộp thoại báo lỗi (tiếng Anh) ---------- */
   const [errorDialog, setErrorDialog] = useState<{
     view: GroupErrorView;
     details: GroupErrorDetails;
+    raw: string;
+  } | null>(null);
+
+  /* ---------- AI: gợi ý giờ làm việc (FR-25 — spec mục 3) ---------- */
+  /** Việc đang xét gợi ý giờ. */
+  const [timesForTask, setTimesForTask] = useState<MyGroupTaskDto | null>(null);
+  /** Kết quả AI trả về. */
+  const [timeSuggestions, setTimeSuggestions] =
+    useState<GroupSlotSuggestionsDto | null>(null);
+  const [timeSuggestLoading, setTimeSuggestLoading] = useState(false);
+  const [timeSuggestSaving, setTimeSuggestSaving] = useState(false);
+  const [timeAddedCount, setTimeAddedCount] = useState(0);
+  const [timeSkippedCount, setTimeSkippedCount] = useState(0);
+
+  /** Hộp thoại lỗi riêng cho AI (tiếng Anh). */
+  const [aiErrorDialog, setAiErrorDialog] = useState<{
+    view: GroupAiErrorView;
     raw: string;
   } | null>(null);
 
@@ -227,14 +274,57 @@ export function MyGroupTasksPage() {
     void loadChangeRequests();
   }, [loadChangeRequests]);
 
+  /* ---------- Slot nhóm của các việc được giao (mục 10 của cập nhật BE) ---------- */
+  /**
+   * Nạp slot của 1 danh sách việc.
+   *
+   * ⚠️ **Gộp** vào map hiện có (không thay thế) — vì hàm này còn được gọi
+   * lại cho 1 việc duy nhất sau khi tạo slot mới; nếu thay thế thì các
+   * việc khác mất slot khỏi UI.
+   */
+  const loadSlots = useCallback(async (taskIds: string[]) => {
+    const map: Record<string, GroupScheduleSlotDto[]> = {};
+    for (const id of taskIds) {
+      const res = await listGroupScheduleSlots(id);
+      if (res.ok) map[id] = res.data ?? [];
+    }
+    setSlotsByTask((prev) => ({ ...prev, ...map }));
+  }, []);
+
+  useEffect(() => {
+    if (tasks.length === 0) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- data-fetch pattern
+    void loadSlots(tasks.map((t) => t.taskId));
+  }, [tasks, loadSlots]);
+
+  /**
+   * Mục 10 (BE cập nhật): `GroupStatusChanged` → slot chưa bắt đầu của người
+   * cũ bị huỷ (việc giao lại / người rời nhóm) → nạp lại việc + slot.
+   */
+  const notif = useNotificationsContext();
+
+  useEffect(() => {
+    return notif.onSignal((signal) => {
+      if (!signalAffectsSchedule(signal)) return;
+      void load();
+      void loadSlots(tasks.map((t) => t.taskId));
+    });
+  }, [notif, load, loadSlots, tasks]);
+
   /* ---------- Bắt đầu phiên làm việc ---------- */
   async function handleStart(
     task: MyGroupTaskDto,
     subTaskId?: string | null,
+    scheduleSlotId?: string | null,
   ) {
     setStarting(true);
     const res = await startGroupFocus(task.taskId, {
       subTaskId: subTaskId ?? null,
+      /*
+       * Slot được chọn (mục 10 của cập nhật BE) — BE ghi nhận phiên này gắn
+       * với khung giờ nào và trả lại `scheduleSlotId`.
+       */
+      scheduleSlotId: scheduleSlotId ?? null,
     });
     setStarting(false);
     if (!res.ok) {
@@ -302,6 +392,106 @@ export function MyGroupTasksPage() {
       return;
     }
     setTimeData(res.data);
+  }
+
+  /* ---------- AI: gợi ý giờ làm việc (FR-25 — spec mục 3) ---------- */
+
+  /**
+   * Mở hộp thoại gợi ý giờ cho 1 việc nhóm được giao.
+   *
+   * AI **không** tốn lượt → gọi lại thoải mái.
+   */
+  async function handleOpenTimeSuggestions(task: MyGroupTaskDto) {
+    setTimesForTask(task);
+    setTimeSuggestions(null);
+    setTimeAddedCount(0);
+    setTimeSkippedCount(0);
+    setTimeSuggestLoading(true);
+
+    const res = await getGroupSlotSuggestions(task.taskId, { language: "en" });
+    setTimeSuggestLoading(false);
+
+    if (!res.ok) {
+      setAiErrorDialog({ view: toGroupAiErrorView(res), raw: res.error });
+      return;
+    }
+    setTimeSuggestions(res.data);
+  }
+
+  /** Gọi lại AI (không tốn lượt AI). */
+  async function handleRetryTimeSuggestions() {
+    if (!timesForTask) return;
+    setTimeSuggestLoading(true);
+    const res = await getGroupSlotSuggestions(timesForTask.taskId, {
+      language: "en",
+    });
+    setTimeSuggestLoading(false);
+    if (!res.ok) {
+      setAiErrorDialog({ view: toGroupAiErrorView(res), raw: res.error });
+      return;
+    }
+    setTimeSuggestions(res.data);
+  }
+
+  /**
+   * Lưu các khung giờ đã chọn vào lịch (Backend) — gọi TUẦN TỰ.
+   *
+   * `409 SLOT_OVERLAP` = lịch đã đổi kể từ lúc gợi ý → bỏ qua khung đó
+   * và xử lý tiếp các khung còn lại.
+   */
+  async function handleAddTimeSuggestions(slots: GroupSlotSuggestionDto[]) {
+    if (!timesForTask || slots.length === 0) return;
+    setTimeSuggestSaving(true);
+    setTimeAddedCount(0);
+    setTimeSkippedCount(0);
+
+    let added = 0;
+    let skipped = 0;
+
+    for (const s of slots) {
+      const res = await createGroupScheduleSlot(timesForTask.taskId, {
+        groupSubTaskId: s.subtask_id || null,
+        startTime: s.start,
+        endTime: s.end,
+        explanation: s.reason?.slice(0, 500) || null,
+        status: "Approved",
+      });
+      if (res.ok) {
+        added += 1;
+        continue;
+      }
+      if (res.status === 409) {
+        skipped += 1;
+        continue;
+      }
+      setTimeSuggestSaving(false);
+      setTimeAddedCount(added);
+      setTimeSkippedCount(skipped);
+      showApiError(res, "add this time slot");
+      return;
+    }
+
+    setTimeSuggestSaving(false);
+    setTimeAddedCount(added);
+    setTimeSkippedCount(skipped);
+
+    /* Nạp lại slot của việc để UI khớp server. */
+    await loadSlots([timesForTask.taskId]);
+    if (added > 0) {
+      toast.success(
+        added === 1
+          ? "1 slot added to your calendar"
+          : `${added} slots added to your calendar`,
+        skipped > 0
+          ? `${skipped} skipped because your calendar changed.`
+          : undefined,
+      );
+    } else if (skipped > 0) {
+      toast.info(
+        "Nothing was added",
+        "Your calendar changed since the suggestion — run \"Suggest times\" again.",
+      );
+    }
   }
 
   /* ---------- Gửi đề xuất đổi giờ ---------- */
@@ -423,9 +613,35 @@ export function MyGroupTasksPage() {
     return map;
   }, [subTasks]);
 
+  /* ---------- Mở hộp thoại chọn slot khi bấm Start ---------- */
+  function openSlotPicker(task: MyGroupTaskDto) {
+    setSlotPickerFor(task.taskId);
+    // Mặc định chọn slot sắp tới nhất → thao tác ít thao tác nhất.
+    const upcoming = (slotsByTask[task.taskId] ?? [])
+      .filter((s) => !isClosedSlotStatus(s.status))
+      .sort(
+        (a, b) =>
+          new Date(a.startTime).getTime() - new Date(b.startTime).getTime(),
+      );
+    setSlotPickerValue(upcoming[0]?.id ?? "");
+  }
+
   const openRequests = changeRequests.filter(isChangeRequestOpen);
 
   /* ---------- Render helpers ---------- */
+
+  /**
+   * Trang này chỉ liệt kê việc **được giao cho tôi** (Backend đã lọc) →
+   * chỉ cần chặn 2 trường hợp AI từ chối: việc đã xong, việc có giờ
+   * cố định (spec mục 3 → `409`).
+   */
+  function canSuggestTimesForMe(task: MyGroupTaskDto): boolean {
+    const tone = taskStatusLabel(task.status).tone;
+    if (tone === "done" || tone === "skipped") return false;
+    if (task.fixedStart && task.fixedEnd) return false;
+    return true;
+  }
+
   function renderTask(task: MyGroupTaskDto) {
     const subs = subsByTask[task.taskId] ?? [];
     const st = taskStatusLabel(task.status);
@@ -438,6 +654,10 @@ export function MyGroupTasksPage() {
       },
       null,
       user?.id ?? null,
+    );
+    /** Slot nhóm còn dùng được của việc này (chưa huỷ / chưa xong). */
+    const slotsForTask = (slotsByTask[task.taskId] ?? []).filter(
+      (s) => !isClosedSlotStatus(s.status),
     );
 
     return (
@@ -492,22 +712,47 @@ export function MyGroupTasksPage() {
                 {fmtElapsed(elapsed)}
               </span>
             ) : (
-              <button
-                type="button"
-                className="mgt-btn mgt-btn--primary mgt-btn--sm"
-                onClick={() => void handleStart(task)}
-                disabled={starting || !!current || !canStart}
-                title={
-                  canStart
-                    ? "Bấm giờ làm việc"
-                    : "Chỉ người được giao mới bấm giờ được"
-                }
-              >
-                <span className="material-symbols-outlined mgt-btn-icon">
-                  play_arrow
-                </span>
-                <span>Start</span>
-              </button>
+              <>
+                {/*
+                  Nút Start. Nếu việc có slot nhóm → mở hộp thoại chọn slot
+                  (mục 10 của cập nhật BE) để gửi `scheduleSlotId` khi Start.
+                */}
+                {slotsForTask.length > 0 ? (
+                  <button
+                    type="button"
+                    className="mgt-btn mgt-btn--primary mgt-btn--sm"
+                    onClick={() => openSlotPicker(task)}
+                    disabled={starting || !!current || !canStart}
+                    title={
+                      canStart
+                        ? "Start a focus session and pick a time slot"
+                        : "Only the assignee can start this task"
+                    }
+                  >
+                    <span className="material-symbols-outlined mgt-btn-icon">
+                      play_arrow
+                    </span>
+                    <span>Start</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="mgt-btn mgt-btn--primary mgt-btn--sm"
+                    onClick={() => void handleStart(task)}
+                    disabled={starting || !!current || !canStart}
+                    title={
+                      canStart
+                        ? "Start a focus session"
+                        : "Only the assignee can start this task"
+                    }
+                  >
+                    <span className="material-symbols-outlined mgt-btn-icon">
+                      play_arrow
+                    </span>
+                    <span>Start</span>
+                  </button>
+                )}
+              </>
             )}
             <button
               type="button"
@@ -529,6 +774,27 @@ export function MyGroupTasksPage() {
               </span>
               <span>Đổi giờ</span>
             </button>
+            {/*
+              Nút "Gợi ý giờ" (AI, FR-25 — spec mục 3).
+
+              Trang này chỉ liệt kê **việc được giao cho tôi** (hoặc việc có
+              việc con giao cho tôi) → ta chỉ cần chặn 2 trường hợp mà AI
+              từ chối: việc đã xong và việc đã có giờ cố định.
+            */}
+            {canSuggestTimesForMe(task) && (
+              <button
+                type="button"
+                className="mgt-btn mgt-btn--ghost mgt-btn--sm"
+                onClick={() => void handleOpenTimeSuggestions(task)}
+                disabled={timeSuggestLoading}
+                title="Let AI find free time in your calendar for this task"
+              >
+                <span className="material-symbols-outlined mgt-btn-icon">
+                  event_available
+                </span>
+                <span>Suggest times</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -823,6 +1089,135 @@ export function MyGroupTasksPage() {
         )}
       </div>
 
+      {/* ================= Hộp thoại chọn slot khi Start ================= */}
+      {slotPickerFor && (
+        <div
+          className="mgt-modal-backdrop"
+          onClick={() => setSlotPickerFor(null)}
+          role="presentation"
+        >
+          <div
+            className="mgt-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mgt-slot-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mgt-modal-head">
+              <h2 id="mgt-slot-title" className="mgt-modal-title">
+                <span
+                  className="material-symbols-outlined mgt-modal-title-icon"
+                  aria-hidden="true"
+                >
+                  event_available
+                </span>
+                Pick a time slot
+              </h2>
+              <button
+                type="button"
+                className="mgt-modal-close"
+                onClick={() => setSlotPickerFor(null)}
+                aria-label="Close"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <div className="mgt-modal-sub">
+              {tasks.find((t) => t.taskId === slotPickerFor)?.title ?? ""}
+            </div>
+
+            <div className="mgt-modal-body">
+              <p className="mgt-modal-text">
+                Choose which scheduled block this session belongs to. Your
+                working time is then tracked against that slot.
+              </p>
+
+              <ul className="mgt-slot-list">
+                {(slotsByTask[slotPickerFor] ?? [])
+                  .filter((s) => !isClosedSlotStatus(s.status))
+                  .sort(
+                    (a, b) =>
+                      new Date(a.startTime).getTime() -
+                      new Date(b.startTime).getTime(),
+                  )
+                  .map((s) => (
+                    <li key={s.id}>
+                      <label className="mgt-slot-option">
+                        <input
+                          type="radio"
+                          name="mgt-slot"
+                          value={s.id}
+                          checked={slotPickerValue === s.id}
+                          onChange={() => setSlotPickerValue(s.id)}
+                        />
+                        <span className="mgt-slot-option-body">
+                          <span className="mgt-slot-option-time">
+                            {fmtGroupDateTime(s.startTime)} →{" "}
+                            {fmtGroupDateTime(s.endTime)}
+                          </span>
+                          <span className="mgt-slot-option-meta">
+                            {s.status}
+                            {s.proposedMinutes > 0
+                              ? ` · ${fmtMinutes(s.proposedMinutes)}`
+                              : ""}
+                          </span>
+                        </span>
+                      </label>
+                    </li>
+                  ))}
+              </ul>
+
+              {/*
+                Không chọn slot nào → vẫn cho phép bấm giờ (BE cho phép phiên
+                không gắn slot).
+              */}
+              <label className="mgt-slot-option">
+                <input
+                  type="radio"
+                  name="mgt-slot"
+                  value=""
+                  checked={slotPickerValue === ""}
+                  onChange={() => setSlotPickerValue("")}
+                />
+                <span className="mgt-slot-option-body">
+                  <span className="mgt-slot-option-time">
+                    No specific slot
+                  </span>
+                  <span className="mgt-slot-option-meta">
+                    Just track the time I spend on this task
+                  </span>
+                </span>
+              </label>
+            </div>
+
+            <div className="mgt-form-actions">
+              <button
+                type="button"
+                className="mgt-btn mgt-btn--ghost"
+                onClick={() => setSlotPickerFor(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="mgt-btn mgt-btn--primary"
+                disabled={starting}
+                onClick={() => {
+                  const taskId = slotPickerFor;
+                  const slotId = slotPickerValue || null;
+                  setSlotPickerFor(null);
+                  const task = tasks.find((t) => t.taskId === taskId);
+                  if (task) void handleStart(task, null, slotId);
+                }}
+              >
+                {starting ? "Starting…" : "Start session"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ================= Modal đề xuất đổi giờ ================= */}
       {crOpen && crTask && (
         <div
@@ -1037,6 +1432,33 @@ export function MyGroupTasksPage() {
         details={errorDialog?.details ?? null}
         rawMessage={errorDialog?.raw || undefined}
         onClose={() => setErrorDialog(null)}
+      />
+
+      {/* ===== Hộp thoại gợi ý giờ (AI, FR-25) ===== */}
+      {timesForTask && (
+        <GroupSlotSuggestionsModal
+          taskTitle={timesForTask.title}
+          data={timeSuggestions}
+          loading={timeSuggestLoading}
+          saving={timeSuggestSaving}
+          addedCount={timeAddedCount}
+          skippedCount={timeSkippedCount}
+          onClose={() => {
+            setTimesForTask(null);
+            setTimeSuggestions(null);
+            setTimeAddedCount(0);
+            setTimeSkippedCount(0);
+          }}
+          onAddToCalendar={(slots) => void handleAddTimeSuggestions(slots)}
+          onRetry={() => void handleRetryTimeSuggestions()}
+        />
+      )}
+
+      {/* ===== Hộp thoại lỗi AI (tiếng Anh) ===== */}
+      <GroupErrorDialog
+        error={aiErrorDialog?.view ?? null}
+        rawMessage={aiErrorDialog?.raw || undefined}
+        onClose={() => setAiErrorDialog(null)}
       />
 
       <CenterToasts toasts={toasts} onDismiss={toast.dismiss} />

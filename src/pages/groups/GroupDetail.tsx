@@ -8,18 +8,26 @@
 import { Link, useParams } from "react-router-dom";
 import { CenterToasts, useCenterToast } from "../../components/Toast";
 import { useAuth } from "../../auth/AuthContext";
+import { useNotificationsContext } from "../../components/focus/notifications-context-state";
+import { signalAffectsSchedule } from "../../hooks/useNotifications";
 import type { ApiErr } from "../../lib/api-client";
 import { listDomains } from "../../lib/api-client";
 import { GroupErrorDialog } from "./GroupErrorDialog";
 import { GroupInviteModal } from "./GroupInviteModal";
 import { GroupAiChatTab } from "./GroupAiChatTab";
+import { GroupScheduleSlots } from "./GroupScheduleSlots";
+import { GroupScheduleBoard } from "./GroupScheduleBoard";
 import {
   GroupAssigneeSuggestionsModal,
   type GroupAiMember,
 } from "./GroupAssigneeSuggestionsModal";
+import { GroupSlotSuggestionsModal } from "./GroupSlotSuggestionsModal";
 import {
   getGroupAssigneeSuggestions,
+  getGroupSlotSuggestions,
   type GroupAssigneeSuggestionsDto,
+  type GroupSlotSuggestionDto,
+  type GroupSlotSuggestionsDto,
 } from "../../lib/group-ai-api";
 import {
   toGroupAiErrorView,
@@ -36,6 +44,7 @@ import {
   archiveGroup,
   createGroupComment,
   createGroupMilestone,
+  createGroupScheduleSlot,
   createGroupSubTask,
   createGroupTask,
   deleteGroupComment,
@@ -78,16 +87,20 @@ import {
   busySourceLabel,
   canChangeTaskStatus,
   canManageTasks,
+  canSuggestTimes,
   fmtGroupDate,
   fmtGroupDateTime,
   fmtMinutes,
   fmtRelativeTime,
   isLeader,
   milestoneStatusLabel,
+  memberSignalCounters,
+  memberSignalTotal,
   normalizeRole,
   priorityLabel,
   priorityTone,
   roleLabel,
+  signalLabel,
   taskStatusLabel,
   GROUP_MILESTONE_STATUSES,
   GROUP_PRIORITIES,
@@ -118,7 +131,13 @@ import "./group-detail.css";
  * =========================================================== */
 
 /** Tab của trang. */
-type TabKey = "tasks" | "milestones" | "members" | "activity" | "ai";
+type TabKey =
+  | "tasks"
+  | "schedule"
+  | "milestones"
+  | "members"
+  | "activity"
+  | "ai";
 
 export function GroupDetailPage() {
   const { groupId = "" } = useParams();
@@ -236,6 +255,21 @@ export function GroupDetailPage() {
   /** Danh sách loại công việc lấy từ `GET /api/domains`. */
   const [domains, setDomains] = useState<{ id: string; name: string }[]>([]);
 
+  /* ---------- AI: gợi ý giờ làm việc (FR-25, spec mục 3) ---------- */
+  /** Việc nhóm đang xét gợi ý giờ. */
+  const [timesForTask, setTimesForTask] = useState<GroupTaskDto | null>(null);
+  /** Kết quả AI trả về (khung giờ + cảnh báo). */
+  const [timeSuggestions, setTimeSuggestions] =
+    useState<GroupSlotSuggestionsDto | null>(null);
+  /** Đang gọi AI. */
+  const [timeSuggestLoading, setTimeSuggestLoading] = useState(false);
+  /** Đang tạo slot ở Backend. */
+  const [timeSuggestSaving, setTimeSuggestSaving] = useState(false);
+  /** Số slot đã tạo thành công (để báo tóm tắt). */
+  const [timeAddedCount, setTimeAddedCount] = useState(0);
+  /** Số khung bị bỏ qua vì chồng lịch (409 SLOT_OVERLAP). */
+  const [timeSkippedCount, setTimeSkippedCount] = useState(0);
+
   /** Hộp thoại lỗi riêng cho AI (tiếng Anh). */
   const [aiErrorDialog, setAiErrorDialog] = useState<{
     view: GroupAiErrorView;
@@ -332,6 +366,21 @@ export function GroupDetailPage() {
     void loadAll();
   }, [loadAll]);
 
+  /**
+   * Mục 10 (BE cập nhật): việc được giao lại / người làm rời nhóm → slot chưa
+   * bắt đầu bị huỷ + server phát `GroupStatusChanged`.
+   *
+   * → Nạp lại dữ liệu nhóm (tiến độ, việc con, slot) để UI khớp server.
+   */
+  const notif = useNotificationsContext();
+
+  useEffect(() => {
+    return notif.onSignal((signal) => {
+      if (!signalAffectsSchedule(signal)) return;
+      void loadAll();
+    });
+  }, [notif, loadAll]);
+
   const leader = isLeader(group);
   const canManage = canManageTasks(group);
   const archived = group?.status === "Archived";
@@ -351,6 +400,38 @@ export function GroupDetailPage() {
     });
   }, [tasks, statusFilter, assigneeFilter]);
 
+  /* ---------- Tên thành viên: id → fullName ---------- */
+  /** Dùng cho lịch nhóm (hiện "ai đang làm việc nào"). */
+  const memberNames = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const m of members) map[m.userId] = m.fullName;
+    return map;
+  }, [members]);
+
+  /* ---------- Tín hiệu tiến độ (mục 10 của cập nhật BE) ---------- */
+  /**
+   * `signals` từ BE — chuẩn hoá để luôn có đủ 4 loại, sắp xếp theo mức độ
+   * nghiêm trọng (quá hạn → nguy cơ trễ → chưa có lịch → đứng yên).
+   *
+   * BE có thể chưa trả `signals` (bản cũ) → mảng rỗng → ẩn hẳn khối.
+   */
+  const groupSignals = useMemo(() => {
+    const raw = progress?.signals ?? [];
+    if (!Array.isArray(raw) || raw.length === 0) return [];
+    const order = ["overdue", "atrisk", "unscheduled", "stale"];
+    return [...raw]
+      .filter((s) => s && typeof s.type === "string")
+      .map((s) => ({
+        ...s,
+        count: typeof s.count === "number" ? s.count : 0,
+      }))
+      .sort((a, b) => {
+        // BE có thể gửi "Overdue" hoặc "overdue" → so sánh không phân biệt hoa thường.
+        const ai = order.indexOf(a.type.trim().toLowerCase());
+        const bi = order.indexOf(b.type.trim().toLowerCase());
+        return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+      });
+  }, [progress]);
   /* ---------- Mở 1 việc → nạp việc con + bình luận ---------- */
   const openTask = useCallback(async (taskId: string) => {
     setOpenTaskId((prev) => (prev === taskId ? null : taskId));
@@ -601,6 +682,120 @@ export function GroupDetailPage() {
       toast.success("Task assigned");
     },
     [suggestForTask, showAiError, toast],
+  );
+
+  /* ---------- AI: gợi ý giờ làm việc (FR-25, spec mục 3) ---------- */
+
+  /**
+   * Mở hộp thoại gợi ý giờ cho 1 việc nhóm.
+   *
+   * Ai dùng: **người được giao** việc (Leader hoặc Member) — người khác bị
+   * `403` nên ta ẩn nút (xem `canSuggestTimes`).
+   *
+   * AI **không** tốn lượt → gọi lại thoải mái.
+   */
+  const handleOpenTimeSuggestions = useCallback(
+    async (task: GroupTaskDto) => {
+      setTimesForTask(task);
+      setTimeSuggestions(null);
+      setTimeAddedCount(0);
+      setTimeSkippedCount(0);
+      setTimeSuggestLoading(true);
+
+      const res = await getGroupSlotSuggestions(task.id, { language: "en" });
+      setTimeSuggestLoading(false);
+
+      if (!res.ok) {
+        showAiError(toGroupAiErrorView(res), res.error);
+        return;
+      }
+      setTimeSuggestions(res.data);
+    },
+    [showAiError],
+  );
+
+  /** Gọi lại AI (không tốn lượt AI). */
+  const handleRetryTimeSuggestions = useCallback(async () => {
+    if (!timesForTask) return;
+    setTimeSuggestLoading(true);
+    const res = await getGroupSlotSuggestions(timesForTask.id, {
+      language: "en",
+    });
+    setTimeSuggestLoading(false);
+    if (!res.ok) {
+      showAiError(toGroupAiErrorView(res), res.error);
+      return;
+    }
+    setTimeSuggestions(res.data);
+  }, [timesForTask, showAiError]);
+
+  /**
+   * Lưu các khung giờ đã chọn vào lịch (Backend).
+   *
+   * Gọi **TUẦN TỰ** cho từng khung (spec mục 3) — tránh chồng giờ với
+   * chính các slot vừa tạo.
+   *
+   * `409 SLOT_OVERLAP` = lịch đã thay đổi kể từ lúc gợi ý → **bỏ qua**
+   * khung đó (không dừng cả lô) và báo người dùng gọi lại gợi ý cho phần
+   * còn thiếu.
+   */
+  const handleAddTimeSuggestions = useCallback(
+    async (slots: GroupSlotSuggestionDto[]) => {
+      if (!timesForTask || slots.length === 0) return;
+      setTimeSuggestSaving(true);
+      setTimeAddedCount(0);
+      setTimeSkippedCount(0);
+
+      let added = 0;
+      let skipped = 0;
+
+      for (const s of slots) {
+        const res = await createGroupScheduleSlot(timesForTask.id, {
+          groupSubTaskId: s.subtask_id || null,
+          startTime: s.start,
+          endTime: s.end,
+          explanation: s.reason?.slice(0, 500) || null,
+          status: "Approved",
+        });
+        if (res.ok) {
+          added += 1;
+          continue;
+        }
+        /* 409 SLOT_OVERLAP → bỏ qua khung này, xử lý khung còn lại. */
+        if (res.status === 409) {
+          skipped += 1;
+          continue;
+        }
+        /* Lỗi khác → dừng, báo rõ. */
+        setTimeSuggestSaving(false);
+        setTimeAddedCount(added);
+        setTimeSkippedCount(skipped);
+        showApiError(res, "add this time slot");
+        return;
+      }
+
+      setTimeSuggestSaving(false);
+      setTimeAddedCount(added);
+      setTimeSkippedCount(skipped);
+
+      /* Nạp lại slot của việc để UI khớp server. */
+      void openTask(timesForTask.id);
+      if (added > 0) {
+        toast.success(
+          added === 1 ? "1 slot added to your calendar" : `${added} slots added to your calendar`,
+          skipped > 0
+            ? `${skipped} skipped because your calendar changed.`
+            : undefined,
+        );
+      }
+      if (skipped > 0 && added === 0) {
+        toast.info(
+          "Nothing was added",
+          "Your calendar changed since the suggestion — run \"Suggest times\" again.",
+        );
+      }
+    },
+    [timesForTask, showApiError, openTask, toast],
   );
 
   /** Danh sách thành viên dạng rút gọn cho modal AI. */
@@ -1033,6 +1228,61 @@ export function GroupDetailPage() {
                 <span className="gdt-stat-label">estimated</span>
               </span>
             </div>
+
+            {/*
+              Tín hiệu tiến độ (mục 10 của cập nhật BE): 4 loại rủi ro —
+              quá hạn, chưa có lịch, nguy cơ trễ, đứng yên.
+              BE có thể chưa trả `signals` → ẩn hẳn nếu rỗng.
+            */}
+            {groupSignals.length > 0 && (
+              <div className="gdt-signals">
+                <div className="gdt-signals-head">
+                  <span className="gdt-signals-eyebrow">Progress signals</span>
+                  <span className="gdt-signals-hint">
+                    Where this group needs attention right now
+                  </span>
+                </div>
+                <ul className="gdt-signals-grid">
+                  {groupSignals.map((sig) => {
+                    const meta = signalLabel(sig.type);
+                    return (
+                      <li
+                        key={sig.type}
+                        className="gdt-signal"
+                        data-tone={meta.tone}
+                        title={meta.hint}
+                      >
+                        <span className="gdt-signal-icon">
+                          <span
+                            className="material-symbols-outlined"
+                            aria-hidden="true"
+                          >
+                            {meta.icon}
+                          </span>
+                        </span>
+                        <span className="gdt-signal-body">
+                          <span className="gdt-signal-value">
+                            {sig.count}
+                          </span>
+                          <span className="gdt-signal-label">{meta.label}</span>
+                        </span>
+                        {sig.taskTitles && sig.taskTitles.length > 0 && (
+                          <span className="gdt-signal-tasks">
+                            {sig.taskTitles.slice(0, 2).join(" · ")}
+                            {sig.taskTitles.length > 2
+                              ? ` +${sig.taskTitles.length - 2} more`
+                              : ""}
+                          </span>
+                        )}
+                        {sig.message && (
+                          <span className="gdt-signal-note">{sig.message}</span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
           </section>
         )}
 
@@ -1041,6 +1291,12 @@ export function GroupDetailPage() {
           {(
             [
               { key: "tasks", label: "Tasks", icon: "checklist", count: tasks.length },
+              {
+                key: "schedule",
+                label: "Schedule",
+                icon: "calendar_month",
+                count: 0,
+              },
               {
                 key: "milestones",
                 label: "Milestones",
@@ -1158,6 +1414,7 @@ export function GroupDetailPage() {
                   return (
                     <li
                       key={t.id}
+                      id={`gdt-task-${t.id}`}
                       className={`gdt-task gdt-task--${st.tone}`}
                     >
                       <div className="gdt-task-main">
@@ -1329,6 +1586,32 @@ export function GroupDetailPage() {
                               </button>
                             )}
 
+                          {/*
+                            Nút "Gợi ý giờ" bằng AI (FR-25 — spec mục 3).
+                            AI tìm giờ trống trong lịch của MÌNH cho phần
+                            việc được giao. Không tốn lượt AI.
+                            Chỉ hiện với người được giao (Leader hoặc Member) —
+                            người khác gọi API sẽ bị 403.
+                          */}
+                          {!archived &&
+                            canSuggestTimes(t, subs, user?.id ?? null) && (
+                              <button
+                                type="button"
+                                className="gai-timeslot-btn"
+                                onClick={() => void handleOpenTimeSuggestions(t)}
+                                disabled={busy}
+                                title="Ask AI to find free time for this task"
+                              >
+                                <span
+                                  className="material-symbols-outlined"
+                                  aria-hidden="true"
+                                >
+                                  event_available
+                                </span>
+                                Suggest times
+                              </button>
+                            )}
+
                           {/* Dấu cảnh báo bận / quá tải bên cạnh người nhận. */}
                           {availability[t.id] && (
                             <span
@@ -1380,9 +1663,30 @@ export function GroupDetailPage() {
                         </div>
                       </div>
 
-                      {/* ----- Chi tiết: việc con + bình luận ----- */}
+                      {/* ----- Chi tiết: việc con + lịch + bình luận ----- */}
                       {expanded && (
                         <div className="gdt-task-detail">
+                          {/*
+                            Khung giờ của việc nhóm (mục 10 của cập nhật BE).
+                            Tạo / xem / hủy slot + bắt 409 SLOT_OVERLAP.
+                          */}
+                          <div className="gdt-sub">
+                            <GroupScheduleSlots
+                              groupTaskId={t.id}
+                              taskTitle={t.title}
+                              groupName={group?.name ?? null}
+                              subTasks={subs.map((s) => ({
+                                id: s.id,
+                                title: s.title,
+                              }))}
+                              assigneeId={t.assigneeId ?? null}
+                              currentUserId={user?.id ?? null}
+                              archived={archived}
+                              canManage={canManage}
+                              onError={(payload) => setErrorDialog(payload)}
+                            />
+                          </div>
+
                           {/* Việc con */}
                           <div className="gdt-sub">
                             <div className="gdt-sub-head">
@@ -1577,6 +1881,49 @@ export function GroupDetailPage() {
                 })}
               </ul>
             )}
+          </section>
+        )}
+
+        {/* ================= TAB: SCHEDULE ================= */}
+        {/*
+          Lịch tuần của nhóm — ai làm việc gì, khung giờ nào, tiến độ tới
+          đâu. Dùng chung slot với lịch cá nhân (`/schedule`) nên mọi người
+          thấy cùng một bức tranh.
+        */}
+        {tab === "schedule" && (
+          <section className="gdt-panel">
+            <div className="gdt-section-head">
+              <div className="gdt-section-head-text">
+                <span className="gdt-section-eyebrow">Time plan</span>
+                <h2 className="gdt-section-title">Schedule</h2>
+              </div>
+              <div className="gdt-toolbar">
+                <span className="gdt-toolbar-count">
+                  {tasks.length} tasks · {members.length} members
+                </span>
+              </div>
+            </div>
+
+            <GroupScheduleBoard
+              groupId={groupId}
+              tasks={tasks}
+              groupName={group?.name ?? null}
+              memberNames={memberNames}
+              archived={archived}
+              onOpenTask={(taskId) => {
+                // Bấm khối lịch → nhảy sang tab Tasks và mở đúng việc đó.
+                setTab("tasks");
+                void openTask(taskId);
+                setTimeout(() => {
+                  document
+                    .getElementById(`gdt-task-${taskId}`)
+                    ?.scrollIntoView({
+                      behavior: "smooth",
+                      block: "center",
+                    });
+                }, 60);
+              }}
+            />
           </section>
         )}
 
@@ -1827,6 +2174,34 @@ export function GroupDetailPage() {
                           </span>
                           <span>{fmtMinutes(mp.trackedMinutes)}</span>
                         </div>
+                        {/*
+                          Bộ đếm tín hiệu tiến độ mỗi thành viên
+                          (mục 10 của cập nhật BE): quá hạn, chưa có lịch,
+                          nguy cơ trễ, đứng yên.
+                          BE có thể chưa trả → ẩn hẳn nếu tất cả đều 0.
+                        */}
+                        {memberSignalTotal(mp) > 0 && (
+                          <div className="gdt-mem-signals">
+                            {memberSignalCounters(mp).map((c) => (
+                              <span
+                                key={c.key}
+                                className="gdt-mem-signal"
+                                data-tone={c.tone}
+                                title={c.hint}
+                              >
+                                <span className="material-symbols-outlined">
+                                  {c.icon}
+                                </span>
+                                <span className="gdt-mem-signal-value">
+                                  {c.value}
+                                </span>
+                                <span className="gdt-mem-signal-label">
+                                  {c.label}
+                                </span>
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -2640,6 +3015,26 @@ export function GroupDetailPage() {
           domains={domains}
           domainId={suggestDomainId}
           onDomainChange={(id) => void handleSuggestDomainChange(id)}
+        />
+      )}
+
+      {/* ============ Hộp thoại gợi ý giờ (AI, FR-25) ============ */}
+      {timesForTask && (
+        <GroupSlotSuggestionsModal
+          taskTitle={timesForTask.title}
+          data={timeSuggestions}
+          loading={timeSuggestLoading}
+          saving={timeSuggestSaving}
+          addedCount={timeAddedCount}
+          skippedCount={timeSkippedCount}
+          onClose={() => {
+            setTimesForTask(null);
+            setTimeSuggestions(null);
+            setTimeAddedCount(0);
+            setTimeSkippedCount(0);
+          }}
+          onAddToCalendar={(slots) => void handleAddTimeSuggestions(slots)}
+          onRetry={() => void handleRetryTimeSuggestions()}
         />
       )}
 

@@ -465,6 +465,25 @@
   gap: 12px;
   padding: 10px 0;
 }
+
+/* Dòng lịch có thể bấm (slot việc nhóm → mở trang nhóm). */
+.brf-tl-link {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+  border-radius: 6px;
+  transition: background-color 160ms ease;
+}
+.brf-tl-link:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+.brf-tl-link:hover .brf-tl-title {
+  color: var(--brf-primary);
+}
 .brf-tl-time {
   flex-shrink: 0;
   width: 5.5rem;
@@ -501,6 +520,8 @@
 .brf-tl-dot--google { background: #4ea8ff; }
 .brf-tl-dot--fixed { background: #c0a8ff; }
 .brf-tl-dot--slot { background: var(--brf-primary); }
+/* Slot của việc nhóm (AI PR #58) — màu riêng, dễ nhận ra là việc nhóm. */
+.brf-tl-dot--group { background: #f0a35e; }
 .brf-tl-body {
   display: flex;
   flex-direction: column;

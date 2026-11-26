@@ -1611,6 +1611,163 @@
   flex-wrap: wrap;
 }
 
+/* ===========================================================
+ * GỢI Ý GIỜ LÀM VIỆC NHÓM (FR-25)
+ * ---------------------------------------------------------------
+ * Hộp thoại gợi ý khung giờ — dùng chung token với tab Chat AI.
+ * =========================================================== */
+
+.gai-hint-line {
+  margin: 0;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--body, #bdbdbd);
+}
+
+/* Danh sách cảnh báo */
+.gai-warn-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gai-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 13px;
+  border: 1px solid rgba(227, 179, 65, 0.3);
+  border-radius: 6px;
+  background: rgba(227, 179, 65, 0.07);
+  font-size: 13px;
+  line-height: 19px;
+  color: #e3b341;
+}
+.gai-warn .material-symbols-outlined {
+  flex-shrink: 0;
+  font-size: 17px;
+  margin-top: 1px;
+}
+
+/* Danh sách khung giờ */
+.gai-time-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gai-time-item {
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 6px;
+  background: var(--canvas-soft, #1a1a1a);
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+.gai-time-item:hover {
+  border-color: #4d4845;
+  background: #1f1f1f;
+}
+
+.gai-time-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 12px 14px;
+  cursor: pointer;
+}
+.gai-time-option input[type="checkbox"] {
+  margin-top: 3px;
+  flex-shrink: 0;
+  accent-color: var(--primary, #00d992);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.gai-time-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.gai-time-range {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink, #f2f2f2);
+}
+
+.gai-time-dur {
+  padding: 1px 8px;
+  border-radius: 9999px;
+  border: 1px solid var(--hairline, #3d3a39);
+  background: var(--canvas, #101010);
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--mute, #8b949e);
+}
+
+.gai-time-title {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--body, #bdbdbd);
+  overflow-wrap: anywhere;
+}
+
+.gai-time-reason {
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--mute, #8b949e);
+  overflow-wrap: anywhere;
+}
+
+/* ===========================================================
+ * Nút gợi ý giờ trên dòng việc
+ * =========================================================== */
+
+.gai-timeslot-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 9999px;
+  background: rgba(148, 163, 184, 0.08);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 16px;
+  color: #b9c2cf;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+.gai-timeslot-btn:hover:not(:disabled) {
+  border-color: var(--primary, #00d992);
+  background: rgba(0, 217, 146, 0.1);
+  color: var(--primary, #00d992);
+}
+.gai-timeslot-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.gai-timeslot-btn .material-symbols-outlined {
+  font-size: 14px;
+}
+
 /* ---------- Nút gợi ý trên dòng việc ---------- */
 
 .gai-suggest-btn {

@@ -1,0 +1,473 @@
+/* ===========================================================
+ * Lịch tuần của nhóm — <GroupScheduleBoard>.
+ * ===========================================================
+ * Theo DESIGN.md: canvas #101010 · surface #1a1a1a · hairline #3d3a39
+ * accent #00d992 · ink #f2f2f2 · body #bdbdbd · mute #8b949e
+ * Card radius 8px · button radius 6px · pill 9999px
+ * Class prefix: `.gsb-*`
+ * =========================================================== */
+
+.gsb {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ---------- Header ---------- */
+
+.gsb-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.gsb-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* Eyebrow mono-cap — dấu hiệu của brand Voltagent. */
+.gsb-eyebrow {
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--primary, #00d992);
+}
+
+.gsb-title {
+  margin: 0;
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 650;
+  letter-spacing: -0.3px;
+  color: var(--ink, #f2f2f2);
+  overflow-wrap: anywhere;
+}
+
+.gsb-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ---------- Thống kê tuần ---------- */
+
+.gsb-stats {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 8px;
+  background: var(--canvas, #101010);
+}
+
+.gsb-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 14px;
+  border-left: 1px solid var(--hairline, #3d3a39);
+}
+.gsb-stat:first-child {
+  padding-left: 0;
+  border-left: none;
+}
+
+.gsb-stat-value {
+  font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 550;
+  letter-spacing: -0.3px;
+  color: var(--ink, #f2f2f2);
+}
+
+.gsb-stat-label {
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute, #8b949e);
+}
+
+/* Số đã xong là điểm nhấn (xanh). */
+.gsb-stat--accent .gsb-stat-value {
+  color: var(--primary, #00d992);
+}
+.gsb-stat--danger .gsb-stat-value {
+  color: #ff6b6b;
+}
+
+/* ---------- Bảng 7 ngày ---------- */
+
+.gsb-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.gsb-day {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 8px;
+  background: var(--canvas, #101010);
+  overflow: hidden;
+}
+
+/* Hôm nay → viền primary 2px (dấu hiệu "active" của brand). */
+.gsb-day--today {
+  border-color: var(--primary, #00d992);
+}
+
+.gsb-day-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--hairline, #3d3a39);
+  background: var(--canvas-soft, #1a1a1a);
+}
+
+.gsb-day-name {
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute, #8b949e);
+}
+
+.gsb-day-date {
+  font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
+  font-size: 15px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--ink, #f2f2f2);
+}
+
+.gsb-day--today .gsb-day-date {
+  color: var(--primary, #00d992);
+}
+
+/* Badge số khối trong ngày. */
+.gsb-day-count {
+  margin-left: auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9999px;
+  border: 1px solid var(--hairline, #3d3a39);
+  background: rgba(0, 217, 146, 0.1);
+  color: var(--primary, #00d992);
+  font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gsb-day-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  min-height: 72px;
+}
+
+.gsb-day-empty {
+  font-size: 12px;
+  color: var(--mute, #8b949e);
+  opacity: 0.4;
+  text-align: center;
+  padding: 8px 0;
+}
+
+/* ---------- Khối lịch ---------- */
+
+.gsb-block {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-left-width: 3px;
+  border-radius: 6px;
+  background: var(--canvas-soft, #1a1a1a);
+  min-width: 0;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 160ms ease;
+}
+.gsb-block:hover {
+  border-color: rgba(0, 217, 146, 0.45);
+}
+.gsb-block:hover.gsb-block--done,
+.gsb-block:hover.gsb-block--active {
+  border-color: rgba(0, 217, 146, 0.45);
+}
+
+.gsb-block-title {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--ink, #f2f2f2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gsb-block-meta {
+  font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--body, #bdbdbd);
+}
+
+.gsb-block-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.gsb-block-owner {
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--mute, #8b949e);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Pill trạng thái — theo `button-pill-tag` của DESIGN.md. */
+.gsb-block-status {
+  padding: 1px 7px;
+  border-radius: 9999px;
+  border: 1px solid var(--hairline, #3d3a39);
+  font-size: 10px;
+  line-height: 14px;
+  font-weight: 600;
+  color: var(--mute, #8b949e);
+  white-space: nowrap;
+}
+.gsb-block-status--done {
+  border-color: rgba(0, 217, 146, 0.4);
+  color: var(--primary, #00d992);
+}
+.gsb-block-status--active {
+  border-color: rgba(0, 217, 146, 0.4);
+  color: var(--primary-soft, #2fd6a1);
+}
+.gsb-block-status--todo {
+  border-color: rgba(189, 189, 189, 0.35);
+  color: var(--body, #bdbdbd);
+}
+.gsb-block-status--skipped {
+  border-color: rgba(255, 107, 107, 0.4);
+  color: #ff6b6b;
+}
+
+/* Tone viền trái theo trạng thái. */
+.gsb-block--done {
+  border-left-color: var(--primary, #00d992);
+}
+.gsb-block--active {
+  border-left-color: var(--primary-soft, #2fd6a1);
+}
+.gsb-block--todo {
+  border-left-color: var(--body, #bdbdbd);
+}
+.gsb-block--skipped {
+  border-left-color: rgba(255, 107, 107, 0.55);
+}
+
+/* Giờ cố định (họp, hẹn) → viền đứt để phân biệt với slot thật. */
+.gsb-block--fixed {
+  border-left-style: dashed;
+}
+
+/* Slot đã đóng → làm mờ. */
+.gsb-block--closed {
+  opacity: 0.55;
+}
+
+/* ---------- Empty state ---------- */
+
+.gsb-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 40px 24px;
+  border: 1px dashed var(--hairline, #3d3a39);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.gsb-empty-icon {
+  font-size: 26px;
+  color: var(--mute, #8b949e);
+  opacity: 0.7;
+}
+
+.gsb-empty-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink, #f2f2f2);
+}
+
+.gsb-empty-text {
+  margin: 0;
+  max-width: 420px;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--mute, #8b949e);
+}
+
+/* ---------- Tiến độ theo thành viên ---------- */
+
+.gsb-members {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline, #3d3a39);
+}
+
+.gsb-member-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gsb-member {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.2fr) auto minmax(120px, 2fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 8px;
+  background: var(--canvas, #101010);
+}
+
+.gsb-member-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink, #f2f2f2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gsb-member-blocks {
+  font-size: 11px;
+  color: var(--mute, #8b949e);
+  white-space: nowrap;
+}
+
+/* Thanh tiến độ — hairline track + primary fill. */
+.gsb-member-bar {
+  display: block;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--canvas-soft, #1a1a1a);
+  overflow: hidden;
+}
+
+.gsb-member-fill {
+  display: block;
+  height: 100%;
+  border-radius: 9999px;
+  background: linear-gradient(
+    90deg,
+    var(--primary-deep, #10b981) 0%,
+    var(--primary, #00d992) 100%
+  );
+  transition: width 320ms ease;
+}
+
+.gsb-member-time {
+  font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--body, #bdbdbd);
+  white-space: nowrap;
+}
+
+/* ---------- Slot đã huỷ ---------- */
+
+.gsb-cancelled {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline, #3d3a39);
+}
+
+.gsb-cancelled-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gsb-cancelled-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 7px 10px;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 6px;
+  opacity: 0.7;
+}
+
+.gsb-cancelled-title {
+  font-size: 12px;
+  color: var(--body, #bdbdbd);
+  text-decoration: line-through;
+}
+
+.gsb-cancelled-meta {
+  font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--mute, #8b949e);
+}
+
+/* ---------- Responsive: co lại về 2 cột trên màn hình hẹp ---------- */
+
+@media (max-width: 1100px) {
+  .gsb-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .gsb-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

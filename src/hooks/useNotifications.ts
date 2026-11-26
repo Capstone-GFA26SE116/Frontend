@@ -36,6 +36,42 @@ const API_BASE = import.meta.env.VITE_API_URL as string;
 /** Đường dẫn hub (BE đã bật AllowCredentials + AllowedOrigins cho FE). */
 const HUB_URL = `${API_BASE}/hubs/notifications`;
 
+/**
+ * Các `type` thông báo của NHÓM (spec GROUP_FE.md mục 6 + mục 10).
+ *
+ * Mục 10 của cập nhật BE: khi việc được giao lại hoặc người làm rời nhóm →
+ * slot chưa bắt đầu của người cũ bị huỷ + phát `GroupStatusChanged` →
+ * FE làm mới lịch.
+ */
+export const GROUP_NOTIFICATION_TYPES = new Set([
+  "GroupInvited",
+  "GroupAssigned",
+  "GroupStatusChanged",
+  "GroupMention",
+  "GroupChangeRequested",
+  "GroupChangeDecided",
+]);
+
+/**
+ * Tín hiệu này có làm thay đổi **lịch** không?
+ *
+ * → Trả `true` cho `GroupStatusChanged` (slot nhóm bị huỷ) và các biến thể
+ * giao lại / rời nhóm.
+ */
+export function signalAffectsSchedule(signal: {
+  rawType?: string;
+}): boolean {
+  const t = (signal.rawType ?? "").trim();
+  if (!t) return false;
+  if (GROUP_NOTIFICATION_TYPES.has(t)) return true;
+  // BE có thể gửi biến thể riêng cho việc giao lại / rời nhóm.
+  return (
+    t.includes("GroupStatusChanged") ||
+    t.includes("GroupReassigned") ||
+    t.includes("GroupMemberLeft")
+  );
+}
+
 /** Kiểu trạng thái kết nối SignalR. */
 export type SignalRStatus =
   | "disconnected"
@@ -50,6 +86,17 @@ export interface NotificationSignal {
   actionType: FocusActionType;
   /** Id thông báo (có thể dùng để đánh dấu đã đọc). */
   notificationId: string;
+  /**
+   * `type` **gốc** do server gửi (chưa chuẩn hoá).
+   *
+   * Cần cho thông báo của NHÓM: `GroupStatusChanged`, `GroupAssigned`,
+   * `GroupMention`… — không phải action type của nhánh cá nhân nên
+   * `actionType` sẽ là `"Unknown"`.
+   *
+   * Mục 10 của cập nhật BE: khi nhận `GroupStatusChanged` (việc được giao lại
+   * / người rời nhóm → slot chưa bắt đầu bị huỷ) → FE làm mới lịch.
+   */
+  rawType: string;
 }
 
 export interface UseNotificationsResult {
@@ -167,8 +214,16 @@ export function useNotifications(enabled: boolean = true): UseNotificationsResul
   });
 
   const alive = useRef(true);
-  /** Callback xử lý tín hiệu realtime. */
-  const signalHandlerRef = useRef<((s: NotificationSignal) => void) | null>(null);
+  /**
+   * Các callback xử lý tín hiệu realtime.
+   *
+   * Dùng `Set` thay vì một biến đơn để NHIỀU màn hình cùng nghe được
+   * (ví dụ `FocusManager` + trang `/schedule` cùng cần phản ứng khi nhận
+   * `GroupStatusChanged` → làm mới lịch).
+   */
+  const signalHandlersRef = useRef<Set<(s: NotificationSignal) => void>>(
+    new Set(),
+  );
 
   useEffect(() => {
     alive.current = true;
@@ -265,9 +320,16 @@ export function useNotifications(enabled: boolean = true): UseNotificationsResul
               message: message || ACTION_TYPE_MESSAGES.Unknown,
               actionType: toActionType(actionType),
               notificationId: notificationId ?? "",
+              rawType: actionType ?? "",
             };
             setLastSignal(signal);
-            signalHandlerRef.current?.(signal);
+            signalHandlersRef.current.forEach((fn) => {
+              try {
+                fn(signal);
+              } catch (err) {
+                console.error("[useNotifications] signal handler failed:", err);
+              }
+            });
             // Nạp lại hộp thư để badge + danh sách luôn khớp server.
             void refresh();
           },
@@ -412,10 +474,16 @@ export function useNotifications(enabled: boolean = true): UseNotificationsResul
 
   /* ---------- Đăng ký handler realtime ---------- */
 
+  /**
+   * Đăng ký callback xử lý tín hiệu realtime (SignalR).
+   *
+   * Nhiều subscriber được phép cùng lúc — mỗi subscriber nhận về một hàm
+   * huỷ đăng ký riêng.
+   */
   const onSignal = useCallback((fn: (signal: NotificationSignal) => void) => {
-    signalHandlerRef.current = fn;
+    signalHandlersRef.current.add(fn);
     return () => {
-      if (signalHandlerRef.current === fn) signalHandlerRef.current = null;
+      signalHandlersRef.current.delete(fn);
     };
   }, []);
 

@@ -208,6 +208,43 @@ export interface GroupMemberProgressDto {
   doneSubTasks: number;
   /** Giờ làm thực tế của người này trong nhóm (phút). */
   trackedMinutes: number;
+  /* ---- Bộ đếm tín hiệu tiến độ (mục 10 của cập nhật BE) ---- */
+  /** Việc đã quá hạn mà chưa xong. */
+  overdueTasks?: number;
+  /** Việc chưa có khung giờ nào trên lịch. */
+  unscheduledTasks?: number;
+  /** Việc có nguy cơ trễ hạn. */
+  atRiskTasks?: number;
+  /** Việc đứng yên (không có tiến độ trong thời gian đáng lẽ). */
+  staleTasks?: number;
+}
+
+/* ===========================================================
+ * Tín hiệu tiến độ của nhóm (mục 10 của cập nhật BE)
+ * ----------------------------------------------------------
+ * `GET /api/groups/{id}/progress` trả thêm `signals` — tóm tắt 4 loại
+ * rủi ro để FE hiển thị ngay: quá hạn, chưa có lịch, nguy cơ trễ,
+ * đứng yên.
+ * =========================================================== */
+
+/** Loại tín hiệu tiến độ. */
+export type GroupSignalType =
+  | "Overdue"
+  | "Unscheduled"
+  | "AtRisk"
+  | "Stale";
+
+export interface GroupSignalDto {
+  /** Loại tín hiệu — dùng để chọn icon + màu. */
+  type: GroupSignalType | string;
+  /** Số việc bị ảnh hưởng. */
+  count: number;
+  /** Danh sách việc cụ thể (có thể rỗng nếu BE chỉ gửi tổng). */
+  taskIds?: string[];
+  /** Tiêu đề việc (kèm theo `taskIds` nếu BE gửi). */
+  taskTitles?: string[];
+  /** Ghi chú giải thích thêm (VD: "3 tasks have no time slot yet"). */
+  message?: string | null;
 }
 
 export interface GroupMilestoneProgressDto {
@@ -231,6 +268,11 @@ export interface GroupProgressDto {
   completedPercent: number;
   members: GroupMemberProgressDto[];
   milestones: GroupMilestoneProgressDto[];
+  /**
+   * Tín hiệu tiến độ (mục 10 của cập nhật BE) — quá hạn, chưa có lịch,
+   * nguy cơ trễ, đứng yên. Có thể rỗng nếu BE cũ chưa trả.
+   */
+  signals?: GroupSignalDto[];
 }
 
 export interface MyGroupTaskDto {
@@ -266,6 +308,13 @@ export interface GroupFocusStartResponseDto {
   sessionId: string;
   groupTaskId: string;
   subTaskId?: string | null;
+  /**
+   * Slot đã chọn khi bấm Start (mục 10 của cập nhật BE).
+   *
+   * BE gửi kèm `scheduleSlotId` trong body Start → FE dùng để biết đang
+   * làm đúng khung giờ nào (hiển thị trên UI + đồng bộ với lịch).
+   */
+  scheduleSlotId?: string | null;
   startedAt: string;
   taskStatus: GroupTaskStatus | string;
   subTaskStatus?: GroupTaskStatus | string | null;
@@ -305,6 +354,11 @@ export interface GroupFocusCurrentDto {
   taskTitle: string;
   subTaskId?: string | null;
   subTaskTitle?: string | null;
+  /**
+   * Slot đang chạy (mục 10 của cập nhật BE) — `null` nếu phiên được bắt
+   * đầu mà không chọn slot.
+   */
+  scheduleSlotId?: string | null;
   startedAt: string;
   elapsedSeconds: number;
   serverTime: string;
@@ -446,6 +500,12 @@ export interface GroupCommentRequest {
 
 export interface GroupFocusStartRequest {
   subTaskId?: string | null;
+  /**
+   * Slot nhóm được chọn khi bấm Start (mục 10 của cập nhật BE).
+   *
+   * Gửi kèm để BE biết phiên này gắn với khung giờ nào.
+   */
+  scheduleSlotId?: string | null;
 }
 
 export interface GroupFocusStopRequest {
@@ -1136,5 +1196,108 @@ export async function cancelGroupChangeRequest(
 ): Promise<ApiResult<GroupChangeRequestDto>> {
   return post<GroupChangeRequestDto>(
     `/api/group-change-requests/${encodeURIComponent(changeRequestId)}/cancel`,
+  );
+}
+
+/* ===========================================================
+ * 10. Slot dùng chung cho việc nhóm (mục 10 của cập nhật BE)
+ * ----------------------------------------------------------
+ * Slot nhóm dùng CHUNG 2 endpoint sửa/hủy với slot cá nhân:
+ *   PUT    /api/schedule-slots/{id}
+ *   DELETE /api/schedule-slots/{id}
+ * Riêng tạo + xem thì dùng endpoint của việc nhóm:
+ *   POST /api/group-tasks/{taskId}/schedule-slots
+ *   GET  /api/group-tasks/{taskId}/schedule-slots
+ *
+ * ⚠️ Slot nhóm cũng bị luật không chồng giờ: 409 `SLOT_OVERLAP` với
+ * `details.overlaps[]` — phần tử có `groupTaskId` khi bên chồng là slot
+ * của việc nhóm.
+ * =========================================================== */
+
+/**
+ * DTO của 1 slot nhóm.
+ *
+ * ⚠️ `taskId` là `null` — slot nhóm KHÔNG thuộc task cá nhân.
+ */
+export interface GroupScheduleSlotDto {
+  id: string;
+  /** Luôn `null` với slot nhóm (xem `ScheduleSlotDto.taskId`). */
+  taskId: string | null;
+  subTaskId: string | null;
+  /** Việc nhóm sở hữu slot. */
+  groupTaskId: string;
+  /** Việc con của việc nhóm (nếu slot gắn với việc con). */
+  groupSubTaskId?: string | null;
+  /** Người được giao slot. */
+  userId?: string | null;
+  /** Tên việc nhóm (BE có thể trả kèm để hiển thị). */
+  taskTitle?: string | null;
+  /** Tên nhóm. */
+  groupName?: string | null;
+  scheduleProposalId: string | null;
+  startTime: string; // ISO 8601
+  endTime: string; // ISO 8601
+  originalStartTime: string | null;
+  isManualOverride: boolean;
+  proposedMinutes: number;
+  kbiasUsed: number;
+  explanation: string | null;
+  status: GroupScheduleSlotStatus | string;
+  googleEventId: string | null;
+  syncFailed: boolean;
+}
+
+/** Trạng thái schedule slot (enum BE). */
+export type GroupScheduleSlotStatus =
+  | "Proposed"
+  | "Approved"
+  | "Done"
+  | "Skipped"
+  | "Missed"
+  | "Cancelled";
+
+/** Body của `POST /api/group-tasks/{taskId}/schedule-slots`. */
+export interface CreateGroupScheduleSlotRequest {
+  groupSubTaskId?: string | null;
+  startTime: string; // ISO 8601
+  endTime: string; // ISO 8601
+  originalStartTime?: string | null;
+  isManualOverride?: boolean;
+  kbiasUsed?: number;
+  explanation?: string | null;
+  status?: GroupScheduleSlotStatus | string;
+}
+
+/**
+ * GET /api/group-tasks/{taskId}/schedule-slots
+ *
+ * Danh sách slot của 1 việc nhóm.
+ */
+export async function listGroupScheduleSlots(
+  taskId: string,
+): Promise<ApiResult<GroupScheduleSlotDto[]>> {
+  if (!taskId) {
+    return { ok: false, status: 0, error: "Group task id is required" };
+  }
+  return get<GroupScheduleSlotDto[]>(
+    `/api/group-tasks/${encodeURIComponent(taskId)}/schedule-slots`,
+  );
+}
+
+/**
+ * POST /api/group-tasks/{taskId}/schedule-slots
+ *
+ * ⚠️ 409 `SLOT_OVERLAP` nếu khung giờ chồng slot khác (kể cả slot nhóm).
+ */
+export async function createGroupScheduleSlot(
+  taskId: string,
+  body: CreateGroupScheduleSlotRequest,
+): Promise<ApiResult<GroupScheduleSlotDto>> {
+  if (!taskId) {
+    return { ok: false, status: 0, error: "Group task id is required" };
+  }
+  return post<GroupScheduleSlotDto>(
+    `/api/group-tasks/${encodeURIComponent(taskId)}/schedule-slots`,
+    body,
   );
 }

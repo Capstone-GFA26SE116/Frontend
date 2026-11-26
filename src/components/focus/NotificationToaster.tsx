@@ -40,6 +40,21 @@ function toastKindFor(actionType: string): "success" | "error" | "info" {
   }
 }
 
+/**
+ * Thông báo của NHÓM (mục 10 của cập nhật BE) — `type` gốc từ server.
+ *
+ * `GroupStatusChanged` = việc được giao lại / người làm rời nhóm →
+ * slot chưa bắt đầu bị huỷ → người dùng CẦN BIẾT để kiểm tra lại lịch.
+ */
+const GROUP_TITLES: Record<string, string> = {
+  GroupInvited: "You were invited to a group",
+  GroupAssigned: "A group task was assigned to you",
+  GroupStatusChanged: "Your group schedule changed",
+  GroupMention: "You were mentioned in a group",
+  GroupChangeRequested: "A schedule change was requested",
+  GroupChangeDecided: "A schedule change was decided",
+};
+
 /** Tiêu đề toast theo actionType. */
 function titleFor(actionType: string): string {
   switch (actionType) {
@@ -79,9 +94,15 @@ export function NotificationToaster() {
     if (handledRef.current === key) return;
     handledRef.current = key;
 
+    /*
+     * Thông báo nhóm: `type` gốc không nằm trong nhóm actionType của nhánh
+     * cá nhân → dùng tiêu đề riêng cho từng loại (mục 10 của cập nhật BE).
+     */
+    const groupTitle = GROUP_TITLES[signal.rawType?.trim() ?? ""];
+
     toast.show(
       toastKindFor(signal.actionType),
-      titleFor(signal.actionType),
+      groupTitle ?? titleFor(signal.actionType),
       signal.message || ACTION_TYPE_MESSAGES[signal.actionType],
     );
   }, [notif.lastSignal, toast]);

@@ -103,6 +103,8 @@ const KIND_META: Record<
   slot: { icon: "bolt", label: "METANOIA" },
   fixed: { icon: "lock", label: "Fixed" },
   google: { icon: "event", label: "Google" },
+  /* Slot của việc nhóm (AI PR #58) — mở việc nhóm, không mở task cá nhân. */
+  group: { icon: "groups", label: "Group" },
 };
 
 /* ===========================================================
@@ -163,6 +165,7 @@ export function BriefingPage() {
       start: s.start,
       end: s.end,
       task_id: s.task_id,
+      group_id: s.group_id ?? null,
       status: s.status,
       allDay: false,
     }));
@@ -173,6 +176,7 @@ export function BriefingPage() {
       start: "",
       end: "",
       task_id: null,
+      group_id: null,
       status: null,
       allDay: true,
     }));
@@ -461,8 +465,16 @@ export function BriefingPage() {
                   <ul className="brf-timeline">
                     {timeline.map((it) => {
                       const meta = KIND_META[it.kind] ?? KIND_META.slot;
-                      return (
-                        <li className="brf-tl" key={it.key}>
+                      /*
+                       * Slot của việc nhóm (AI PR #58): `task_id` là id việc
+                       * nhóm → bấm vào mở trang nhóm, KHÔNG mở `/tasks/{id}`.
+                       */
+                      const groupHref =
+                        it.kind === "group" && it.group_id
+                          ? `/groups/${it.group_id}`
+                          : null;
+                      const row = (
+                        <>
                           <span className="brf-tl-time brf-mono">
                             {it.allDay ? "Cả ngày" : `${fmtHHmm(it.start)}`}
                           </span>
@@ -508,6 +520,21 @@ export function BriefingPage() {
                               )}
                             </span>
                           </span>
+                        </>
+                      );
+                      return (
+                        <li className="brf-tl" key={it.key}>
+                          {groupHref ? (
+                            <Link
+                              to={groupHref}
+                              className="brf-tl-link"
+                              title="Open this group task"
+                            >
+                              {row}
+                            </Link>
+                          ) : (
+                            row
+                          )}
                         </li>
                       );
                     })}

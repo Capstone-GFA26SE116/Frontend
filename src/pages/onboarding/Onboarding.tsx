@@ -46,7 +46,7 @@ export function OnboardingPage() {
   }, []);
 
   const greeting = useMemo(
-    () => user?.name?.split(/\s+/)[0] ?? "bạn",
+    () => user?.name?.split(/\s+/)[0] ?? "there",
     [user?.name],
   );
 
@@ -75,15 +75,15 @@ export function OnboardingPage() {
             <span className="onboarding-brand-name">METANOIA</span>
           </div>
 
-          <nav className="onboarding-stepnav" aria-label="Tiến trình onboarding">
+          <nav className="onboarding-stepnav" aria-label="Onboarding progress">
             <span className="onboarding-stepnav-item onboarding-stepnav-item--active">
-              01 · Khung giờ làm việc
+              01 · Working hours
             </span>
             <span className="onboarding-stepnav-sep" aria-hidden="true">
               /
             </span>
             <span className="onboarding-stepnav-item onboarding-stepnav-item--muted">
-              02 · Loại công việc
+              02 · Work type
             </span>
           </nav>
 
@@ -117,14 +117,14 @@ export function OnboardingPage() {
             <div className="onboarding-intro">
               <span className="onboarding-badge">
                 <span className="onboarding-badge-dot" />
-                Chào mừng {greeting}
+                Welcome {greeting}
               </span>
               <h1 className="onboarding-title">
-                Thiết lập khung giờ làm việc của bạn
+                Set up your working hours
               </h1>
               <p className="onboarding-subtitle">
-                METANOIA cần 6 thông tin này để xếp lịch đúng nhịp làm việc
-                thật của bạn. Bạn luôn có thể đổi lại trong phần Cài đặt.
+                METANOIA needs these 6 details to schedule around your real
+                working rhythm. You can always change them later in Settings.
               </p>
             </div>
 
@@ -134,16 +134,16 @@ export function OnboardingPage() {
                 <div className="onboarding-step-head">
                   <div className="onboarding-step-title">
                     <span className="onboarding-step-number">1</span>
-                    <h2 id="ob-work">Khung giờ làm việc</h2>
+                    <h2 id="ob-work">Working hours</h2>
                   </div>
                   <span className="onboarding-step-hint">
-                    Các trường có dấu * là bắt buộc
+                    Fields marked with * are required
                   </span>
                 </div>
 
                 <div className="ob-field">
                   <label className="ob-label" htmlFor="ob-tz">
-                    Múi giờ <span className="ob-required">*</span>
+                    Time zone <span className="ob-required">*</span>
                   </label>
                   <select
                     id="ob-tz"
@@ -166,7 +166,7 @@ export function OnboardingPage() {
                     <span className="ob-error">{fieldError("timeZone")}</span>
                   ) : (
                     <span className="ob-hint">
-                      Đã tự nhận diện từ thiết bị — bạn có thể đổi.
+                      Detected from your device — you can change it.
                     </span>
                   )}
                 </div>
@@ -174,7 +174,7 @@ export function OnboardingPage() {
                 <div className="ob-grid-2">
                   <div className="ob-field">
                     <label className="ob-label" htmlFor="ob-start">
-                      Bắt đầu làm việc <span className="ob-required">*</span>
+                      Work day starts <span className="ob-required">*</span>
                     </label>
                     <input
                       id="ob-start"
@@ -186,7 +186,7 @@ export function OnboardingPage() {
                   </div>
                   <div className="ob-field">
                     <label className="ob-label" htmlFor="ob-end">
-                      Kết thúc làm việc <span className="ob-required">*</span>
+                      Work day ends <span className="ob-required">*</span>
                     </label>
                     <input
                       id="ob-end"
@@ -211,14 +211,14 @@ export function OnboardingPage() {
                     <span className="material-symbols-outlined">check</span>
                   </span>
                   <span className="ob-check-text">
-                    Tôi cũng làm việc vào cuối tuần
+                    I also work on weekends
                   </span>
                 </label>
 
                 <div className="ob-grid-2">
                   <div className="ob-field">
                     <label className="ob-label" htmlFor="ob-buffer">
-                      Đệm giữa các khung giờ (phút){" "}
+                      Buffer between slots (minutes){" "}
                       <span className="ob-required">*</span>
                     </label>
                     <input
@@ -237,12 +237,15 @@ export function OnboardingPage() {
                         {fieldError("defaultBufferMinutes")}
                       </span>
                     ) : (
-                      <span className="ob-hint">Khoảng nghỉ giữa 2 khung làm việc.</span>
+                      <span className="ob-hint">
+                        A short break between two work blocks.
+                      </span>
                     )}
                   </div>
                   <div className="ob-field">
                     <label className="ob-label" htmlFor="ob-reminder">
-                      Nhắc trước (phút) <span className="ob-required">*</span>
+                      Reminder lead (minutes){" "}
+                      <span className="ob-required">*</span>
                     </label>
                     <input
                       id="ob-reminder"
@@ -260,7 +263,9 @@ export function OnboardingPage() {
                         {fieldError("reminderLeadMinutes")}
                       </span>
                     ) : (
-                      <span className="ob-hint">Báo trước khi khung giờ bắt đầu.</span>
+                      <span className="ob-hint">
+                        Notify me before a slot starts.
+                      </span>
                     )}
                   </div>
                 </div>
@@ -271,15 +276,17 @@ export function OnboardingPage() {
                 <div className="onboarding-step-head">
                   <div className="onboarding-step-title">
                     <span className="onboarding-step-number">2</span>
-                    <h2 id="ob-hours">Giờ bạn làm hiệu quả nhất</h2>
+                    <h2 id="ob-hours">Your most productive hours</h2>
                   </div>
-                  <span className="onboarding-step-hint">Tuỳ chọn — bỏ qua được</span>
+                  <span className="onboarding-step-hint">
+                    Optional — you can skip this
+                  </span>
                 </div>
                 <p className="ob-note">
-                  METANOIA tự chấm điểm 24 giờ làm việc từ khung giờ làm và
-                  những giờ bạn chọn ở đây. Không chọn cũng được.
+                  METANOIA scores your 24-hour day using your working hours plus
+                  the hours you pick here. You can skip this too.
                 </p>
-                <div className="ob-hours-grid" role="group" aria-label="Chọn giờ hiệu quả">
+                <div className="ob-hours-grid" role="group" aria-label="Choose your productive hours">
                   {Array.from({ length: 24 }, (_, h) => {
                     const active = form.productiveHours.includes(h);
                     return (
@@ -304,19 +311,19 @@ export function OnboardingPage() {
                 <div className="onboarding-step-head">
                   <div className="onboarding-step-title">
                     <span className="onboarding-step-number">3</span>
-                    <h2 id="ob-domain">Loại công việc bạn hay làm</h2>
+                    <h2 id="ob-domain">The kind of work you usually do</h2>
                   </div>
                   <span className="onboarding-step-hint">
-                    Tuỳ chọn — có thể chọn nhiều
+                    Optional — pick as many as you like
                   </span>
                 </div>
 
                 {loadingDomains ? (
-                  <p className="ob-note">Đang tải danh sách loại công việc…</p>
+                  <p className="ob-note">Loading work types…</p>
                 ) : domains.length === 0 ? (
                   <p className="ob-note">
-                    Chưa có loại công việc nào trong hệ thống — bạn có thể bỏ
-                    qua bước này.
+                    There are no work types in the system yet — you can skip
+                    this step.
                   </p>
                 ) : (
                   <div className="ob-tagcloud">
@@ -345,11 +352,11 @@ export function OnboardingPage() {
                   <div className="ob-overrun">
                     <div className="ob-overrun-head">
                       <span className="ob-label">
-                        Bạn thường làm lố khung giờ ra sao?
+                        How often do you run over your time slots?
                       </span>
                       <span className="ob-hint">
-                        Áp dụng cho {form.domainIds.length} loại công việc đã
-                        chọn
+                        Applies to the {form.domainIds.length} work type
+                        {form.domainIds.length === 1 ? "" : "s"} you selected
                       </span>
                     </div>
                     <div className="ob-overrun-grid">
@@ -379,7 +386,7 @@ export function OnboardingPage() {
                       })}
                     </div>
                     <p className="ob-note">
-                      Không chọn → hệ thống dùng mặc định “Thỉnh thoảng”.
+                      No selection → the system uses the default “Sometimes”.
                     </p>
                   </div>
                 )}
@@ -396,7 +403,7 @@ export function OnboardingPage() {
               )}
               <div className="onboarding-actions-row">
                 <span className="onboarding-reassure">
-                  Bạn luôn có thể tuỳ chỉnh lại thông tin này trong phần Cài đặt.
+                  You can always fine-tune these details later in Settings.
                 </span>
                 <button
                   type="button"
@@ -406,10 +413,10 @@ export function OnboardingPage() {
                 >
                   <span>
                     {done
-                      ? "Đã lưu thiết lập!"
+                      ? "Settings saved!"
                       : submitting
-                        ? "Đang lưu…"
-                        : "Hoàn tất thiết lập"}
+                        ? "Saving…"
+                        : "Finish setup"}
                   </span>
                   <span
                     className="material-symbols-outlined onboarding-cta-icon"
@@ -432,8 +439,7 @@ export function OnboardingPage() {
             <span>METANOIA Cognitive Protocol v2.4</span>
           </div>
           <div className="onboarding-footer-right">
-            © 2025 Metanoia Intelligence · Quyền riêng tư &amp; Tối giản nhận
-            thức.
+            © 2025 Metanoia Intelligence · Privacy &amp; Minimal Cognition.
           </div>
         </div>
       </footer>

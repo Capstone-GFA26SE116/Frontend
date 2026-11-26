@@ -907,6 +907,63 @@
 }
 
 /* ===========================================================
+ * Hộp thoại chọn slot (mục 10 của cập nhật BE)
+ * =========================================================== */
+
+.mgt-slot-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mgt-slot-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 8px;
+  background: var(--canvas, #101010);
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.mgt-slot-option:hover {
+  border-color: rgba(0, 217, 146, 0.45);
+}
+
+.mgt-slot-option input {
+  margin-top: 3px;
+  accent-color: var(--primary, #00d992);
+  flex-shrink: 0;
+}
+
+.mgt-slot-option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mgt-slot-option-time {
+  font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink, #f2f2f2);
+}
+
+.mgt-slot-option-meta {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--mute, #8b949e);
+}
+
+/* ===========================================================
  * Responsive
  * =========================================================== */
 

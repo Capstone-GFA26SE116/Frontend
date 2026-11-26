@@ -87,6 +87,20 @@ const PRESETS: Record<string, GroupErrorPreset> = {
     hint: "Stop the running session before starting a new one.",
     tone: "warning",
   },
+  /*
+   * 409 SLOT_OVERLAP — khung giờ mới chồng giờ đã có.
+   *
+   * Áp dụng cho CẢ slot cá nhân lẫn slot việc nhóm (mục 10 của cập nhật BE):
+   * `details.overlaps[]` có `groupTaskId` khi bên chồng là slot của nhóm.
+   */
+  SLOT_OVERLAP: {
+    title: "That time is already booked",
+    message:
+      "This time slot overlaps with work that is already scheduled. Pick a different time so nothing gets double-booked.",
+    hint:
+      "Move the slot to a free time window, or cancel the conflicting slot first.",
+    tone: "warning",
+  },
 };
 
 /* ===========================================================
@@ -219,9 +233,19 @@ function readDetails(
   code: string,
   formatDate: (iso: string) => string,
   formatMinutes: (min: number) => string,
+  fallbackDetails?: unknown,
 ): GroupErrorDetails {
   const rec = asRecord(body);
-  const details = rec ? asRecord(rec["details"]) : null;
+  /*
+   * `details` có thể nằm ở 2 nơi:
+   *  - trong body lỗi gốc của BE (`{ details: {...} }`), hoặc
+   *  - đã được `api-client` tách ra thành `err.details`.
+   *
+   * Ta ưu tiên body, nhưng LUÔN fallback về `err.details` — nếu không, hộp
+   * thoại sẽ mất danh sách khung giờ bị chồng (mục 10 của cập nhật BE).
+   */
+  const fromBody = rec ? asRecord(rec["details"]) : null;
+  const details = fromBody ?? asRecord(fallbackDetails);
   const out: GroupErrorDetails = { lines: [], items: [] };
   if (!details) return out;
 
@@ -302,6 +326,37 @@ function readDetails(
     return out;
   }
 
+  /*
+   * 409 SLOT_OVERLAP — liệt kê các khung giờ đang bị chồng.
+   *
+   * Mỗi phần tử có `slotId`, `taskTitle`, `start`, `end` và có thể có
+   * `groupTaskId` (bên chồng là slot của việc nhóm — mục 10 của cập nhật BE).
+   */
+  if (code === "SLOT_OVERLAP") {
+    const overlaps = details["overlaps"];
+    if (Array.isArray(overlaps)) {
+      for (const o of overlaps) {
+        const r = asRecord(o);
+        if (!r) continue;
+        const start = typeof r["start"] === "string" ? r["start"] : "";
+        const end = typeof r["end"] === "string" ? r["end"] : "";
+        const title =
+          typeof r["taskTitle"] === "string" && r["taskTitle"].trim()
+            ? r["taskTitle"]
+            : "Scheduled work";
+        const isGroup = typeof r["groupTaskId"] === "string" && r["groupTaskId"];
+        const meta = isGroup
+          ? "Group task · already booked"
+          : "Personal task · already booked";
+        out.items.push({
+          title: start && end ? `${title} — ${formatDate(start)} → ${formatDate(end)}` : title,
+          meta,
+        });
+      }
+    }
+    return out;
+  }
+
   return out;
 }
 
@@ -378,7 +433,7 @@ export function toGroupErrorDetails(
   const formatDate = opts?.formatDate ?? defaultFormatDate;
   const formatMinutes = opts?.formatMinutes ?? defaultFormatMinutes;
   const code = err?.errorCode ?? readCode(body);
-  return readDetails(body, code, formatDate, formatMinutes);
+  return readDetails(body, code, formatDate, formatMinutes, err?.details);
 }
 
 /**

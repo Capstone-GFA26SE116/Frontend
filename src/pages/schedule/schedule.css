@@ -1305,6 +1305,20 @@
   color: var(--sch-text-3);
   opacity: 0.75;
 }
+/*
+ * Chip nhóm — slot việc nhóm (mục 10 của cập nhật BE).
+ * Tên nhóm dùng primary-soft để phân biệt với việc cá nhân ngay trên lịch.
+ */
+.sch-tcard__tag--group {
+  gap: 3px;
+  color: var(--sch-secondary);
+  border-color: var(--sch-primary-glow);
+  background: var(--sch-primary-soft);
+}
+.sch-tcard__tag--group .sch-icon-12 {
+  font-size: 12px !important;
+  color: var(--sch-secondary);
+}
 
 /* ---------- Subtask: timeline dọc ---------- */
 .sch-tcard__subs {

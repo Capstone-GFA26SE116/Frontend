@@ -38,10 +38,10 @@ export const COMMON_TIME_ZONES: ReadonlyArray<{
   id: string;
   label: string;
 }> = [
-  { id: "Asia/Ho_Chi_Minh", label: "Việt Nam (GMT+7)" },
+  { id: "Asia/Ho_Chi_Minh", label: "Vietnam (GMT+7)" },
   { id: "Asia/Singapore", label: "Singapore (GMT+8)" },
-  { id: "Asia/Bangkok", label: "Thái Lan (GMT+7)" },
-  { id: "Asia/Tokyo", label: "Nhật Bản (GMT+9)" },
+  { id: "Asia/Bangkok", label: "Thailand (GMT+7)" },
+  { id: "Asia/Tokyo", label: "Japan (GMT+9)" },
   { id: "Australia/Sydney", label: "Sydney (GMT+11)" },
   { id: "Europe/London", label: "London (GMT+0)" },
   { id: "Europe/Paris", label: "Paris (GMT+1)" },
@@ -50,43 +50,43 @@ export const COMMON_TIME_ZONES: ReadonlyArray<{
   { id: "UTC", label: "UTC" },
 ];
 
-/** Nhãn tiếng Việt cho mức làm lố + hệ số tương ứng. */
+/** Nhãn tiếng Anh cho mức làm lố + hệ số tương ứng. */
 export const OVERRUN_LEVEL_META: Record<
   OverrunLevel,
   { label: string; factor: string; desc: string }
 > = {
   Rarely: {
-    label: "Hiếm khi",
+    label: "Rarely",
     factor: "×1.10",
-    desc: "Tôi gần như luôn kết thúc đúng giờ.",
+    desc: "I almost always finish right on time.",
   },
   Sometimes: {
-    label: "Thỉnh thoảng",
+    label: "Sometimes",
     factor: "×1.25",
-    desc: "Tôi hay làm lố một chút khi việc phức tạp.",
+    desc: "I tend to run a little over when the work gets complex.",
   },
   Often: {
-    label: "Thường xuyên",
+    label: "Often",
     factor: "×1.50",
-    desc: "Việc của tôi thường kéo dài hơn dự kiến.",
+    desc: "My work usually takes longer than planned.",
   },
   Always: {
-    label: "Luôn luôn",
+    label: "Always",
     factor: "×1.80",
-    desc: "Tôi gần như luôn vượt thời gian dự kiến.",
+    desc: "I almost always go past the estimated time.",
   },
 };
 
-/** Nhãn tiếng Việt cho giờ làm việc. */
+/** Nhãn tiếng Anh cho ngày trong tuần. */
 export const WEEKDAY_OPTIONS: ReadonlyArray<{ value: string; label: string }> =
   [
-    { value: "Mon", label: "T2" },
-    { value: "Tue", label: "T3" },
-    { value: "Wed", label: "T4" },
-    { value: "Thu", label: "T5" },
-    { value: "Fri", label: "T6" },
-    { value: "Sat", label: "T7" },
-    { value: "Sun", label: "CN" },
+    { value: "Mon", label: "Mon" },
+    { value: "Tue", label: "Tue" },
+    { value: "Wed", label: "Wed" },
+    { value: "Thu", label: "Thu" },
+    { value: "Fri", label: "Fri" },
+    { value: "Sat", label: "Sat" },
+    { value: "Sun", label: "Sun" },
   ];
 
 /** Chuẩn hoá "HH:mm" → "HH:mm:ss" (BE yêu cầu định dạng có giây). */
@@ -165,16 +165,17 @@ export function validateOnboardingForm(
   const errors: OnboardingFieldErrors = {};
 
   if (!form.timeZone.trim()) {
-    errors.timeZone = "Vui lòng chọn múi giờ.";
+    errors.timeZone = "Please choose a time zone.";
   }
   if (!isEndAfterStart(form.workDayStart, form.workDayEnd)) {
-    errors.workDayEnd = "Giờ kết thúc phải sau giờ bắt đầu.";
+    errors.workDayEnd = "The end time must be after the start time.";
   }
   if (!isValidMinutes(form.defaultBufferMinutes)) {
-    errors.defaultBufferMinutes = "Đệm phải từ 0 đến 120 phút.";
+    errors.defaultBufferMinutes = "The buffer must be between 0 and 120 minutes.";
   }
   if (!isValidMinutes(form.reminderLeadMinutes)) {
-    errors.reminderLeadMinutes = "Nhắc trước phải từ 0 đến 120 phút.";
+    errors.reminderLeadMinutes =
+      "The reminder lead must be between 0 and 120 minutes.";
   }
 
   return errors;
@@ -316,7 +317,7 @@ export function useOnboardingForm(onSuccess?: () => void): UseOnboardingForm {
     const nextErrors = validateOnboardingForm(form);
     setErrors(nextErrors);
     if (hasValidationErrors(nextErrors)) {
-      setSubmitError("Vui lòng kiểm tra lại các trường được đánh dấu.");
+      setSubmitError("Please check the fields marked below and try again.");
       return false;
     }
 
@@ -328,7 +329,7 @@ export function useOnboardingForm(onSuccess?: () => void): UseOnboardingForm {
     if (!res.ok) {
       setSubmitError(
         res.error ||
-          "Không lưu được thiết lập. Vui lòng kiểm tra lại thông tin và thử lại.",
+          "We couldn't save your settings. Please check the details and try again.",
       );
       return false;
     }

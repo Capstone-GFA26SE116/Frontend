@@ -112,6 +112,21 @@ const PRESETS: Record<string, GroupAiErrorPreset> = {
     tone: "error",
     showRetry: true,
   },
+  /* Việc đã có giờ cố định → không gợi ý giờ được (chức năng 3). */
+  fixed_time: {
+    title: "This task already has a fixed time",
+    message:
+      "A leader has already booked a specific time for this task, so AI can't suggest another one. Ask your leader to move it if you need a different slot.",
+    hint: "Add the time slot manually instead.",
+    tone: "warning",
+  },
+  task_has_fixed_time: {
+    title: "This task already has a fixed time",
+    message:
+      "A leader has already booked a specific time for this task, so AI can't suggest another one. Ask your leader to move it if you need a different slot.",
+    hint: "Add the time slot manually instead.",
+    tone: "warning",
+  },
 };
 
 /* ===========================================================
@@ -127,9 +142,9 @@ const STATUS_PRESETS: Record<number, GroupAiErrorPreset> = {
     tone: "error",
   },
   403: {
-    title: "Only group leaders can use this",
+    title: "You don't have access to this AI feature",
     message:
-      "You're a member of this group, but AI planning and assignee suggestions are limited to group leaders.",
+      "AI planning and assignee suggestions are limited to group leaders, and time suggestions are only available to the person the work is assigned to.",
     hint: "Ask a group leader to run this for you.",
     tone: "warning",
   },

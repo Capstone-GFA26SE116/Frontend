@@ -116,6 +116,76 @@ export function canStartFocus(
 }
 
 /* ===========================================================
+ * Gợi ý giờ làm việc nhóm (FR-25 — spec GROUP_AI_FE mục 3)
+ * ----------------------------------------------------------
+ * AI chỉ xếp được phần việc **của mình**:
+ *  - việc con đang mở giao cho mình, hoặc
+ *  - việc con chưa giao riêng → tính theo người được giao việc cha, hoặc
+ *  - việc không có việc con → chính việc đó.
+ *
+ * Người khác gọi API sẽ bị `403` → ta ẩn nút.
+ * =========================================================== */
+
+/** Việc còn mở (ToDo / InProgress). */
+function isOpenGroupTask(status: string): boolean {
+  const s = (status ?? "").trim().toLowerCase();
+  return (
+    s === "todo" ||
+    s === "to_do" ||
+    s === "inprogress" ||
+    s === "in_progress"
+  );
+}
+
+/**
+ * Người dùng có được phép bấm "Suggest times" cho việc này không?
+ *
+ * @param task Việc nhóm (dùng `assigneeId`, `status`, `fixedStart`).
+ * @param subTasks Việc con của việc (để biết có việc con giao cho mình không).
+ * @param currentUserId Id của người đang đăng nhập.
+ */
+export function canSuggestTimes(
+  task: {
+    assigneeId?: string | null;
+    status?: string | null;
+    fixedStart?: string | null;
+    fixedEnd?: string | null;
+    subTaskCount?: number | null;
+  } | null,
+  subTasks: Array<{
+    assigneeId?: string | null;
+    status?: string | null;
+  }>,
+  currentUserId: string | null,
+): boolean {
+  if (!task || !currentUserId) return false;
+  /* Việc đã xong / bị bỏ qua → không gợi ý nữa. */
+  if (!isOpenGroupTask(task.status ?? "")) return false;
+  /* Việc có giờ cố định → AI trả 409 (spec mục 3). */
+  if (task.fixedStart && task.fixedEnd) return false;
+
+  /*
+   * Có việc con → mình phải có ít nhất 1 việc con đang mở giao cho mình.
+   *
+   * ⚠️ Việc con chỉ được nạp khi mở chi tiết việc. Nếu chưa nạp, ta dùng
+   * luật "việc con chưa giao riêng → tính theo người được giao việc cha"
+   * (đúng như cách AI tính) → người được giao việc cha vẫn thấy nút.
+   */
+  if (subTasks.length > 0) {
+    return subTasks.some(
+      (s) =>
+        s.assigneeId === currentUserId && isOpenGroupTask(s.status ?? ""),
+    );
+  }
+  if ((task.subTaskCount ?? 0) > 0) {
+    return task.assigneeId === currentUserId;
+  }
+
+  /* Không có việc con → phần việc của mình = việc cha giao cho mình. */
+  return task.assigneeId === currentUserId;
+}
+
+/* ===========================================================
  * Format
  * =========================================================== */
 
@@ -369,14 +439,153 @@ export function changeRequestHasChange(
   return hasFixed || hasDeadline;
 }
 
-/** Tổng các status hợp lệ của việc (dùng cho select). */
+/* ===========================================================
+ * Tín hiệu tiến độ (mục 10 của cập nhật BE)
+ * ----------------------------------------------------------
+ * `GET /api/groups/{id}/progress` trả `signals` — 4 loại rủi ro:
+ * quá hạn, chưa có lịch, nguy cơ trễ, đứng yên.
+ * =========================================================== */
+
+/** Nhãn tiếng Anh + tone của từng loại tín hiệu. */
+export interface GroupSignalLabel {
+  label: string;
+  /** Icon Material Symbols. */
+  icon: string;
+  /** Tone màu: `danger` (đỏ) | `warn` (hổ phách) | `info` (xanh). */
+  tone: "danger" | "warn" | "info";
+  /** Giải thích ngắn — để người dùng hiểu tín hiệu này nghĩa là gì. */
+  hint: string;
+}
+
+/** Nhãn + tone cho 1 loại tín hiệu tiến độ. */
+export function signalLabel(type: string): GroupSignalLabel {
+  const s = (type ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (s === "overdue" || s === "overdue_tasks") {
+    return {
+      label: "Overdue",
+      icon: "event_busy",
+      tone: "danger",
+      hint: "Past the deadline and not finished yet",
+    };
+  }
+  if (s === "unscheduled" || s === "no_schedule" || s === "unscheduled_tasks") {
+    return {
+      label: "No schedule",
+      icon: "schedule",
+      tone: "warn",
+      hint: "No time slot booked on the calendar yet",
+    };
+  }
+  if (s === "atrisk" || s === "at_risk" || s === "at_risk_tasks") {
+    return {
+      label: "At risk",
+      icon: "trending_up",
+      tone: "warn",
+      hint: "Unlikely to finish before the deadline",
+    };
+  }
+  if (s === "stale" || s === "stale_tasks") {
+    return {
+      label: "Stalled",
+      icon: "hourglass_empty",
+      tone: "warn",
+      hint: "No progress for a while",
+    };
+  }
+  return {
+    label: type || "Signal",
+    icon: "insights",
+    tone: "info",
+    hint: "",
+  };
+}
+
+/**
+ * Bộ đếm tín hiệu tiến độ của 1 thành viên (mục 10 của cập nhật BE).
+ *
+ * BE thêm 4 bộ đếm vào `GroupMemberProgressDto`: `overdueTasks`,
+ * `unscheduledTasks`, `atRiskTasks`, `staleTasks`. Ta chuẩn hoá về shape
+ * giống nhau để render, và bỏ qua bộ đếm bằng 0 (tránh rối).
+ */
+export interface MemberSignalCounter {
+  key: string;
+  value: number;
+  label: string;
+  icon: string;
+  tone: "danger" | "warn" | "info";
+  hint: string;
+}
+
+/** Danh sách bộ đếm tín hiệu của 1 thành viên (bỏ bộ đếm = 0). */
+export function memberSignalCounters(
+  member: {
+    overdueTasks?: number;
+    unscheduledTasks?: number;
+    atRiskTasks?: number;
+    staleTasks?: number;
+  },
+): MemberSignalCounter[] {
+  const all: MemberSignalCounter[] = [
+    {
+      key: "overdue",
+      value: member.overdueTasks ?? 0,
+      label: "overdue",
+      icon: "event_busy",
+      tone: "danger",
+      hint: "Past the deadline and not finished yet",
+    },
+    {
+      key: "atRisk",
+      value: member.atRiskTasks ?? 0,
+      label: "at risk",
+      icon: "trending_up",
+      tone: "warn",
+      hint: "Unlikely to finish before the deadline",
+    },
+    {
+      key: "unscheduled",
+      value: member.unscheduledTasks ?? 0,
+      label: "no schedule",
+      icon: "schedule",
+      tone: "warn",
+      hint: "No time slot booked on the calendar yet",
+    },
+    {
+      key: "stale",
+      value: member.staleTasks ?? 0,
+      label: "stalled",
+      icon: "hourglass_empty",
+      tone: "info",
+      hint: "No progress for a while",
+    },
+  ];
+  return all.filter((c) => c.value > 0);
+}
+
+/** Tổng số tín hiệu của 1 thành viên (dùng để quyết định có hiện hay không). */
+export function memberSignalTotal(member: {
+  overdueTasks?: number;
+  unscheduledTasks?: number;
+  atRiskTasks?: number;
+  staleTasks?: number;
+}): number {
+  return (
+    (member.overdueTasks ?? 0) +
+    (member.unscheduledTasks ?? 0) +
+    (member.atRiskTasks ?? 0) +
+    (member.staleTasks ?? 0)
+  );
+}
+
+/**
+ * Tổng các status hợp lệ của việc (dùng cho select).
+ */
 export const GROUP_TASK_STATUSES: GroupTaskStatus[] = [
   "ToDo",
   "InProgress",
   "Done",
   "Skipped",
 ];
-
 /** Tổng các status hợp lệ của giai đoạn (dùng cho select). */
 export const GROUP_MILESTONE_STATUSES: GroupMilestoneStatus[] = [
   "Planned",

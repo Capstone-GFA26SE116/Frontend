@@ -67,42 +67,42 @@ export const ROLE_OPTIONS: ReadonlyArray<{
 }> = [
   {
     id: "student",
-    title: "Sinh viên / Học viên",
+    title: "Student / Trainee",
     desc:
-      "Quản lý lịch học, làm đồ án tốt nghiệp, bài tập lớn và rèn luyện thói quen học tập tập trung.",
+      "Manage your class schedule, graduation projects, large assignments and build focused study habits.",
     icon: "school",
   },
   {
     id: "freelancer",
-    title: "Freelancer / Làm việc tự do",
+    title: "Freelancer / Self-employed",
     desc:
-      "Cân bằng nhiều dự án khách hàng, theo dõi deadline độc lập và chống kiệt sức khi làm việc một mình.",
+      "Balance multiple client projects, track independent deadlines and avoid burnout while working alone.",
     icon: "laptop_mac",
   },
   {
     id: "engineer",
-    title: "Kỹ sư / Nhà nghiên cứu",
+    title: "Engineer / Researcher",
     desc:
-      "Phát triển dự án kỹ thuật chuyên sâu, bảo vệ khung giờ Deep Work và nghiên cứu học thuật.",
+      "Develop deep technical projects, protect your Deep Work hours and conduct academic research.",
     icon: "memory",
   },
   {
     id: "self",
-    title: "Khác / Tự học & Phát triển bản thân",
+    title: "Other / Self-learning & personal growth",
     desc:
-      "Tối ưu hóa quỹ thời gian cá nhân và duy trì năng lượng dồi dào cho các mục tiêu dài hạn.",
+      "Optimise your personal time budget and keep enough energy for your long-term goals.",
     icon: "auto_awesome",
   },
 ];
 
 export const SECTOR_OPTIONS: ReadonlyArray<{ id: SectorId; label: string }> = [
-  { id: "it_programming", label: "Công nghệ thông tin / Lập trình" },
-  { id: "design_content", label: "Thiết kế & Sáng tạo nội dung" },
-  { id: "business_marketing", label: "Kinh tế / Marketing" },
-  { id: "engineering_cs", label: "Kỹ thuật & Khoa học máy tính" },
-  { id: "language_social", label: "Ngôn ngữ & Xã hội" },
-  { id: "biomed_health", label: "Y sinh & Sức khỏe" },
-  { id: "other", label: "Khác..." },
+  { id: "it_programming", label: "Information Technology / Programming" },
+  { id: "design_content", label: "Design & Content Creation" },
+  { id: "business_marketing", label: "Business / Marketing" },
+  { id: "engineering_cs", label: "Engineering & Computer Science" },
+  { id: "language_social", label: "Languages & Social Sciences" },
+  { id: "biomed_health", label: "Biomedicine & Health" },
+  { id: "other", label: "Other..." },
 ];
 
 export const GOAL_OPTIONS: ReadonlyArray<{
@@ -112,22 +112,22 @@ export const GOAL_OPTIONS: ReadonlyArray<{
 }> = [
   {
     id: "deep_work",
-    title: "Bảo vệ các khung giờ tập trung sâu (Deep Work)",
-    desc: "Tự động chặn thông báo phiền nhiễu khi đang xử lý việc trọng tâm",
+    title: "Protect deep focus hours (Deep Work)",
+    desc: "Automatically block distracting notifications while you handle your most important work",
   },
   {
     id: "no_miss_deadline",
-    title: "Không bị trễ deadline bài tập / dự án",
-    desc: "Phân bổ tiến độ thông minh từng ngày, loại bỏ dồn ứ giờ chót",
+    title: "Never miss an assignment or project deadline",
+    desc: "Spread progress intelligently across the days so nothing piles up at the last minute",
   },
   {
     id: "google_calendar_sync",
-    title: "Tự động xếp lịch thông minh đồng bộ Google Calendar",
-    desc: "Kế thừa toàn bộ sự kiện hiện có và tự tìm khoảng trống làm việc",
+    title: "Smart scheduling synced with Google Calendar",
+    desc: "Inherit all your existing events and automatically find free time to work in",
   },
   {
     id: "biorhythm_balance",
-    title: "Cân bằng nhịp sinh học, tránh thức đêm kiệt sức",
-    desc: "Nhắc nhở thả lỏng và duy trì chu kỳ nghỉ ngơi lành mạnh",
+    title: "Balance your biorhythm and avoid late nights",
+    desc: "Gentle reminders and a healthy rest cycle that keeps you sharp",
   },
 ];

@@ -130,7 +130,9 @@ export function GroupErrorDialog({
               <h3 className="gerr-subtitle">
                 {error.code === "GROUP_ASSIGNEE_BUSY"
                   ? "Conflicting time slots"
-                  : "Tasks that are still open"}
+                  : error.code === "SLOT_OVERLAP"
+                    ? "Time slots that are already booked"
+                    : "Tasks that are still open"}
               </h3>
               <ul className="gerr-list">
                 {items.map((it, i) => (

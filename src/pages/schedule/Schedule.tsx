@@ -18,6 +18,8 @@ import {
   type SequenceGate,
 } from "../../components/focus/sequence-logic";
 import { isClosedStatus, toSlotPhase } from "../../components/focus/focus-logic";
+import { useNotificationsContext } from "../../components/focus/notifications-context-state";
+import { signalAffectsSchedule } from "../../hooks/useNotifications";
 import { useStaggeredMount } from "../../hooks/useStaggeredMount";
 import { useGoogleCalendar } from "../../hooks/useGoogleCalendar";
 import {
@@ -88,6 +90,21 @@ interface CalEvent {
   taskId: string | null;
   subTaskId: string | null;
   projectId: string | null;
+  /**
+   * Việc nhóm của slot nhóm — `null` với lịch cá nhân.
+   *
+   * ⚠️ Slot nhóm có `taskId = null` (mục 10 của cập nhật BE) → dùng cờ này
+   * để biết đây là slot việc nhóm, KHÔNG điều hướng sang trang task cá nhân.
+   */
+  groupTaskId?: string | null;
+  /** Việc con của việc nhóm (slot nhóm). */
+  groupSubTaskId?: string | null;
+  /** Người được giao slot nhóm. */
+  userId?: string | null;
+  /** Nhóm sở hữu slot (slot nhóm). */
+  groupId?: string | null;
+  /** Tên nhóm (slot nhóm) — hiển thị trên card thay vì tên dự án. */
+  groupName?: string | null;
   /**
    * Id của schedule slot gắn với event (null = không gắn).
    *
@@ -232,7 +249,15 @@ function collectDayItems(events: CalEvent[], day: Date): DayItem[] {
   const byTask = new Map<string, DayItem>();
 
   for (const ev of dayEvents) {
-    const key = ev.taskId ?? ev.id;
+    /*
+     * Khoá gom nhóm.
+     *
+     * ⚠️ Slot việc nhóm có `taskId = null` (mục 10 của cập nhật BE) → nếu dùng
+     * `ev.taskId ?? ev.id` thì mỗi slot nhóm là 1 mục riêng. Ta gom theo
+     * `groupTaskId` để các slot của cùng 1 việc nhóm vẫn gộp lại (như task
+     * cá nhân), còn slot nhóm của task khác nhau tách riêng.
+     */
+    const key = ev.taskId ?? ev.groupTaskId ?? ev.id;
     let item = byTask.get(key);
     if (!item) {
       item = {
@@ -711,6 +736,21 @@ export function SchedulePage() {
   const { currentSlotId, seedPlannedMinutes, onSlotChanged } = useFocusActions();
 
   /**
+   * Mục 10 (BE cập nhật): việc được giao lại hoặc người làm rời nhóm →
+   * slot chưa bắt đầu của người cũ bị huỷ + server phát `GroupStatusChanged`.
+   * FE phải làm mới lịch ngay khi nhận thông báo này (slot nhóm có
+   * `taskId = null` nên không nằm trong danh sách slot cá nhân).
+   */
+  const notif = useNotificationsContext();
+
+  useEffect(() => {
+    return notif.onSignal((signal) => {
+      if (!signalAffectsSchedule(signal)) return;
+      void loadData();
+    });
+  }, [notif, loadData]);
+
+  /**
    * Khi slot đổi trạng thái (start/stop/confirm) → nạp lại lịch.
    *
    * Cần cho cả trường hợp user bấm Stop ở thanh đồng hồ global (đang ở
@@ -862,9 +902,19 @@ export function SchedulePage() {
     return m;
   }, [tasks]);
 
-  /** Task đã có ít nhất 1 schedule slot → loại khỏi danh sách xin AI xếp lịch. */
+  /**
+   * Task đã có ít nhất 1 schedule slot → loại khỏi danh sách xin AI xếp lịch.
+   *
+   * ⚠️ `taskId` có thể `null` (slot của việc nhóm — mục 10 của cập nhật BE)
+   * → phải lọc `null` ra, nếu không sẽ lọn id `null` vào danh sách task.
+   */
   const scheduledTaskIds = useMemo(
-    () => new Set(scheduleSlots.map((s) => s.taskId).filter(Boolean)),
+    () =>
+      new Set(
+        scheduleSlots
+          .map((s) => s.taskId)
+          .filter((x): x is string => typeof x === "string" && x.length > 0),
+      ),
     [scheduleSlots],
   );
 
@@ -958,6 +1008,17 @@ export function SchedulePage() {
         taskId: item.taskId ?? null,
         subTaskId: item.subTaskId ?? null,
         projectId: item.projectId ?? null,
+        /*
+         * ⚠️ Slot của việc nhóm: `taskId = null`, các trường dự án / khách hàng
+         * / loại công việc cũng `null`. Ta gán riêng các trường nhóm để màn
+         * lịch hiển thị đúng (tên nhóm + tiêu đề việc) và KHÔNG điều hướng
+         * sang trang task cá nhân.
+         */
+        groupTaskId: item.groupTaskId ?? null,
+        groupSubTaskId: item.groupSubTaskId ?? null,
+        userId: item.userId ?? null,
+        groupId: item.groupId ?? null,
+        groupName: item.groupName ?? null,
         // Khi source = "slot", id của calendar item CHÍNH LÀ schedule slot id
         // → Focus Session dùng được để gọi start/time-summary.
         scheduleSlotId:
@@ -1077,6 +1138,15 @@ export function SchedulePage() {
           taskId: slot.taskId,
           subTaskId: slot.subTaskId,
           projectId: parentTask?.projectId ?? null,
+          /*
+           * Slot của việc nhóm (mục 10 của cập nhật BE): `taskId = null`.
+           * Ta mang theo thông tin nhóm để lịch hiển thị đúng và không điều
+           * hướng nhầm sang trang task cá nhân.
+           */
+          groupTaskId: slot.groupTaskId ?? null,
+          groupSubTaskId: slot.groupSubTaskId ?? null,
+          userId: slot.userId ?? null,
+          groupName: slot.groupName ?? null,
           scheduleSlotId: slot.id,
           slotPlannedMinutes: slot.proposedMinutes ?? null,
           slotStatus: slot.status,
@@ -1105,6 +1175,68 @@ export function SchedulePage() {
         arr.push(ev);
         slotsByTask.set(ev.taskId, arr);
       }
+    }
+    /*
+     * Slot của việc nhóm: `taskId = null` → không đi qua vòng gộp trên.
+     * Ta gộp riêng theo `groupTaskId` để nhiều slot của cùng 1 việc nhóm
+     * hiện như 1 khối trên lịch (giống task cá nhân).
+     */
+    const slotsByGroupTask = new Map<string, CalEvent[]>();
+    for (const ev of list) {
+      if (ev.groupTaskId && !ev.taskId && !ev.isAllDay) {
+        const arr = slotsByGroupTask.get(ev.groupTaskId) ?? [];
+        arr.push(ev);
+        slotsByGroupTask.set(ev.groupTaskId, arr);
+      }
+    }
+    for (const [groupTaskId, allEvs] of slotsByGroupTask) {
+      const evs = allEvs
+        .slice()
+        .sort((a, b) => a.start.getTime() - b.start.getTime())
+        .filter((e, i, arr) => {
+          const key = `${e.groupSubTaskId ?? "task"}|${e.start.getTime()}|${e.end.getTime()}`;
+          return arr.findIndex((x) => `${x.groupSubTaskId ?? "task"}|${x.start.getTime()}|${x.end.getTime()}` === key) === i;
+        });
+      if (evs.length <= 1) continue;
+      const minStart = evs.reduce(
+        (min, e) => (e.start.getTime() < min.getTime() ? e.start : min),
+        evs[0].start,
+      );
+      const maxEnd = evs.reduce(
+        (max, e) => (e.end.getTime() > max.getTime() ? e.end : max),
+        evs[0].end,
+      );
+      aggregateEvents.push({
+        id: `group-agg-${groupTaskId}`,
+        source: taskAggSource,
+        title: evs[0].title,
+        start: minStart,
+        end: maxEnd,
+        isAllDay: false,
+        status: evs[0].status,
+        taskId: null,
+        subTaskId: null,
+        projectId: null,
+        groupTaskId,
+        groupSubTaskId: null,
+        userId: evs[0].userId ?? null,
+        groupId: evs[0].groupId ?? null,
+        groupName: evs[0].groupName ?? null,
+        scheduleSlotId: evs[0].scheduleSlotId ?? null,
+        slotPlannedMinutes: evs[0].slotPlannedMinutes ?? null,
+        slotStatus: evs[0].status,
+        scheduleSlot: evs[0].scheduleSlot,
+        subtask: evs[0].subtask,
+        aggregatedSlots: Array.from(
+          new Map(
+            evs
+              .map((e) => e.scheduleSlot)
+              .filter((x): x is ScheduleSlotDto => !!x)
+              .map((s) => [s.id, s]),
+          ).values(),
+        ),
+        aggregatedEvents: evs,
+      });
     }
     for (const [taskId, allEvs] of slotsByTask) {
       // DEDUPE LẦN 2 (phòng thủ): cùng subtask + cùng khung giờ thì chỉ giữ 1.
@@ -1178,9 +1310,27 @@ export function SchedulePage() {
     // Lưu ý: phải dựa trên danh sách aggregate đã tạo (sau dedupe), KHÔNG dùng
     // slotsByTask thô — nếu không, task có 2 event trùng (dedupe còn 1, không tạo
     // aggregate) sẽ bị xoá sạch khỏi lịch.
-    const aggregatedTaskIds = new Set(aggregateEvents.map((e) => e.taskId!));
+    const aggregatedTaskIds = new Set(
+      aggregateEvents.map((e) => e.taskId).filter((x): x is string => !!x),
+    );
+    const aggregatedGroupTaskIds = new Set(
+      aggregateEvents
+        .map((e) => e.groupTaskId)
+        .filter((x): x is string => !!x),
+    );
     const filtered = list.filter(
-      (ev) => !(ev.taskId && !ev.isAllDay && aggregatedTaskIds.has(ev.taskId)),
+      (ev) =>
+        !(
+          ev.taskId &&
+          !ev.isAllDay &&
+          aggregatedTaskIds.has(ev.taskId)
+        ) &&
+        !(
+          ev.groupTaskId &&
+          !ev.taskId &&
+          !ev.isAllDay &&
+          aggregatedGroupTaskIds.has(ev.groupTaskId)
+        ),
     );
     list.length = 0;
     list.push(...filtered, ...aggregateEvents);
@@ -1251,7 +1401,12 @@ export function SchedulePage() {
       if (ev.isAllDay) continue;
       // Không phải việc của ta (Google event) → không xếp.
       if (!ev.taskId) continue;
-
+      /*
+       * Slot của việc nhóm cũng không tham gia luật "làm trước - làm sau":
+       * luật này chặn nút Start của nhánh cá nhân, còn slot nhóm bấm giờ ở
+       * trang nhóm (endpoint riêng).
+       */
+      if (ev.groupTaskId) continue;
       /*
        * ⚠️ Task GỘP nhiều subtask (aggregate): các event con đã bị lọc khỏi
        * `events`, chỉ còn 1 event tổng. Nhưng event tổng hiển thị ở NHIỀU cột
@@ -2546,7 +2701,9 @@ function GanttView({
               <div className="sch-gantt__col sch-gantt__col--name">
                 <span className={`sch-gantt__dot sch-tone--${dotFor(ev)}`} />
                 <span className="sch-gantt__title">{ev.title}</span>
-                <span className="sch-gantt__meta">{sourceLabel(ev.source)}</span>
+                <span className="sch-gantt__meta">
+                  {ev.groupTaskId ? (ev.groupName ?? "Group work") : sourceLabel(ev.source)}
+                </span>
               </div>
               <div className="sch-gantt__bar-wrap">
                 <button
@@ -2635,6 +2792,16 @@ function TaskCard({
   const isSlot = ev.source === "slot" && !!ev.scheduleSlotId && !!ev.taskId;
 
   /**
+   * Slot của **việc nhóm** (mục 10 của cập nhật BE): `taskId = null`, các
+   * trường dự án / khách hàng / loại công việc cũng `null`.
+   *
+   * → Không điều hướng sang trang task cá nhân, không hiện nút Start của
+   *   nhánh cá nhân (Start nhóm đi qua `POST /api/group-tasks/{id}/focus/start`).
+   */
+  const isGroupSlot =
+    ev.source === "slot" && !!ev.scheduleSlotId && !!ev.groupTaskId;
+
+  /**
    * Danh sách "khối" hiển thị dưới tên task:
    *  - Ưu tiên các event con đã gộp (đúng thứ đang hiện trên lịch).
    *  - Fallback: subtask của task theo `orderIndex`.
@@ -2717,9 +2884,22 @@ function TaskCard({
             <span className="material-symbols-outlined sch-icon-12">schedule</span>
             {eventTimeRange(ev)}
           </span>
-          {taskType && <span className="sch-tcard__tag">{taskType}</span>}
+          {/*
+            Slot việc nhóm: hiện TÊN NHÓM thay cho loại công việc (taskType
+            luôn `null` với slot nhóm).
+          */}
+          {isGroupSlot && ev.groupName ? (
+            <span className="sch-tcard__tag sch-tcard__tag--group">
+              <span className="material-symbols-outlined sch-icon-12">
+                groups
+              </span>
+              {ev.groupName}
+            </span>
+          ) : (
+            taskType && <span className="sch-tcard__tag">{taskType}</span>
+          )}
           <span className="sch-tcard__tag sch-tcard__tag--muted">
-            {sourceLabel(ev.source)}
+            {isGroupSlot ? "Group work" : sourceLabel(ev.source)}
           </span>
         </span>
       )}
@@ -2751,8 +2931,8 @@ function TaskCard({
       title={
         [
           ev.title,
-          taskType,
-          sourceLabel(ev.source),
+          isGroupSlot ? ev.groupName : taskType,
+          isGroupSlot ? "Group work" : sourceLabel(ev.source),
           hasSubtasks ? `${blocks.length} việc con` : null,
         ]
           .filter(Boolean)
@@ -2764,6 +2944,13 @@ function TaskCard({
     </button>
   );
 
+  /*
+   * Slot việc nhóm: KHÔNG hiện nút Start của nhánh cá nhân.
+   *
+   * `SlotFocusActions` gọi `POST /api/focus/start` với `taskId` — mà slot
+   * nhóm có `taskId = null` → không dùng được. Việc nhóm bấm giờ ở trang
+   * `/my-group-tasks` và trang chi tiết nhóm.
+   */
   if (!isSlot) return card;
 
   /*
@@ -2825,6 +3012,13 @@ function EventChip({
    */
   const isSlot = ev.source === "slot" && !!ev.scheduleSlotId && !!ev.taskId;
 
+  /**
+   * Slot của việc nhóm (mục 10 của cập nhật BE): `taskId = null`.
+   * → Chỉ hiển thị, không có nút Start của nhánh cá nhân.
+   */
+  const isGroupSlot =
+    ev.source === "slot" && !!ev.scheduleSlotId && !!ev.groupTaskId;
+
   const chip = (
     <button
       type="button"
@@ -2837,7 +3031,13 @@ function EventChip({
         <span className="sch-chip-event__title">{ev.title}</span>
         {!compact && (
           <span className="sch-chip-event__meta">
-            {eventTimeRange(ev)} {taskType ? `· ${taskType}` : ""} · {sourceLabel(ev.source)}
+            {eventTimeRange(ev)}{" "}
+            {isGroupSlot
+              ? `· ${ev.groupName ?? "Group work"}`
+              : taskType
+                ? `· ${taskType}`
+                : ""}{" "}
+            · {isGroupSlot ? "Group work" : sourceLabel(ev.source)}
           </span>
         )}
       </div>
@@ -3161,14 +3361,22 @@ function CellPopover({
         ) : (
           <ul className="sch-cell-popover__list">
             {sorted.map((it) => {
-              const title = it.task?.title ?? it.subtask?.title ?? "Untitled";
+              /*
+               * Slot việc nhóm (mục 10 của cập nhật BE): không có task cá
+               * nhân → dùng tiêu đề việc nhóm + tên nhóm.
+               */
+              const isGroupItem = !it.task && !it.subtask && !!it.event.groupTaskId;
+              const title =
+                it.task?.title ??
+                it.subtask?.title ??
+                (isGroupItem ? it.event.title : "Untitled");
               const desc = it.task?.description ?? it.subtask?.description ?? null;
               const est = it.task?.estimatedMinutes ?? it.subtask?.estimatedMinutes ?? 0;
               const isSubtask = !it.task && !!it.subtask;
               const done = /done|completed/i.test(it.status);
               return (
                 <li
-                  key={`${it.task?.id ?? it.subtask?.id ?? it.start.getTime()}`}
+                  key={`${it.task?.id ?? it.subtask?.id ?? it.event.groupTaskId ?? it.start.getTime()}`}
                   className="sch-cell-popover__task"
                   role="button"
                   tabIndex={0}
@@ -3182,7 +3390,7 @@ function CellPopover({
                 >
                   <div className="sch-cell-popover__task-row">
                     <span className="material-symbols-outlined sch-icon-14">
-                      {done ? "check_circle" : isSubtask ? "subdirectory_arrow_right" : "task_alt"}
+                      {done ? "check_circle" : isGroupItem ? "groups" : isSubtask ? "subdirectory_arrow_right" : "task_alt"}
                     </span>
                     <span
                       className="sch-cell-popover__task-title"
@@ -3190,6 +3398,11 @@ function CellPopover({
                     >
                       {title}
                     </span>
+                    {isGroupItem && it.event.groupName && (
+                      <span className="sch-cell-popover__tag sch-cell-popover__tag--status">
+                        {it.event.groupName}
+                      </span>
+                    )}
                     {est > 0 && (
                       <span className="sch-cell-popover__task-est">{est}m</span>
                     )}
@@ -3328,6 +3541,14 @@ function EventDetailModal({
   const subtask = event.subtask;
   const slot = event.scheduleSlot;
   const isSlotEvent = event.source === "slot";
+  /**
+   * Slot của **việc nhóm** (mục 10 của cập nhật BE).
+   *
+   * `taskId = null` → không có task cá nhân, không có dự án / khách hàng /
+   * loại công việc. Modal phải hiển thị theo nhóm + tiêu đề việc nhóm và
+   * KHÔNG điều hướng sang trang task cá nhân.
+   */
+  const isGroupSlot = !!event.groupTaskId;
   /** Task đã gộp nhiều event con (slot/subtask) → hiển thị dạng task view. */
   const isAggregate = !!event.aggregatedEvents && event.aggregatedEvents.length > 1;
   /**
@@ -3421,6 +3642,32 @@ function EventDetailModal({
                 <strong>{event.status || "—"}</strong>
               </div>
 
+              {/*
+                Slot việc nhóm (mục 10 của cập nhật BE): các trường dự án /
+                khách hàng / loại công việc đều `null` → hiện thông tin nhóm
+                thay thế.
+              */}
+              {isGroupSlot && (
+                <>
+                  <div className="sch-side-meta__row">
+                    <span>Group</span>
+                    <strong>{event.groupName ?? "—"}</strong>
+                  </div>
+                  <div className="sch-side-meta__row">
+                    <span>Work type</span>
+                    <strong>Group task</strong>
+                  </div>
+                  {event.userId && (
+                    <div className="sch-side-meta__row">
+                      <span>Assignee</span>
+                      <strong>
+                        <code>{event.userId.slice(0, 8)}...</code>
+                      </strong>
+                    </div>
+                  )}
+                </>
+              )}
+
               {slot && (
                 <>
                   {slot.isManualOverride && (
@@ -3491,26 +3738,41 @@ function EventDetailModal({
                   <code>{event.subTaskId.slice(0, 8)}...</code>
                 </div>
               )}
+              {event.groupTaskId && (
+                <div className="sch-side-meta__row">
+                  <span>Group Task ID</span>
+                  <code>{event.groupTaskId.slice(0, 8)}...</code>
+                </div>
+              )}
             </div>
 
-            {/* Khối Focus Session: nút Start/Stop + tổng kết thời gian */}
-            <SlotFocusPanel
-              slotId={slot?.id ?? event.scheduleSlotId ?? null}
-              taskId={event.taskId}
-              /*
-               * ⚠️ `subTaskId` của SLOT, không của event — spec mục 6.1:
-               * backend không tự lấy `subTaskId` từ slot khi Start.
-               * Với event aggregate (gộp nhiều slot của 1 task) thì
-               * `event.subTaskId` là null → phải tra slot gốc.
-               */
-              subTaskId={slot?.subTaskId ?? event.subTaskId ?? null}
-              status={slot?.status ?? event.status}
-              plannedMinutes={
-                slot?.proposedMinutes ?? event.slotPlannedMinutes ?? undefined
-              }
-              taskTitle={event.task?.title ?? event.subtask?.title ?? null}
-              onChanged={onSlotChanged}
-            />
+            {/*
+              Khối Focus Session của NHÁNH CÁ NHÂN.
+
+              ⚠️ Slot việc nhóm có `taskId = null` → `SlotFocusPanel` tự ẩn
+              (guard `if (!slotId || !taskId) return null`). Việc nhóm bấm giờ
+              ở trang chi tiết nhóm / `/my-group-tasks` với endpoint riêng
+              `POST /api/group-tasks/{id}/focus/start`.
+            */}
+            {!isGroupSlot && (
+              <SlotFocusPanel
+                slotId={slot?.id ?? event.scheduleSlotId ?? null}
+                taskId={event.taskId}
+                /*
+                 * ⚠️ `subTaskId` của SLOT, không của event — spec mục 6.1:
+                 * backend không tự lấy `subTaskId` từ slot khi Start.
+                 * Với event aggregate (gộp nhiều slot của 1 task) thì
+                 * `event.subTaskId` là null → phải tra slot gốc.
+                 */
+                subTaskId={slot?.subTaskId ?? event.subTaskId ?? null}
+                status={slot?.status ?? event.status}
+                plannedMinutes={
+                  slot?.proposedMinutes ?? event.slotPlannedMinutes ?? undefined
+                }
+                taskTitle={event.task?.title ?? event.subtask?.title ?? null}
+                onChanged={onSlotChanged}
+              />
+            )}
           </div>
 
           {/* Cột phải: Subtasks list (task aggregate HOẶC task có subtask) */}
@@ -3637,7 +3899,11 @@ function EventDetailModal({
               Remove Slot
             </button>
           )}
-          {event.taskId && (
+          {/*
+            Slot việc nhóm: KHÔNG điều hướng sang trang Planning của dự án
+            cá nhân (slot nhóm không có dự án). Thay vào đó mở trang nhóm.
+          */}
+          {event.taskId ? (
             <Link
               to={`/projects/${event.projectId ?? ""}/planning`}
               className="sch-btn sch-btn--primary"
@@ -3646,7 +3912,16 @@ function EventDetailModal({
               <span className="material-symbols-outlined sch-icon-18">open_in_new</span>
               Open in Planning
             </Link>
-          )}
+          ) : isGroupSlot && event.groupId ? (
+            <Link
+              to={`/groups/${event.groupId}`}
+              className="sch-btn sch-btn--primary"
+              onClick={onClose}
+            >
+              <span className="material-symbols-outlined sch-icon-18">groups</span>
+              Open group
+            </Link>
+          ) : null}
         </div>      </div>
     </div>
   );

@@ -1,0 +1,117 @@
+/* ===========================================================
+ * Slot của việc nhóm — khối "Schedule" trong chi tiết nhóm.
+ * ===========================================================
+ * Theo DESIGN.md: canvas #101010 · surface #1a1a1a · hairline #3d3a39
+ * accent #00d992 · ink #f2f2f2 · body #bdbdbd · mute #8b949e
+ * Card radius 8px · button radius 6px · pill 9999px
+ * Class prefix: `.gsl-*`
+ * =========================================================== */
+
+.gsl {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gsl-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* ---------- Danh sách slot ---------- */
+
+.gsl-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gsl-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 8px;
+  background: var(--canvas, #101010);
+  flex-wrap: wrap;
+  transition: border-color 160ms ease;
+}
+
+.gsl-item:hover {
+  border-color: rgba(0, 217, 146, 0.4);
+}
+
+/* Slot đã huỷ / bỏ lỡ / xong → làm mờ. */
+.gsl-item--closed {
+  opacity: 0.6;
+}
+
+.gsl-item-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.gsl-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink, #f2f2f2);
+}
+
+.gsl-time .gdt-btn-icon {
+  font-size: 14px;
+  color: var(--primary, #00d992);
+}
+
+.gsl-dur {
+  font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--mute, #8b949e);
+}
+
+.gsl-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* Chip pill — inline status tag theo DESIGN.md. */
+.gsl-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: 9999px;
+  border: 1px solid var(--hairline, #3d3a39);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--body, #bdbdbd);
+  white-space: nowrap;
+}
+
+.gsl-note {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--mute, #8b949e);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+}

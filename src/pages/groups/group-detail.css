@@ -371,6 +371,194 @@
 }
 
 /* ===========================================================
+ * Tín hiệu tiến độ (mục 10 của cập nhật BE)
+ * ----------------------------------------------------------
+ * 4 loại rủi ro: quá hạn, chưa có lịch, nguy cơ trễ, đứng yên.
+ * Dùng hairline + pill theo DESIGN.md, không dùng shadow.
+ * =========================================================== */
+
+.gdt-signals {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--hairline, #3d3a39);
+}
+
+.gdt-signals-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Eyebrow mono-cap — dấu hiệu của brand Voltagent. */
+.gdt-signals-eyebrow {
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--primary, #00d992);
+}
+
+.gdt-signals-hint {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--mute, #8b949e);
+}
+
+.gdt-signals-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.gdt-signal {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 8px;
+  background: var(--canvas-soft, #1a1a1a);
+  min-width: 0;
+}
+
+.gdt-signal[data-tone="danger"] {
+  border-color: rgba(255, 107, 107, 0.4);
+}
+.gdt-signal[data-tone="warn"] {
+  border-color: rgba(227, 179, 65, 0.35);
+}
+
+.gdt-signal-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9999px;
+  border: 1px solid var(--hairline, #3d3a39);
+  color: var(--mute, #8b949e);
+  flex-shrink: 0;
+}
+.gdt-signal-icon .material-symbols-outlined {
+  font-size: 17px;
+}
+.gdt-signal[data-tone="danger"] .gdt-signal-icon {
+  color: #ff6b6b;
+  border-color: rgba(255, 107, 107, 0.4);
+}
+.gdt-signal[data-tone="warn"] .gdt-signal-icon {
+  color: #e3b341;
+  border-color: rgba(227, 179, 65, 0.35);
+}
+.gdt-signal[data-tone="info"] .gdt-signal-icon {
+  color: var(--primary-soft, #2fd6a1);
+  border-color: rgba(0, 217, 146, 0.35);
+}
+
+.gdt-signal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.gdt-signal-value {
+  font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 550;
+  color: var(--ink, #f2f2f2);
+}
+.gdt-signal[data-tone="danger"] .gdt-signal-value {
+  color: #ff6b6b;
+}
+.gdt-signal[data-tone="warn"] .gdt-signal-value {
+  color: #e3b341;
+}
+
+.gdt-signal-label {
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute, #8b949e);
+}
+
+.gdt-signal-tasks {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--mute, #8b949e);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* Ghi chú giải thích của BE (VD: "3 tasks have no time slot yet"). */
+.gdt-signal-note {
+  flex-basis: 100%;
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--mute, #8b949e);
+  opacity: 0.85;
+}
+
+/* ---------- Bộ đếm tín hiệu mỗi thành viên ---------- */
+
+.gdt-mem-signals {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--hairline, #3d3a39);
+}
+
+.gdt-mem-signal {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  border: 1px solid var(--hairline, #3d3a39);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--mute, #8b949e);
+}
+.gdt-mem-signal .material-symbols-outlined {
+  font-size: 13px;
+}
+.gdt-mem-signal-value {
+  font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
+  font-weight: 550;
+  color: var(--ink, #f2f2f2);
+}
+.gdt-mem-signal[data-tone="danger"] {
+  border-color: rgba(255, 107, 107, 0.4);
+}
+.gdt-mem-signal[data-tone="danger"] .material-symbols-outlined,
+.gdt-mem-signal[data-tone="danger"] .gdt-mem-signal-value {
+  color: #ff6b6b;
+}
+.gdt-mem-signal[data-tone="warn"] {
+  border-color: rgba(227, 179, 65, 0.35);
+}
+.gdt-mem-signal[data-tone="warn"] .material-symbols-outlined,
+.gdt-mem-signal[data-tone="warn"] .gdt-mem-signal-value {
+  color: #e3b341;
+}
+
+/* ===========================================================
  * Tabs — gạch chân, kiểu tài liệu
  * =========================================================== */
 

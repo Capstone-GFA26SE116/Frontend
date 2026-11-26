@@ -97,6 +97,81 @@ export async function getGroupAssigneeSuggestions(
 }
 
 /* ===========================================================
+ * 3. Gợi ý giờ làm việc nhóm (FR-25)
+ * ----------------------------------------------------------
+ * ⚠️ KHÔNG tốn lượt AI (AI chỉ đọc lịch, không gọi LLM) → chạy được với
+ * mọi gói. Ai dùng: **người được giao** việc (Leader hoặc Member) —
+ * người khác gọi sẽ bị `403`.
+ * =========================================================== */
+
+/** Loại cảnh báo của gợi ý giờ. */
+export type GroupSlotWarningType =
+  | "no_estimate"
+  | "not_enough_time"
+  | "overdue"
+  | "beyond_window";
+
+/** 1 cảnh báo khi không xếp được hết phần việc. */
+export interface GroupSlotWarningDto {
+  type: GroupSlotWarningType | string;
+  /** Số phút cần xếp (với `not_enough_time`). */
+  needed_minutes?: number | null;
+  /** Số phút rảnh trước hạn (với `not_enough_time`). */
+  free_minutes?: number | null;
+  /** Thông điệp sẵn có từ AI (nếu có). */
+  message?: string | null;
+}
+
+/** 1 khung giờ AI gợi ý. */
+export interface GroupSlotSuggestionDto {
+  /** Việc con của khung này; `null` = việc không có việc con. */
+  subtask_id: string | null;
+  /** Tên việc con (hoặc tên việc cha). */
+  title: string | null;
+  /** ISO 8601 theo múi giờ của người được giao (VD `+07:00`). */
+  start: string;
+  end: string;
+  /** Độ dài khung (phút). */
+  minutes: number;
+  /** Câu lý do (≤ 500 ký tự — vừa `explanation` của Backend). */
+  reason: string | null;
+}
+
+export interface GroupSlotSuggestionsDto {
+  task_id: string;
+  /** Khung giờ theo thứ tự thời gian. Rỗng = không tìm được. */
+  slots: GroupSlotSuggestionDto[];
+  warnings: GroupSlotWarningDto[];
+  /** Câu tóm tắt — hiện làm tiêu đề hộp gợi ý. */
+  summary: string | null;
+  /** Múi giờ AI dùng để xếp (VD `Asia/Ho_Chi_Minh`). */
+  time_zone: string | null;
+}
+
+/**
+ * `POST /groups/tasks/{groupTaskId}/slot-suggestions`
+ *
+ * AI **chỉ đọc** — không ghi slot. Người dùng chọn khung rồi bấm
+ * "Add to calendar" → FE gọi Backend `POST /api/group-tasks/{id}/schedule-slots`
+ * (tuần tự) để tạo slot thật.
+ */
+export async function getGroupSlotSuggestions(
+  groupTaskId: string,
+  body: { language?: "vi" | "en" } = {},
+): Promise<ApiResult<GroupSlotSuggestionsDto>> {
+  if (!groupTaskId) {
+    return { ok: false, status: 0, error: "Missing group task id." };
+  }
+  return aiFetch<GroupSlotSuggestionsDto>(
+    `/groups/tasks/${encodeURIComponent(groupTaskId)}/slot-suggestions`,
+    {
+      method: "POST",
+      body: JSON.stringify({ language: body.language ?? "vi" }),
+    },
+  );
+}
+
+/* ===========================================================
  * 2. Chat AI lập kế hoạch nhóm
  * =========================================================== */
 

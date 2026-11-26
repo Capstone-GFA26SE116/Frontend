@@ -125,13 +125,18 @@ export function buildOverlapMessage(
   const first = overlaps[0];
   const when = fmtOverlapRange(first.start, first.end);
   const title = first.taskTitle?.trim();
+  /*
+   * Slot của **việc nhóm** (mục 10 của cập nhật BE) → nói rõ để người dùng
+   * hiểu mình đang vướng việc chung của nhóm, không phải việc cá nhân.
+   */
+  const kind = first.groupTaskId ? "group work" : "an existing slot";
   const detail = title
     ? `“${title}” (${first.status}) ${when}`
-    : `an existing slot (${first.status}) ${when}`;
+    : `${kind} (${first.status}) ${when}`;
 
   const head = opts.taskTitle?.trim()
-    ? `“${opts.taskTitle.trim()}” overlaps an existing slot`
-    : "This time overlaps an existing slot";
+    ? `“${opts.taskTitle.trim()}” overlaps ${kind}`
+    : `This time overlaps ${kind}`;
 
   const more = overlaps.length > 1 ? ` (+${overlaps.length - 1} more)` : "";
 

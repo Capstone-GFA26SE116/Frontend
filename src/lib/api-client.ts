@@ -1593,7 +1593,14 @@ export async function deleteMilestone(
  */
 export interface SlotOverlapDto {
   slotId: string;
-  taskId: string;
+  /**
+   * Task cá nhân bị chồng — `null` nếu bên chồng là **slot của việc nhóm**.
+   * (Mục 10 của cập nhật BE: slot nhóm có `groupTaskId` riêng.)
+   */
+  taskId: string | null;
+  /** Việc nhóm bị chồng (slot nhóm) — `null` nếu bên chồng là việc cá nhân. */
+  groupTaskId?: string | null;
+  /** Tên việc bị chồng (dùng để hiển thị trong thông điệp lỗi). */
   taskTitle: string;
   status: string;
   start: string; // ISO 8601
@@ -1609,14 +1616,18 @@ export interface SlotOverlapDto {
 export interface ProposalOverlapDto {
   /** Slot đề xuất bị chồng. */
   slotId: string;
-  taskId: string;
+  /** `null` nếu slot đề xuất thuộc việc nhóm. */
+  taskId: string | null;
+  /** Việc nhóm của slot đề xuất (slot nhóm). */
+  groupTaskId?: string | null;
   taskTitle: string;
   start: string;
   end: string;
   /** Slot đang chiếm giờ. */
   with: {
     slotId: string;
-    taskId: string;
+    taskId: string | null;
+    groupTaskId?: string | null;
     taskTitle: string;
     status: string;
     start: string;
@@ -1688,8 +1699,22 @@ export type ScheduleSlotStatus =
 
 export interface ScheduleSlotDto {
   id: string;
-  taskId: string;
+  /**
+   * Task cá nhân gắn với slot — `null` với **slot của việc nhóm**.
+   *
+   * ⚠️ Mục 10 của cập nhật BE: `taskId` có thể `null` trong MỌI API slot.
+   * Slot nhóm thay bằng `groupTaskId` / `groupSubTaskId` / `userId`.
+   */
+  taskId: string | null;
   subTaskId: string | null;
+  /** Việc nhóm gắn với slot (slot nhóm) — `null` với slot cá nhân. */
+  groupTaskId?: string | null;
+  /** Việc con của việc nhóm (slot nhóm) — `null` với slot cá nhân. */
+  groupSubTaskId?: string | null;
+  /** Người được giao slot nhóm — `null` với slot cá nhân. */
+  userId?: string | null;
+  /** Tên nhóm (chỉ có trong lịch gộp `GET /api/calendar`). */
+  groupName?: string | null;
   scheduleProposalId: string | null;
   startTime: string; // ISO 8601
   endTime: string; // ISO 8601
@@ -1719,6 +1744,11 @@ export interface CreateScheduleSlotRequest {
 /** Request body cho PUT /api/schedule-slots/{slotId} */
 export interface UpdateScheduleSlotRequest {
   subTaskId?: string | null;
+  /**
+   * Việc con của việc nhóm — dùng khi sửa **slot nhóm** (mục 10 của cập
+   * nhật BE). Slot nhóm dùng chung endpoint `PUT /api/schedule-slots/{id}`.
+   */
+  groupSubTaskId?: string | null;
   scheduleProposalId?: string | null;
   startTime?: string;
   endTime?: string;
@@ -2059,8 +2089,25 @@ export interface CalendarItemDto {
   end: string;
   isAllDay: boolean;
   status: string;
+  /**
+   * Task cá nhân — `null` với **slot của việc nhóm** (mục 10 của cập nhật BE).
+   *
+   * ⚠️ Khi `taskId = null`, mọi trường dự án / khách hàng / loại công việc
+   * cũng là `null` → màn lịch phải hiển thị theo `groupName` + tiêu đề việc
+   * nhóm, KHÔNG điều hướng sang trang task cá nhân.
+   */
   taskId: string | null;
   subTaskId: string | null;
+  /** Việc nhóm (slot nhóm) — `null` với lịch cá nhân. */
+  groupTaskId?: string | null;
+  /** Việc con của việc nhóm (slot nhóm). */
+  groupSubTaskId?: string | null;
+  /** Người được giao slot nhóm. */
+  userId?: string | null;
+  /** Nhóm sở hữu slot — chỉ có với slot nhóm. */
+  groupId?: string | null;
+  /** Tên nhóm — chỉ có với slot nhóm. */
+  groupName?: string | null;
   projectId: string | null;
   /** Chi tiết mở rộng (từ task/subtask gốc) */
   subTaskTitle?: string | null;
@@ -3345,8 +3392,14 @@ export async function listChatHistory(params?: {
 
 export type BriefingLanguage = "vi" | "en";
 
-/** Nguồn của 1 dòng trong lịch hôm nay. */
-export type BriefingScheduleKind = "slot" | "fixed" | "google";
+/**
+ * Nguồn của 1 dòng trong lịch hôm nay.
+ *
+ * ⚠️ Từ 25/11 (AI PR #58): slot của **việc nhóm** xuất hiện với
+ * `kind: "group"` và `task_id` = **id việc nhóm** (không phải task cá
+ * nhân). Bấm vào phải mở việc nhóm, KHÔNG mở `/tasks/{id}`.
+ */
+export type BriefingScheduleKind = "slot" | "fixed" | "google" | "group";
 
 /** Vì sao task nằm trong danh sách "nên làm hôm nay". */
 export type BriefingReasonCode =
@@ -3361,7 +3414,17 @@ export interface BriefingScheduleItem {
   start: string;
   end: string;
   title: string;
+  /**
+   * Id của task.
+   *
+   * ⚠️ Với `kind: "group"` đây là **id việc nhóm** (`groupTaskId`), KHÔNG
+   * phải task cá nhân → bấm vào phải mở `/groups/{groupId}`.
+   */
   task_id: string | null;
+  /**
+   * Id của nhóm (chỉ có với `kind: "group"`) — dùng để deep-link.
+   */
+  group_id?: string | null;
   status: "Approved" | "Done" | null;
 }
 

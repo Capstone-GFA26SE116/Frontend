@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
  * ===========================================================
@@ -44,6 +44,13 @@ export interface GoogleIdentityState {
   message: string | null;
   /** `true` khi nút Google đã render xong → có thể forward click. */
   canUseButton: boolean;
+  /**
+   * Thử nạp lại script GIS + render nút (dùng khi lỗi mạng/cache).
+   *
+   * Cần thiết vì `net::ERR_CACHE_READ_FAILURE` là lỗi tạm thời — bấm
+   * "Retry" sẽ tải bản mới (URL cache-busting) mà không cần F5 trang.
+   */
+  reload: () => void;
 }
 
 export interface UseGoogleIdentityOptions {
@@ -103,37 +110,162 @@ function getGis(): GisApi | null {
  */
 let gisScriptPromise: Promise<GisApi | null> | null = null;
 
-function loadGisScript(): Promise<GisApi | null> {
-  if (gisScriptPromise) return gisScriptPromise;
+/** URL gốc của Google Identity Services client. */
+const GIS_SRC = "https://accounts.google.com/gsi/client";
 
-  gisScriptPromise = new Promise<GisApi | null>((resolve) => {
-    // Script đã có sẵn (điều hướng SPA qua lại) → dùng luôn.
-    const existing = document.querySelector<HTMLScriptElement>(
-      'script[src="https://accounts.google.com/gsi/client"]',
+/**
+ * Cache-busting cho script GIS.
+ *
+ * ⚠️ Vì sao cần: khi cache HTTP của trình duyệt bị hỏng cho domain
+ * `accounts.google.com` (symptom: `net::ERR_CACHE_READ_FAILURE`), script GIS
+ * tải về **nửa vời / sai** → code bên trong Google chạy lỗi
+ * `Uncaught ReferenceError: gis is not defined` và nút Google không bao giờ
+ * render. Thêm query param ngẫu nhiên buộc browser tải bản mới, bỏ qua
+ * cache hỏng.
+ */
+function gisUrl(): string {
+  const bust = Math.random().toString(36).slice(2, 10);
+  return `${GIS_SRC}?v=${bust}`;
+}
+
+/**
+ * Xoá cache hỏng của browser cho domain Google.
+ *
+ * `caches` là Cache Storage API (dùng cho SW/PWA) — nếu script bị cache
+ * hỏng ở đó, xoá giúp browser tải lại từ network. Bọc try/catch vì
+ * `caches` có thể không tồn tại (http, Safari cũ).
+ */
+async function purgeGoogleCaches(): Promise<void> {
+  try {
+    if (typeof caches === "undefined") return;
+    const keys = await caches.keys();
+    await Promise.all(
+      keys
+        .filter((k) => /google|gsi/i.test(k))
+        .map((k) => caches.delete(k).catch(() => false)),
     );
-    if (existing) {
-      if (getGis()) {
-        resolve(getGis());
-        return;
-      }
-      existing.addEventListener("load", () => resolve(getGis()), { once: true });
-      existing.addEventListener("error", () => resolve(null), { once: true });
-      return;
+  } catch {
+    // Bỏ qua — không ảnh hưởng luồng đăng nhập.
+  }
+}
+
+/**
+ * Tạo thẻ script GIS và chờ load.
+ *
+ * - Cache-busting URL để né cache hỏng.
+ * - Timeout: script bị treo (network chậm / bị chặn) → trả `null` thay vì
+ *   để UI kẹt vô hạn ở trạng thái "loading".
+ */
+function injectGisScript(url: string): Promise<GisApi | null> {
+  return new Promise<GisApi | null>((resolve) => {
+    /*
+     * ⚠️ Xoá `window.google` dở dang trước khi nạp lại.
+     *
+     * Khi script GIS bị tải nửa vời (cache hỏng), Google đã set
+     * `window.google` nhưng chưa định nghĩa `accounts.id` → code bên trong
+     * Google ném `Uncaught ReferenceError: gis is not defined`. Script mới
+     * sẽ tự bỏ qua (vì `window.google` đã tồn tại) → `getGis()` vẫn null
+     * → nút không bao giờ render. Xoá đi để script mới init sạch.
+     */
+    const w = window as unknown as { google?: unknown };
+    if (w.google && !getGis()) {
+      delete w.google;
     }
 
     const script = document.createElement("script");
-    script.src = "https://accounts.google.com/gsi/client";
+    script.src = url;
     script.async = true;
     script.defer = true;
-    script.onload = () => resolve(getGis());
+
+    // Timeout 8s — nếu script không bao giờ load → coi như thất bại.
+    const timer = window.setTimeout(() => resolve(null), 8000);
+
+    script.onload = () => {
+      window.clearTimeout(timer);
+      resolve(getGis());
+    };
     // `onerror` bắt được: network fail, bị chặn bởi extension/adblock,
     // hoặc CSP chặn domain. Lỗi 403 của *asset nút* không đi qua đây —
-    // nó được xử lý riêng bằng `script.onerror` + timeout bên dưới.
-    script.onerror = () => resolve(null);
+    // nó được xử lý riêng bằng poll iframe bên dưới.
+    script.onerror = () => {
+      window.clearTimeout(timer);
+      resolve(null);
+    };
+
     document.head.appendChild(script);
   });
+}
+
+function loadGisScript(): Promise<GisApi | null> {
+  if (gisScriptPromise) return gisScriptPromise;
+
+  gisScriptPromise = (async () => {
+    // 1) Script đã có sẵn (điều hướng SPA qua lại) → dùng luôn.
+    const existing = document.querySelector<HTMLScriptElement>(
+      `script[src^="${GIS_SRC}"]`,
+    );
+    if (existing) {
+      const ready = getGis();
+      if (ready) return ready;
+      // Script cũ đang tải (hoặc đã hỏng) → chờ load, hết giờ thì thử lại
+      // bằng URL mới (cache-busting).
+      const loaded = await new Promise<boolean>((resolve) => {
+        const timer = window.setTimeout(() => resolve(false), 3000);
+        existing.addEventListener(
+          "load",
+          () => {
+            window.clearTimeout(timer);
+            resolve(true);
+          },
+          { once: true },
+        );
+        existing.addEventListener(
+          "error",
+          () => {
+            window.clearTimeout(timer);
+            resolve(false);
+          },
+          { once: true },
+        );
+      });
+      if (loaded && getGis()) return getGis();
+      // Xoá script hỏng → nạp lại bản sạch.
+      existing.remove();
+    }
+
+    // 2) Nạp bản cache-busting (né cache hỏng gây `gis is not defined`).
+    const gis = await injectGisScript(gisUrl());
+    if (gis) return gis;
+
+    // 3) Xoá cache hỏng + thử lại 1 lần nữa.
+    await purgeGoogleCaches();
+    const retry = await injectGisScript(gisUrl());
+    return retry;
+  })();
 
   return gisScriptPromise;
+}
+
+/**
+ * Xoá script GIS đang tải + reset cache promise → lần `loadGisScript()` sau
+ * sẽ nạp lại từ đầu (URL cache-busting).
+ *
+ * Dùng cho nút "Retry" khi load thất bại (cache hỏng / mạng lỗi).
+ */
+export function resetGisScript(): void {
+  gisScriptPromise = null;
+  document
+    .querySelectorAll<HTMLScriptElement>(`script[src^="${GIS_SRC}"]`)
+    .forEach((s) => s.remove());
+  /*
+   * Xoá `window.google` để script mới init lại từ đầu.
+   *
+   * ⚠️ Luôn xoá (kể cả khi `accounts.id` đang tồn tại): nếu giữ lại, script
+   * Google mới thấy `window.google` đã có → **không** re-define
+   * `accounts.id.renderButton` → nút không render lại sau khi Retry.
+   */
+  const w = window as unknown as { google?: unknown };
+  delete w.google;
 }
 
 /**
@@ -176,11 +308,21 @@ export function useGoogleIdentity({
   onCredential,
   hostId = "google-signin-host",
 }: UseGoogleIdentityOptions): GoogleIdentityState {
-  const [state, setState] = useState<GoogleIdentityState>({
+  const [state, setState] = useState<
+    Omit<GoogleIdentityState, "reload">
+  >({
     status: "loading",
     message: null,
     canUseButton: false,
   });
+
+  /**
+   * Số lần thử nạp GIS — tăng mỗi lần bấm "Retry".
+   *
+   * Dùng làm dependency của effect → effect chạy lại từ đầu, nạp script
+   * mới (URL cache-busting) và render lại nút.
+   */
+  const [attempt, setAttempt] = useState(0);
 
   /** Callback ổn định để không re-init khi parent render lại. */
   const credRef = useRef(onCredential);
@@ -189,6 +331,15 @@ export function useGoogleIdentity({
   useEffect(() => {
     credRef.current = onCredential;
   }, [onCredential]);
+
+  /**
+   * Thử lại: xoá script GIS cũ + cache promise → effect chạy lại nhờ
+   * `attempt` tăng → nạp bản mới từ network.
+   */
+  const reload = useCallback(() => {
+    resetGisScript();
+    setAttempt((n) => n + 1);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -264,6 +415,9 @@ export function useGoogleIdentity({
         return;
       }
 
+      // Xoá nút cũ (nếu có) để không render chồng 2 nút Google.
+      host.replaceChildren();
+
       try {
         gis.accounts.id.renderButton(host, {
           type: "standard",
@@ -324,7 +478,7 @@ export function useGoogleIdentity({
     return () => {
       cancelled = true;
     };
-  }, [hostId]);
+  }, [hostId, attempt]);
 
-  return state;
+  return { ...state, reload };
 }

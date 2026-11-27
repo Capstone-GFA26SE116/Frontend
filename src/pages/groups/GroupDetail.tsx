@@ -1103,7 +1103,17 @@ export function GroupDetailPage() {
         const details = parseMilestoneOpenTasksDetails(res.details);
         if (details) {
           setMsOpenTasksWarning({
-            milestone: { ...msEditTarget, ...msEditForm, name } as GroupMilestoneDto,
+            /*
+             * ⚠️ `msEditForm.orderIndex` là STRING (state của <input>) →
+             * phải ép về number khi dựng DTO, nếu không TS báo lỗi.
+             */
+            milestone: {
+              ...msEditTarget,
+              name,
+              orderIndex,
+              dueDate: msEditForm.dueDate || null,
+              status: msEditForm.status,
+            },
             status: msEditForm.status,
             details,
             source: "edit",

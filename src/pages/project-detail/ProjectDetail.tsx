@@ -541,7 +541,14 @@ export function ProjectDetailPage() {
     status: string;
   }) {
     if (!editing || editing.kind !== "subtask") return;
-    const res = await updateSubtask(editing.item.id, body);
+    /*
+     * ⚠️ `CreateSubtaskRequest.description` là `string | undefined` (KHÔNG
+     * nhận `null`) → chuẩn hoá null thành undefined trước khi gửi.
+     */
+    const res = await updateSubtask(editing.item.id, {
+      ...body,
+      description: body.description ?? undefined,
+    });
     if (!res.ok) {
       showApiError(res, "update this subtask");
       return;
@@ -960,6 +967,7 @@ function ProjectDetailBody({
         onDeleteMilestone={onDeleteMilestone}
         onDeleteTask={onDeleteTask}
         onEditMilestone={(m) => onEdit({ kind: "milestone", item: m })}
+        onEditTask={(t) => onEdit({ kind: "task", item: t })}
       />
 
       {/* Tasks preview */}

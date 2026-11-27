@@ -2225,7 +2225,7 @@ function ProjectCard(p: ProjectCardProps) {
          * `OnHold` vẫn chat/Apply được (FR-08b-1 #28) → dùng chung nhánh này.
          */}
         <>
-          {/* 2-direction split: Manual (planning) vs AI (execution) */}
+          {/* Manual planning and project chat */}
           <Link
             to={`/projects/${prj.id}/planning`}
             className="proj-action proj-action--plain proj-action--flex"
@@ -2238,15 +2238,15 @@ function ProjectCard(p: ProjectCardProps) {
             <span>Manual decompose</span>
           </Link>
           <Link
-            to={`/projects/${prj.id}/execution`}
+            to={`/projects/${prj.id}/chat`}
             className="proj-action proj-action--ai proj-action--flex"
-            title="AI reads the client brief, decomposes it into milestones + tasks, then you review and apply"
+            title="Discuss the brief, review suggested work and choose when to schedule it"
             onClick={(e) => e.stopPropagation()}
           >
             <span className="material-symbols-outlined proj-action-icon">
               auto_awesome
             </span>
-            <span>AI decompose</span>
+            <span>AI chat</span>
           </Link>
         </>
       </div>

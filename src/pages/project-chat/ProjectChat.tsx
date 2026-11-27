@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CenterToasts } from "../../components/Toast";
 import {
   approveScheduleProposal,
@@ -37,9 +37,9 @@ function canSchedule(task: TaskDto) {
     task.status.toLowerCase() !== "skipped";
 }
 
-function Companion({ projectId }: { projectId: string }) {
+function Companion({ projectId, conversationId }: { projectId: string; conversationId: string | null }) {
   const navigate = useNavigate();
-  const chat = useProjectChat({ initialProjectId: projectId });
+  const chat = useProjectChat({ initialProjectId: projectId, initialConversationId: conversationId });
   const { handlers } = chat;
   const [pane, setPane] = useState<"history" | "work" | null>(null);
   const [documents, setDocuments] = useState<ProjectDocumentDto[]>([]);
@@ -368,5 +368,7 @@ function Companion({ projectId }: { projectId: string }) {
 
 export function ProjectChatPage() {
   const { projectId } = useParams<{ projectId: string }>();
-  return projectId ? <Companion key={projectId} projectId={projectId} /> : null;
+  const [query] = useSearchParams();
+  const conversationId = query.get("conversation");
+  return projectId ? <Companion key={`${projectId}:${conversationId ?? ""}`} projectId={projectId} conversationId={conversationId} /> : null;
 }

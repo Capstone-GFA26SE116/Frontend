@@ -444,9 +444,9 @@ function ProjectDetailBody({
         <div className="pd-section-head">
           <div>
             <span className="pd-section-eyebrow">Choose your flow</span>
-            <h2 className="pd-section-title">How do you want to decompose this project?</h2>
+            <h2 className="pd-section-title">How do you want to plan this project?</h2>
             <p className="pd-section-sub">
-              METANOIA supports two flows: create tasks manually, or let AI decompose and schedule them automatically.
+              Create tasks manually, or discuss the brief with AI and review the work and times it suggests.
             </p>
           </div>
         </div>
@@ -473,27 +473,6 @@ function ProjectDetailBody({
           </Link>
 
           <Link
-            to={`/projects/${project.id}/execution`}
-            className="pd-direction pd-direction--execution"
-            aria-label="Open AI project planner"
-          >
-            <div className="pd-direction-badge">AI</div>
-            <div className="pd-direction-icon">
-              <span className="material-symbols-outlined">auto_awesome</span>
-            </div>
-            <div className="pd-direction-body">
-              <h3 className="pd-direction-title">AI auto-decompose</h3>
-              <p className="pd-direction-desc">
-                Paste the client brief — AI proposes milestones + tasks, you review and apply.
-              </p>
-            </div>
-            <div className="pd-direction-cta">
-              <span>Explore</span>
-              <span className="material-symbols-outlined">arrow_forward</span>
-            </div>
-          </Link>
-
-          <Link
             to={`/projects/${project.id}/chat`}
             className="pd-direction pd-direction--chat"
             aria-label="Open AI chat for this project"
@@ -505,8 +484,7 @@ function ProjectDetailBody({
             <div className="pd-direction-body">
               <h3 className="pd-direction-title">AI chat</h3>
               <p className="pd-direction-desc">
-                Talk to AI about this project — full chat history, project tree
-                and one-click scheduling.
+                Discuss the client brief, choose which suggested tasks to save, and approve times for the calendar.
               </p>
             </div>
             <div className="pd-direction-cta">

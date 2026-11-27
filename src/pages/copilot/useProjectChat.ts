@@ -69,6 +69,7 @@ export interface UseProjectChatOptions {
    * - có id → trang `/projects/:id/chat`: tự mở (hoặc tạo) chat của dự án.
    */
   initialProjectId?: string | null;
+  initialConversationId?: string | null;
 }
 
 export interface ProjectChatHandlers {
@@ -92,7 +93,7 @@ export interface ProjectChatHandlers {
 }
 
 export function useProjectChat(options: UseProjectChatOptions = {}) {
-  const { initialProjectId = null } = options;
+  const { initialProjectId = null, initialConversationId = null } = options;
   const [toasts, toast] = useCenterToast();
 
   /* ===========================================================
@@ -191,6 +192,10 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
         return;
       }
       const data: ProjectChatDto = res.data;
+      if (initialProjectId && data.project_id !== initialProjectId) {
+        toast.error("Cuộc chat này thuộc dự án khác.");
+        return;
+      }
       setConversationId(data.conversation_id);
       setProjectId(data.project_id);
       setMessages(data.messages ?? []);
@@ -199,7 +204,7 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
       setScheduleResult(null);
       setScheduleError(null);
     },
-    [toast],
+    [initialProjectId, toast],
   );
 
   /**
@@ -295,9 +300,10 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
     if (openedProjectRef.current === initialProjectId) return;
     openedProjectRef.current = initialProjectId;
     void (async () => {
-      await openProject(initialProjectId);
+      if (initialConversationId) await openConversationById(initialConversationId);
+      else await openProject(initialProjectId);
     })();
-  }, [initialProjectId, openProject]);
+  }, [initialConversationId, initialProjectId, openConversationById, openProject]);
 
   /* ===========================================================
    * Gửi tin

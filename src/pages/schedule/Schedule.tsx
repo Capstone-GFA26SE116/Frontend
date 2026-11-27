@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, Ref } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
@@ -192,6 +192,199 @@ function eventTimeRange(ev: CalEvent): string {
   if (ev.isAllDay) return "All day";
   return `${fmtTime(ev.start)} - ${fmtTime(ev.end)}`;
 }
+/**
+ * Khoá sắp xếp theo giờ bắt đầu của 1 event TRONG NGÀY ĐANG XEM.
+ *
+ * - All-day → đội sớm nhất (đầu ngày).
+ * - Aggregate event (task gộp nhiều slot/subtask) → lấy giờ bắt đầu sớm
+ *   nhất trong các block con **thuộc ngày này**, vì `ev.start` chỉ là min/max
+ *   của cả nhóm (task kéo dài 3 ngày thì `ev.start` là ngày 1).
+ * - Event kéo dài qua ngày này (bắt đầu hôm trước) → dùng đầu ngày này.
+ */
+function eventStartTime(ev: CalEvent, day?: Date): number {
+  if (ev.isAllDay) return -Infinity;
+  const dayStart = day ? startOfDay(day).getTime() : null;
+  const dayEnd = day ? addDays(startOfDay(day), 1).getTime() : null;
+
+  if (ev.aggregatedEvents && ev.aggregatedEvents.length > 0) {
+    const inDay = ev.aggregatedEvents
+      .map((c) => c.start.getTime())
+      .filter((t) => (dayStart === null || t >= dayStart) && (dayEnd === null || t < dayEnd));
+    if (inDay.length > 0) return Math.min(...inDay);
+  }
+  const t = ev.start.getTime();
+  if (dayStart !== null && t < dayStart) return dayStart;
+  return t;
+}
+
+/* ===========================================================
+ * Layout lane — xep cac block khong chong nhau trong 1 cot ngay.
+ * =========================================================== */
+
+/** 1 block da duoc dat trong luoi (kem so lane de tranh chong). */
+interface PlacedSegment {
+  seg: EventSegment;
+  /** Lane (cot con) — 0, 1, 2... */
+  lane: number;
+  /** Tong so lane trong cum chong nhau → tinh do rong. */
+  lanes: number;
+}
+
+/**
+ * Gan moi block vao 1 "lane" de 2 block chong nhau khong de len nhau.
+ *
+ * Cac block giao nhau (overlap theo giờ) cung 1 cum → chung so lane.
+ */
+function layoutSegments(list: EventSegment[]): PlacedSegment[] {
+  const sorted = list.slice().sort((a, b) => a.start.getTime() - b.start.getTime());
+  const out: PlacedSegment[] = [];
+  let cluster: PlacedSegment[] = [];
+  let clusterEnd = -Infinity;
+
+  const flush = () => {
+    if (cluster.length === 0) return;
+    const maxLane = cluster.reduce((m, c) => Math.max(m, c.lane), 0) + 1;
+    for (const c of cluster) c.lanes = maxLane;
+    out.push(...cluster);
+    cluster = [];
+    clusterEnd = -Infinity;
+  };
+
+  for (const seg of sorted) {
+    const s = seg.start.getTime();
+    const e = seg.end.getTime();
+    // Block mới bắt đầu sau khi cụm hiện tại kết thúc → tách cụm mới.
+    if (cluster.length > 0 && s >= clusterEnd) flush();
+    const used = new Set(cluster.map((c) => c.lane));
+    let lane = 0;
+    while (used.has(lane)) lane++;
+    cluster.push({ seg, lane, lanes: 1 });
+    clusterEnd = Math.max(clusterEnd, e);
+  }
+  flush();
+  return out;
+}
+
+/* ===========================================================
+ * Tách 1 event thành nhiều "khối giờ" liên tục.
+ *
+ * ⚠️ Vấn đề: task có 2 subtask ở 2 khung giờ rời nhau (8h–10h và 16h–18h)
+ * bị gộp thành 1 card duy nhất với `start` = 8h, `end` = 18h → trên lưới
+ * giờ nó chiếm hết khoảng 8h–18h, che mất các việc khác ở giữa.
+ *
+ * Hàm này cắt 1 event thành nhiều đoạn LIÊN TỤC (không bị cắt ngang giữa
+ * chừng):
+ *   - Dùng `aggregatedEvents` (các slot/subtask con) làm mốc ranh giới.
+ *   - Mỗi đoạn = 1 nhóm các mốc liên tiếp không bị ngắt quãng > `MAX_GAP`.
+ *   - Đoạn nào chỉ có 1 mốc → thành 1 card riêng với đúng giờ của nó.
+ *
+ * Event không có `aggregatedEvents` (đơn giản: 1 slot, 1 Google event) →
+ * trả về nguyên event.
+ * =========================================================== */
+
+/**
+ * Khoảng cách tối đa (phút) giữa 2 mốc liên tiếp để coi là "1 khối liên
+ * tục". Mốc cách nhau quá → tách thành 2 khối riêng.
+ */
+const MAX_CONTIGUOUS_GAP_MIN = 30;
+
+/**
+ * 1 đoạn giờ liên tục của 1 event.
+ *
+ * - `ev`   : event gốc (giữ nguyên để mở modal, Focus Session, v.v.)
+ * - `start`/`end`: mốc bắt đầu / kết thúc của đoạn này
+ * - `blocks`: các mốc con (subtask/slot) nằm trong đoạn
+ */
+interface EventSegment {
+  ev: CalEvent;
+  start: Date;
+  end: Date;
+  blocks: CalEvent[];
+}
+
+/**
+ * Cắt 1 event thành các đoạn giờ liên tục.
+ *
+ * @param ev       Event gốc
+ * @param day      Ngày đang hiển thị (để clip đoạn về trong ngày)
+ */
+function segmentEvent(ev: CalEvent, day: Date): EventSegment[] {
+  const children = ev.aggregatedEvents ?? [];
+  // Không gộp → 1 đoạn duy nhất (dùng đúng start/end của event).
+  if (children.length === 0) {
+    const start = ev.start;
+    const end = ev.end;
+    if (end.getTime() <= start.getTime()) {
+      return [{ ev, start, end: new Date(start.getTime() + 30 * 60_000), blocks: [] }];
+    }
+    return [{ ev, start, end, blocks: [] }];
+  }
+
+  /*
+   * Gom các mốc con theo khung giờ, gộp trùng nhau (overlap) lại 1 mốc.
+   * 1 mốc = 1 "việc con" (slot / subtask) có start + end.
+   */
+  const marks = children
+    .map((c) => ({ start: c.start.getTime(), end: c.end.getTime() }))
+    .filter((m) => m.end > m.start)
+    .sort((a, b) => a.start - b.start);
+
+  if (marks.length === 0) {
+    return [{ ev, start: ev.start, end: ev.end, blocks: [] }];
+  }
+
+  /*
+   * Gộp các mốc chồng lấn / liền kề (gap <= MAX_CONTIGUOUS_GAP_MIN) thành 1
+   * cụm liên tục → 1 đoạn.
+   */
+  type Cluster = { start: number; end: number; marks: typeof marks };
+  const clusters: Cluster[] = [];
+  for (const m of marks) {
+    const last = clusters[clusters.length - 1];
+    if (last && m.start - last.end <= MAX_CONTIGUOUS_GAP_MIN * 60_000) {
+      last.end = Math.max(last.end, m.end);
+      last.marks.push(m);
+    } else {
+      clusters.push({ start: m.start, end: m.end, marks: [m] });
+    }
+  }
+
+  // Clip các cụm về trong ngày đang hiển thị.
+  const dayStart = startOfDay(day).getTime();
+  const dayEnd = addDays(startOfDay(day), 1).getTime();
+
+  return clusters
+    .map((cl) => {
+      /*
+       * Chi giu cac cum THUC SU giao voi ngay dang xem.
+       *
+       * Khong duoc clip cu "cang" (Math.max/Math.min) o day: cum nam HOAN TOAN
+       * truoc ngay dang xem se bi clip thanh [dayStart, dayStart] -> moi cum
+       * deu co start = 00:00 -> trung key + sinh card ma o moi ngay.
+       *
+       * Dieu kien giao: cum.end > dayStart && cum.start < dayEnd.
+       */
+      if (cl.end <= dayStart) return null;
+      if (cl.start >= dayEnd) return null;
+
+      const s = Math.max(cl.start, dayStart);
+      const e = Math.min(cl.end, dayEnd);
+      const blocks = children.filter((c) => {
+        const cs = c.start.getTime();
+        const ce = c.end.getTime();
+        return ce > s && cs < e;
+      });
+      return {
+        ev,
+        start: new Date(s),
+        end: new Date(Math.max(e, s + 30 * 60_000)),
+        blocks,
+      };
+    })
+    .filter((seg): seg is EventSegment => seg !== null)
+    .filter((seg) => seg.start.getTime() < dayEnd);
+}
+
 function dotFor(ev: CalEvent): Tone {
   const s = ev.status?.toLowerCase();
   if (s === "done" || s === "completed") return "secondary";
@@ -411,20 +604,23 @@ export function SchedulePage() {
   /* view state */
   const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [anchor, setAnchor] = useState<Date>(() => new Date());
-  const [filter, setFilter] = useState<FilterId>("all");
   /**
-   * Ngày đầu tiên của cửa sổ hiển thị ở view Tuần.
+   * Bộ lọc nhanh (All items / Priority / Capstone / Deep work).
    *
-   * ⚠️ View Tuần KHÔNG phải 1 tuần lịch (Thứ Hai → Chủ Nhật) mà là **cửa
-   * sổ 5 ngày trượt**:
-   *   - Mặc định: Thứ Hai → Thứ Sáu của tuần hiện tại (T2 → T6).
-   *   - Bấm "Today": HÔM NAY nằm ở cột ĐẦU TIÊN
-   *     (hôm nay → hôm nay + 1 → ... → hôm nay + 4).
-   *   - Bấm "Next" → trượt thêm 5 ngày, "Prev" → lùi 5 ngày.
+   * ⚠️ UI đang ẩn — các filter này chưa được implement thật (xem
+   * `visibleWeek` luôn trả về toàn bộ tuần). State vẫn giữ để sẵn sàng
+   * bật lại khi có logic thật.
+   */
+  const [filter] = useState<FilterId>("all");
+  /**
+   * View Tuần hiện **trọn 1 tuần lịch: Thứ Hai → Chủ Nhật (7 ngày)**.
    *
-   * Nhờ vậy luôn đủ 5 cột (task card rộng, tên subtask không bị cắt) mà
-   * vẫn không bỏ sót T7/CN — chúng nằm ở cửa sổ kế tiếp. Cùng cơ chế với
-   * view Tháng (lưới 42 ngày có đủ cuối tuần).
+   *  - Mặc định: tuần chứa hôm nay (T2 → CN của tuần hiện tại).
+   *  - Bấm "Next" → tuần kế tiếp, "Prev" → tuần trước (mỗi bước 7 ngày).
+   *  - Bấm "Today" → quay lại tuần chứa hôm nay.
+   *
+   * `weekStart` luôn là Thứ Hai của tuần đang xem → giữ cho việc nhảy tuần
+   * và hiển thị đúng 7 cột (T2, T3, T4, T5, T6, T7, CN).
    */
   const [weekStart, setWeekStart] = useState<Date>(() => startOfWeek(new Date()));
   /** Lưu anchor ban đầu của project span, để "Jump to span" quay lại. */
@@ -440,15 +636,6 @@ export function SchedulePage() {
   const toastDismiss = toast.dismiss;
   /** Calendar items từ API (BE merged + enriched) */
   const [calendarItems, setCalendarItems] = useState<CalendarItemDto[]>([]);
-  /** Work hours + timezone từ calendar response (AI xếp lịch dựa trên vùng này) */
-  const [workHours, setWorkHours] = useState<{
-    timeZone?: string;
-    workDayStart?: string | null;
-    workDayEnd?: string | null;
-    worksOnWeekend?: boolean;
-    googleCalendarStatus?: string;
-  }>({});
-
   /** Handle drop từ Planning page (localStorage-based) */
   const handleScheduleDrop = useCallback(async (date: Date) => {
     // Đọc task từ localStorage (được set bởi Planning page)
@@ -556,10 +743,9 @@ export function SchedulePage() {
       return { start, end };
     }
     /*
-     * View Tuần: cửa sổ **5 ngày trượt** (T2 → T6 mặc định, bấm Next →
-     * T7, CN, T2, T3, T4 → ...). Xem `weekStart`.
+     * View Tuần: trọn 1 tuần lịch 7 ngày (T2 → CN). Xem `weekStart`.
      *
-     * View Gantt: vẫn dùng tuần lịch 7 ngày (Thứ Hai → Chủ Nhật).
+     * View Gantt: cũng dùng tuần lịch 7 ngày (Thứ Hai → Chủ Nhật).
      */
     if (viewMode === "gantt") {
       const start = startOfWeek(anchor);
@@ -567,9 +753,9 @@ export function SchedulePage() {
       end.setHours(23, 59, 59, 999);
       return { start, end };
     }
-    // week: 5 ngày từ `weekStart`
+    // week: 7 ngày từ `weekStart` (Thứ Hai → Chủ Nhật)
     const start = weekStart;
-    const end = addDays(start, 4);
+    const end = addDays(start, 6);
     end.setHours(23, 59, 59, 999);
     return { start, end };
   }, [viewMode, anchor, weekStart]);
@@ -623,14 +809,6 @@ export function SchedulePage() {
         setCalendarItems(
           calRes.data.items.filter((it) => !isArchived(it.projectId)),
         );
-        // Work-hours config: AI propose dựa trên giờ làm việc nên cần giữ lại.
-        setWorkHours({
-          timeZone: calRes.data.timeZone,
-          workDayStart: calRes.data.workDayStart,
-          workDayEnd: calRes.data.workDayEnd,
-          worksOnWeekend: calRes.data.worksOnWeekend,
-          googleCalendarStatus: calRes.data.googleCalendarStatus,
-        });
 
         // Vẫn load tasks + subtasks để modal hiển thị được danh sách subtask
         if (!projectId) {
@@ -1728,10 +1906,10 @@ export function SchedulePage() {
     setAnchor(spanAnchor);
   }
 
-  /* Week board — 5 ngày ở view Tuần, 7 ngày ở view Gantt */
+  /* Week board — 7 ngày (tuần lịch T2 → CN) ở cả view Tuần lẫn view Gantt */
   const week = useMemo<DayPlan[]>(() => {
-    // View Tuần: cửa sổ 5 ngày trượt. View Gantt: tuần lịch 7 ngày.
-    const dayCount = viewMode === "week" ? 5 : 7;
+    // 7 ngày: tuần lịch Thứ Hai → Chủ Nhật.
+    const dayCount = 7;
     return Array.from({ length: dayCount }).map((_, i) => {
       const date = addDays(range.start, i);
       const dayEvents = events.filter((ev) => {
@@ -1758,6 +1936,20 @@ export function SchedulePage() {
         }
         return false;
       });
+      /*
+       * ⚠️ Sắp xếp theo GIỜ BẮT ĐẦU tăng dần.
+       *
+       * `events` giữ thứ tự API trả về → không sort thì card trong 1 ngày
+       * hiện lộn xộn (việc 14:00 nằm trên việc 09:00).
+       *
+       * Tie-break theo tiêu đề để thứ tự ổn định giữa các lần render.
+       */
+      dayEvents.sort((a, b) => {
+        const ta = eventStartTime(a, date);
+        const tb = eventStartTime(b, date);
+        if (ta !== tb) return ta - tb;
+        return a.title.localeCompare(b.title);
+      });
       const totalHours = dayEvents.reduce((acc, ev) => acc + durationHours(ev), 0);
       const pct = Math.min(100, Math.round((totalHours / 8) * 100));
       let label: string;
@@ -1778,7 +1970,7 @@ export function SchedulePage() {
         rest: isRest && dayEvents.length === 0,
       };
     });
-  }, [events, range, viewMode]);
+  }, [events, range]);
 
   /* Month grid: 6 weeks */
   const monthGrid = useMemo<DayPlan[]>(() => {
@@ -1788,6 +1980,13 @@ export function SchedulePage() {
       const dayEvents = events.filter((ev) => {
         if (ev.isAllDay) return isSameDay(ev.start, date);
         return isSameDay(ev.start, date);
+      });
+      /* Sắp xếp theo giờ bắt đầu tăng dần (như week board). */
+      dayEvents.sort((a, b) => {
+        const ta = eventStartTime(a, date);
+        const tb = eventStartTime(b, date);
+        if (ta !== tb) return ta - tb;
+        return a.title.localeCompare(b.title);
       });
       const totalHours = dayEvents.reduce((acc, ev) => acc + durationHours(ev), 0);
       return {
@@ -1886,8 +2085,8 @@ export function SchedulePage() {
       return;
     }
     if (viewMode === "week") {
-      // Cửa sổ 5 ngày trượt → lùi 5 ngày.
-      setWeekStart(addDays(weekStart, -5));
+      // Tuần lịch 7 ngày → lùi 1 tuần.
+      setWeekStart(addDays(weekStart, -7));
       return;
     }
     setAnchor(addDays(anchor, -7));
@@ -1898,16 +2097,16 @@ export function SchedulePage() {
       return;
     }
     if (viewMode === "week") {
-      // Cửa sổ 5 ngày trượt → tiến 5 ngày (T2→T6 rồi T7,CN,T2,T3,T4).
-      setWeekStart(addDays(weekStart, 5));
+      // Tuần lịch 7 ngày → tiến 1 tuần.
+      setWeekStart(addDays(weekStart, 7));
       return;
     }
     setAnchor(addDays(anchor, 7));
   }
   function goToday() {
     setAnchor(new Date());
-    // Hôm nay ở cột ĐẦU TIÊN của cửa sổ 5 ngày.
-    setWeekStart(startOfDay(new Date()));
+    // Quay lại tuần lịch chứa hôm nay.
+    setWeekStart(startOfWeek(new Date()));
   }
 
   /* Period label */
@@ -1926,6 +2125,25 @@ export function SchedulePage() {
 
   /* Selected event for detail */
   const [selected, setSelected] = useState<CalEvent | null>(null);
+  /**
+   * Slot đang được bấm trên lịch (id của schedule slot).
+   *
+   * ⚠️ 1 task có thể có N slot rời rạc (8h–10h, 16h–18h). Nút Start/Make up
+   * phải áp dụng cho ĐÚNG slot người dùng bấm → nhớ lại slot id khi mở
+   * modal, thay vì luôn lấy slot đầu tiên.
+   */
+  const [focusSlotId, setFocusSlotId] = useState<string | null>(null);
+
+  /**
+   * Mở modal chi tiết cho 1 event.
+   *
+   * `focusSlotId` = slot cụ thể người dùng vừa bấm trên lịch (nếu có) → modal
+   * hiện nút Start/Make up/Stop đúng cho slot đó.
+   */
+  const openDetail = useCallback((e: CalEvent, focus?: string | null) => {
+    setSelected(e);
+    setFocusSlotId(focus ?? null);
+  }, []);
 
   /** Cell popover: hiện khi click 1 cell — liệt kê TẤT CẢ task trong ngày. */
   const [popover, setPopover] = useState<{ day: Date; items: DayItem[] } | null>(null);
@@ -1946,7 +2164,7 @@ export function SchedulePage() {
       const target = e.target as HTMLElement | null;
       if (target?.closest(".sch-cell-popover")) return;
       // Không đóng khi click vào cell (sẽ re-open)
-      if (target?.closest(".sch-week__day") || target?.closest(".sch-month__cell")) return;
+      if (target?.closest(".sch-tg__col") || target?.closest(".sch-month__cell")) return;
       setPopover(null);
     };
     document.addEventListener("mousedown", onDown);
@@ -2064,24 +2282,10 @@ export function SchedulePage() {
               <span className="material-symbols-outlined sch-icon-18">edit_calendar</span>
               Planning
             </Link>
-            <button
-              type="button"
-              className="sch-btn sch-btn--primary"
-              onClick={openProposal}
-              disabled={proposal.loading || schedulableCount === 0}
-              title={
-                schedulableCount === 0
-                  ? "No flexible tasks left without a schedule"
-                  : `AI will suggest time slots for ${schedulableCount} flexible tasks${
-                      workHours.workDayStart && workHours.workDayEnd
-                        ? ` within your working hours ${workHours.workDayStart}–${workHours.workDayEnd}`
-                        : ""
-                    } — tick them then press Apply to write them to your schedule`
-              }
-            >
-              <span className="material-symbols-outlined sch-icon-18">auto_awesome</span>
-              Auto-schedule
-            </button>
+            <GoogleCalendarSyncButton
+              toast={toast}
+              onSynced={handleCalendarSynced}
+            />
           </div>
         </div>
 
@@ -2153,25 +2357,11 @@ export function SchedulePage() {
             ))}
           </div>
 
-          <div className="sch-timeline__filters" role="tablist" aria-label="Filter">
-            {(["all", "priority", "capstone", "deep"] as FilterId[]).map((f) => (
-              <button
-                key={f}
-                type="button"
-                role="tab"
-                aria-selected={filter === f}
-                className={`sch-chip${filter === f ? " sch-chip--active" : ""}`}
-                onClick={() => setFilter(f)}
-              >
-                {f === "all" ? "All items" : f === "priority" ? "Priority" : f === "capstone" ? "Capstone" : "Deep work"}
-              </button>
-            ))}
-
-            {/*
-              View Tuần là **cửa sổ 5 ngày trượt**: T2 → T6, bấm "Next" →
-              T7, CN, T2, T3, T4 → ... Nên không cần toggle cuối tuần nữa.
-            */}
-          </div>
+          {/*
+            ⚠️ Bộ lọc nhanh (All items / Priority / Capstone / Deep work) đã
+            bị ẩn — chúng chưa được implement thật (xem `visibleWeek`) nên
+            chỉ gây nhiễu. `filter` vẫn giữ trong state để sẵn sàng bật lại.
+          */}
         </div>
 
         {/* Loading / Error */}
@@ -2248,19 +2438,17 @@ export function SchedulePage() {
             <div className="sch-ai__actions">
               <button
                 type="button"
-                className="sch-btn sch-btn--soft"
-                onClick={openProposal}
-                disabled={schedulableCount === 0 || proposal.loading}
-              >
-                Auto-schedule
-              </button>
-              <button
-                type="button"
                 className="sch-btn sch-btn--primary"
                 onClick={openProposal}
                 disabled={schedulableCount === 0 || proposal.loading}
+                title={
+                  schedulableCount === 0
+                    ? "No flexible tasks left without a schedule"
+                    : `AI will suggest time slots for ${schedulableCount} flexible tasks — tick them then press Apply to write them to your schedule`
+                }
               >
-                Let AI re-plan
+                <span className="material-symbols-outlined sch-icon-18">auto_awesome</span>
+                Auto-schedule
               </button>
             </div>
           </div>
@@ -2274,16 +2462,14 @@ export function SchedulePage() {
               lịch. Nay đưa lên trên dạng dải ngang để lịch được rộng hết
               chiều ngang (mỗi task 1 ô vuông lớn, dễ đọc).
             */}
-            <div className="sch-board__toolbar">
-              <GoogleCalendarCard toast={toast} onSynced={handleCalendarSynced} />
-            </div>
-
             <div className="sch-board__main">
               {viewMode === "week" && (
-                <WeekBoard days={visibleWeek} onSelectEvent={setSelected} tasksById={tasksById} spans={projectSpans} onCellClick={openCellPopover} accentByKey={cellAccentByKey} subtasksByTaskId={subtasksByTaskId} blockedReasonFor={blockedReasonFor} />
+                <div className="sch-tg-scroll">
+                  <WeekBoard days={visibleWeek} onSelectEvent={openDetail} tasksById={tasksById} spans={projectSpans} onCellClick={openCellPopover} accentByKey={cellAccentByKey} subtasksByTaskId={subtasksByTaskId} />
+                </div>
               )}
               {viewMode === "month" && (
-                <MonthGrid days={monthGrid} onSelectEvent={setSelected} spans={projectSpans} onCellClick={openCellPopover} accentByKey={cellAccentByKey} gridRef={monthGridRef} blockedReasonFor={blockedReasonFor} />
+                <MonthGrid days={monthGrid} onSelectEvent={setSelected} spans={projectSpans} onCellClick={openCellPopover} accentByKey={cellAccentByKey} gridRef={monthGridRef} />
               )}
               {viewMode === "gantt" && (
                 <GanttView days={visibleWeek} onSelectEvent={setSelected} spans={projectSpans} />
@@ -2298,6 +2484,8 @@ export function SchedulePage() {
         <EventDetailModal
           event={selected}
           subtasks={subtasks}
+          focusSlotId={focusSlotId}
+          blockedReasonFor={blockedReasonFor}
           onClose={() => setSelected(null)}
           onDelete={requestDeleteSlot}
           onSlotChanged={() => void loadData()}
@@ -2310,7 +2498,7 @@ export function SchedulePage() {
           day={popover.day}
           items={popover.items}
           onClose={() => setPopover(null)}
-          onSelectEvent={(e) => setSelected(e)}
+          onSelectEvent={(e) => openDetail(e)}
         />
       )}
 
@@ -2391,141 +2579,235 @@ function KpiCard({
 }
 
 /* ===========================================================
- * Week board — 5 cột ở view Tuần (cửa sổ trượt), 7 cột ở view Gantt
+ * Week board — LƯỚI GIỜ (cột giờ bên trái)
+ *
+ * Mỗi cột là 1 ngày, trục thời gian chạy dọc 06:00 → 23:00. Các block
+ * task được đặt theo đúng khung giờ (top/height tính theo giờ).
+ *
+ * ⚠️ Task có các khung giờ RỜI RẠC (subtask 8h–10h, rồi subtask khác
+ * 16h–18h cùng task) → tách thành 2 block riêng, KHÔNG gộp thành 1 block
+ * 8h–18h (xem `segmentEvent`).
  * =========================================================== */
 function WeekBoard({
   days, onSelectEvent, tasksById, spans, onCellClick, accentByKey, subtasksByTaskId,
-  blockedReasonFor,
+  gridStartHour = 6, gridEndHour = 23,
 }: {
   days: DayPlan[];
-  onSelectEvent: (e: CalEvent) => void;
+  onSelectEvent: (e: CalEvent, focusSlotId?: string | null) => void;
   tasksById: Record<string, TaskDto>;
   spans: ProjectSpan[];
   onCellClick?: (day: Date) => void;
   accentByKey: Map<string, CellAccent | null>;
-  /** Subtask theo taskId — TaskCard dùng để hiện danh sách con. */
+  /** Subtask theo taskId — TimeBlock dùng để hiện danh sách con. */
   subtasksByTaskId?: Map<string, SubtaskDto[]>;
-  /** Lý do bị chặn theo luật "làm trước - làm sau". */
-  blockedReasonFor?: (ev: CalEvent, day?: Date) => string | null;
+  /** Giờ bắt đầu / kết thúc của trục thời gian (0–24). */
+  gridStartHour?: number;
+  gridEndHour?: number;
 }) {
   /*
-   * Ở view Tuần: cửa sổ 5 ngày trượt (T2→T6, rồi T7,CN,T2,T3,T4, ...).
-   * Ở view Gantt: tuần lịch 7 ngày.
-   *
-   * `days` đã đúng số ngày cần hiện → không lọc thêm ở đây.
+   * Tách mỗi event thành các đoạn giờ LIÊN TỤC rồi xếp lane để không
+   * chồng nhau.
    */
-  const visibleDays = days;
+  const daySegments = useMemo(() => {
+    return days.map((d) => {
+      const timed: EventSegment[] = [];
+      const allDay: CalEvent[] = [];
+      for (const ev of d.events) {
+        if (ev.isAllDay) {
+          allDay.push(ev);
+          continue;
+        }
+        timed.push(...segmentEvent(ev, d.date));
+      }
+      return { day: d, timed: layoutSegments(timed), allDay };
+    });
+  }, [days]);
+
+  /** Có all-day event nào không (để hiện hàng all-day riêng). */
+  const hasAllDay = daySegments.some((s) => s.allDay.length > 0);
+
+  /** Trục giờ: mở rộng để chứa hết block, làm tròn theo giờ. */
+  const { axisStart, axisEnd } = useMemo(() => {
+    let min = gridStartHour;
+    let max = gridEndHour;
+    for (const s of daySegments) {
+      for (const t of s.timed) {
+        const sh = t.seg.start.getHours();
+        const eh =
+          t.seg.end.getHours() + (t.seg.end.getMinutes() > 0 ? 1 : 0);
+        if (sh < min) min = sh;
+        if (eh > max) max = eh;
+      }
+    }
+    const axisStart = Math.max(0, Math.floor(min));
+    // Luôn giữ ít nhất 1 giờ để trục không bị rỗng / chia 0.
+    const axisEnd = Math.max(axisStart + 1, Math.min(24, Math.ceil(max)));
+    return { axisStart, axisEnd };
+  }, [daySegments, gridStartHour, gridEndHour]);
+
+  const hours = useMemo(() => {
+    const out: number[] = [];
+    for (let h = axisStart; h <= axisEnd; h++) out.push(h);
+    return out;
+  }, [axisStart, axisEnd]);
 
   return (
     <div
-      className="sch-week"
+      className="sch-tg"
       style={
         {
-          // 5 ngày ở view Tuần, 7 ngày ở view Gantt.
-          "--sch-week-cols": visibleDays.length,
+          "--sch-tg-cols": days.length,
+          "--sch-tg-hours": axisEnd - axisStart,
         } as CSSProperties
       }
     >
-      {visibleDays.map((d) => {
+      {/* ---------- Góc trên trái: nhãn trục giờ ---------- */}
+      <div className="sch-tg__corner">
+        <span className="material-symbols-outlined sch-icon-14">schedule</span>
+        <span className="sch-tg__corner-text">
+          {String(axisStart).padStart(2, "0")}:00 – {String(axisEnd).padStart(2, "0")}:00
+        </span>
+      </div>
+
+      {/* ---------- Header: tên ngày ---------- */}
+      {daySegments.map(({ day: d }) => {
         const isToday = isSameDay(d.date, new Date());
-        // Tìm spans chạm cell này
-        const touching = spans
-          .map((sp) => {
-            const ts = startOfDay(sp.start).getTime();
-            const te = startOfDay(sp.end).getTime();
-            const dc = startOfDay(d.date).getTime();
-            return { sp, isStart: dc === ts, isEnd: dc === te, isBoth: dc === ts && dc === te, inSpan: dc > ts && dc < te };
-          })
-          .filter((m) => m.isStart || m.isEnd || m.inSpan);
-        const inSpan = touching.some((m) => m.inSpan);
-        // Single-accent: lấy từ accentByKey (đã tính sẵn)
         const accent = accentByKey.get(d.key);
-        const primary = accent ? { sp: accent.accent } : null;
-        const multi = accent && accent.projectCount > 1;
+        /*
+         * Project boundary (start / end) — tìm span chạm ngày này để gắn nhãn
+         * "project X · start" ở header cột.
+         */
+        const boundary = spans.find((sp) => {
+          const ts = startOfDay(sp.start).getTime();
+          const te = startOfDay(sp.end).getTime();
+          const dc = startOfDay(d.date).getTime();
+          return dc === ts || dc === te || (dc > ts && dc < te);
+        });
+        const isStart =
+          boundary &&
+          startOfDay(boundary.start).getTime() === startOfDay(d.date).getTime();
+        const isEnd =
+          boundary &&
+          startOfDay(boundary.end).getTime() === startOfDay(d.date).getTime();
         return (
           <div
             key={d.key}
-            className={`sch-week__day${d.rest ? " sch-week__day--rest" : ""}${isToday ? " sch-week__day--today" : ""}${inSpan ? " sch-week__day--in-span" : ""}${multi ? " sch-week__day--multi" : ""}`}
-            style={primary ? {
-              ["--accent-color" as any]: primary.sp.color,
-              ["--accent-bg" as any]: `${primary.sp.color}1A`,
-            } : undefined}
-            onClick={onCellClick ? () => onCellClick(d.date) : undefined}
+            className={`sch-tg__head${isToday ? " sch-tg__head--today" : ""}${d.rest ? " sch-tg__head--rest" : ""}`}
+            style={accent ? { ["--accent-color" as any]: accent.accent.color } : undefined}
           >
-            {/* Single-accent strip bar ở đáy (màu project chính) */}
-            {inSpan && primary && (
-              <div className="sch-accent-bar" style={{ background: primary.sp.color }} aria-hidden="true" />
+            <span className="sch-tg__dow">
+              {WEEKDAY_LABELS[d.date.getDay() === 0 ? 6 : d.date.getDay() - 1]}
+            </span>
+            <span className="sch-tg__num">{d.date.getDate()}</span>
+            <span className={`sch-tg__badge sch-tone--${d.badgeTone}`}>{d.badge}</span>
+            {boundary && (isStart || isEnd) && (
+              <span
+                className={`sch-tg__boundary${isStart && isEnd ? " sch-tg__boundary--both" : isStart ? " sch-tg__boundary--start" : " sch-tg__boundary--end"}`}
+                title={`${boundary.project.name}${isStart && isEnd ? " · start & end" : isStart ? " · start" : " · end"}`}
+              >
+                <span className="material-symbols-outlined sch-icon-12">
+                  {isStart && isEnd ? "flag" : isStart ? "play_arrow" : "stop"}
+                </span>
+                {boundary.project.name}
+              </span>
             )}
-            <div className="sch-week__head">
-              <div>
-                <div className="sch-week__dow">{WEEKDAY_LABELS[d.date.getDay() === 0 ? 6 : d.date.getDay() - 1]}</div>
-                <div className="sch-week__num">{d.date.getDate()}</div>
-              </div>
-              <div className="sch-week__head-right">
-                {/* Multi-project badge: hiện khi >1 project chạm cell */}
-                {multi && (
-                  <button
-                    type="button"
-                    className="sch-multi-badge"
-                    title={`${accent!.projectCount} projects, ${accent!.totalTasks + accent!.totalSubtasks} items`}
-                    onClick={(e) => { e.stopPropagation(); onCellClick?.(d.date); }}
-                  >
-                    <span className="material-symbols-outlined sch-icon-12">layers</span>
-                    {accent!.projectCount}
-                  </button>
-                )}
-                <div className={`sch-week__badge sch-tone--${d.badgeTone}`}>{d.badge}</div>
-              </div>
-            </div>
+          </div>
+        );
+      })}
 
-            {/* Project boundary chips (start / end) — chỉ show 1 cái của primary span,
-                tránh chồng chất khi nhiều projects bắt đầu cùng ngày */}
-            {accent && (() => {
-              const m = touching.find((t) => t.sp.project.id === accent.accent.project.id);
-              if (!m || (!m.isStart && !m.isEnd)) return null;
-              return (
-                <div
-                  className={`sch-boundary${m.isStart ? " sch-boundary--start" : ""}${m.isEnd ? " sch-boundary--end" : ""}${m.isBoth ? " sch-boundary--both" : ""}`}
-                  style={{
-                    ["--boundary-color" as any]: accent.accent.color,
-                    ["--boundary-bg" as any]: `${accent.accent.color}26`,
-                  }}
-                  title={`${accent.accent.project.name}: ${m.isBoth ? "start & end" : m.isStart ? "start" : "end"}`}
-                >
-                  <span className="material-symbols-outlined sch-icon-14">
-                    {m.isBoth ? "flag" : m.isStart ? "play_arrow" : "stop"}
-                  </span>
-                  <span className="sch-boundary__label">
-                    {accent.accent.project.name}
-                    {m.isBoth ? " • start & end" : m.isStart ? " • start" : " • end"}
-                  </span>
-                </div>
-              );
-            })()}
-
-            {/* load bar */}
-            <div className="sch-week__load" data-tone={d.load.tone}>
-              <div className="sch-week__load-fill" style={{ width: `${d.load.pct}%` }} />
-              <span className="sch-week__load-text">{d.load.hours.toFixed(1)}h • {d.load.label}</span>
-            </div>
-
-            {/* events */}
-            <div className="sch-week__events">
-              {d.events.length === 0 && (
-                <div className="sch-week__empty">No events</div>
-              )}
-              {d.events.map((ev) => (
-                <TaskCard
+      {/* ---------- Hàng all-day (deadline / milestone) ---------- */}
+      {hasAllDay && (
+        <>
+          <div className="sch-tg__allday-label">
+            <span>All day</span>
+          </div>
+          {daySegments.map(({ day: d, allDay }) => (
+            <div key={`allday-${d.key}`} className="sch-tg__allday-cell">
+              {allDay.map((ev) => (
+                <button
                   key={ev.id}
-                  ev={ev}
-                  onClick={() => onSelectEvent(ev)}
-                  taskType={ev.taskId ? tasksById[ev.taskId]?.taskType : undefined}
-                  subtasksByTaskId={subtasksByTaskId}
-                  day={d.date}
-                  blockedReasonFor={blockedReasonFor}
-                />
+                  type="button"
+                  className="sch-tg__allday-chip"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectEvent(ev);
+                  }}
+                  title={ev.title}
+                >
+                  <span className="material-symbols-outlined sch-icon-12">event</span>
+                  <span className="sch-tg__allday-title">{ev.title}</span>
+                </button>
               ))}
             </div>
+          ))}
+        </>
+      )}
+
+      {/* ---------- Trục giờ (bên trái) ----------
+          *
+          * Nhãn giờ được đặt TUYỆT ĐỐI theo % (canh đúng với đường kẻ ngang
+          * của cột ngày). Nếu dùng flow + `height` cố định thì gutter lệch
+          * 1 giờ so với cột ngày (lệch nhất là ở giờ cuối).
+          */}
+      <div className="sch-tg__gutter">
+        {hours.map((h, i) => (
+          <div
+            key={h}
+            className="sch-tg__hour"
+            style={{
+              top: `${((h - axisStart) / Math.max(1, axisEnd - axisStart)) * 100}%`,
+              /*
+               * Canh nhãn theo đường kẻ:
+               * - Giờ đầu: nhãn nằm DƯỚI đường kẻ (0%) → translateY(0).
+               * - Giờ giữa: nằm GIỮA đường kẻ → translateY(-50%).
+               * - Giờ cuối: nằm TRÊN đường kẻ (100%) → translateY(-100%).
+               */
+              transform:
+                i === 0
+                  ? "translateY(0)"
+                  : i === hours.length - 1
+                    ? "translateY(-100%)"
+                    : "translateY(-50%)",
+            }}
+          >
+            <span>{String(h).padStart(2, "0")}:00</span>
+          </div>
+        ))}
+      </div>
+
+      {/* ---------- Các cột ngày ---------- */}
+      {daySegments.map(({ day: d, timed }) => {
+        const isToday = isSameDay(d.date, new Date());
+        const accent = accentByKey.get(d.key);
+        return (
+          <div
+            key={d.key}
+            className={`sch-tg__col${isToday ? " sch-tg__col--today" : ""}${d.rest ? " sch-tg__col--rest" : ""}`}
+            style={accent ? { ["--accent-color" as any]: accent.accent.color } : undefined}
+            onClick={onCellClick ? () => onCellClick(d.date) : undefined}
+          >
+            {timed.length === 0 && <div className="sch-tg__empty">No events</div>}
+            {timed.map(({ seg, lane, lanes }, i) => (
+              <TimeBlock
+                /*
+                 * Key phai DUY NHAT trong 1 cot ngay.
+                 *
+                 * `seg.ev.id` co the lap (cung 1 task gop xuat hien o nhieu doan)
+                 * -> them chi so de bao dam khoa duy nhat, tranh warning
+                 * "Encountered two children with the same key".
+                 */
+                key={`${seg.ev.id}-${seg.start.getTime()}-${i}`}
+                seg={seg}
+                lane={lane}
+                lanes={lanes}
+                axisStart={axisStart}
+                axisEnd={axisEnd}
+                day={d.date}
+                onClick={(focusSlotId) => onSelectEvent(seg.ev, focusSlotId)}
+                taskType={seg.ev.taskId ? tasksById[seg.ev.taskId]?.taskType : undefined}
+                subtasksByTaskId={subtasksByTaskId}
+              />
+            ))}
           </div>
         );
       })}
@@ -2534,10 +2816,271 @@ function WeekBoard({
 }
 
 /* ===========================================================
+ * TimeBlock — 1 khối giờ trên lưới (task hoặc subtask).
+ * =========================================================== */
+function TimeBlock({
+  seg, lane, lanes, axisStart, axisEnd, day, onClick, taskType, subtasksByTaskId,
+}: {
+  seg: EventSegment;
+  lane: number;
+  lanes: number;
+  axisStart: number;
+  axisEnd: number;
+  day: Date;
+  onClick: (focusSlotId: string | null) => void;
+  taskType?: string;
+  subtasksByTaskId?: Map<string, SubtaskDto[]>;
+}) {
+  const ev = seg.ev;
+  const isDone = (() => {
+    const s = (ev.status ?? "").toLowerCase();
+    return s === "done" || s === "completed";
+  })();
+
+  const isGroupSlot = ev.source === "slot" && !!ev.scheduleSlotId && !!ev.groupTaskId;
+
+  /**
+   * Id của slot thuộc ĐÚNG khối giờ này.
+   *
+   * ⚠️ 1 task có nhiều khối giờ rời rạc (8h–10h, 16h–18h). Event gộp
+   * ("task-agg") chỉ giữ slot của khối ĐẦU TIÊN → nếu dùng nó cho mọi
+   * khối thì nút Start trong modal sẽ trỏ nhầm slot.
+   *
+   * → Lấy từ `seg.blocks` (các mốc con thuộc đúng đoạn này).
+   */
+  const focusSlotId = useMemo(() => {
+    if (seg.blocks.length > 0) {
+      const withSlot = seg.blocks.find((b) => !!b.scheduleSlotId);
+      if (withSlot) return withSlot.scheduleSlotId ?? null;
+    }
+    return ev.scheduleSlotId ?? null;
+  }, [seg.blocks, ev.scheduleSlotId]);
+
+  /*
+   * Vị trí trên trục giờ (theo % chiều cao lưới).
+   */
+  const dayStart = startOfDay(day);
+  const totalMinutes = (axisEnd - axisStart) * 60;
+  const startMin = (seg.start.getTime() - dayStart.getTime()) / 60_000 - axisStart * 60;
+  const endMin = (seg.end.getTime() - dayStart.getTime()) / 60_000 - axisStart * 60;
+  const topPct = Math.max(0, Math.min(100, (startMin / totalMinutes) * 100));
+  const heightPct = Math.max(2, Math.min(100 - topPct, ((endMin - startMin) / totalMinutes) * 100));
+
+  /*
+   * ===========================================================
+   * TEN HIEN THI: TEN TASK la dong CHINH, TEN SUBTASK la dong PHU.
+   * ===========================================================
+   *
+   * Ly do:
+   * 1. TEN TASK luon hien (dong chinh) - day la thu quan trong nhat theo
+   *    yeu cau. Khi card qua ngan, cac thong tin khac bi cat truoc.
+   * 2. TEN SUBTASK la dong phu - bi an khi card qua ngan.
+   *
+   * Voi khoi RAI RAC (1 task, nhieu khung gio): moi khoi deu mang cung
+   * ten task (tu event gop) -> phai lay ten subtask dung voi khung gio do
+   * lam dong phu.
+   */
+  const taskName = ev.task?.title ?? ev.title;
+
+  /** Ten viec con (subtask) cua khoi nay. */
+  const subName = useMemo(() => {
+    if (seg.blocks.length === 1) {
+      const b = seg.blocks[0];
+      const bt = b.subtask?.title ?? b.title;
+      if (bt && bt !== taskName) return bt;
+      return null;
+    }
+    // Khoi co nhieu viec con -> ten khong la "con" cua ten task.
+    return null;
+  }, [seg.blocks, taskName]);
+
+  /*
+   * Danh sách việc con hiển thị trong khối.
+   *
+   * Ưu tiên các mốc con đã gộp (`seg.blocks`) — đúng thứ đang trên lịch.
+   * Fallback: subtask của task theo `orderIndex` (task chưa có slot nào).
+   */
+  const subRows = useMemo(() => {
+    if (seg.blocks.length > 0) {
+      /*
+       * Khối chỉ có 1 việc con → tên của nó đã hiện ở `displayTitle`, không
+       * cần lặp lại thành 1 dòng phụ (trông như lỗi hiển thị trùng).
+       */
+      if (seg.blocks.length === 1) return [];
+      return seg.blocks
+        .slice()
+        .sort((a, b) => a.start.getTime() - b.start.getTime())
+        .map((c) => ({
+          id: c.id,
+          title: c.subtask?.title ?? c.title,
+          time: fmtTime(c.start),
+        }));
+    }
+    if (!ev.taskId) return [];
+    const subs = subtasksByTaskId?.get(ev.taskId) ?? [];
+    return subs
+      .map((s) => ({
+        id: s.id,
+        title: s.title,
+        time: s.scheduledStart ? fmtTime(new Date(s.scheduledStart)) : "--:--",
+      }))
+      .sort((a, b) => a.time.localeCompare(b.time));
+  }, [seg.blocks, ev, subtasksByTaskId]);
+
+  /*
+   * Cột giờ bên TRÁI card — "08:00 → 10:00".
+   *
+   * Đây là thông tin quan trọng nhất: người dùng nhìn là biết việc này
+   * chạy từ mấy giờ tới mấy giờ mà không cần tra cột giờ bên trái.
+   */
+  const timeStart = fmtTime(seg.start);
+  const timeEnd = fmtTime(seg.end);
+
+  /*
+   * ===========================================================
+   * Tự ẩn thông tin khi card quá ngắn.
+   * ===========================================================
+   *
+   * Card 30 phút chiều cao ~24px — không đủ chỗ cho tên task + tên task cha
+   * + danh sách việc con + chip meta.
+   *
+   * THỨ TỰ ƯU TIÊN (bỏ từ dưới lên):
+   *   1. Tên task (luôn giữ — thứ quan trọng nhất, theo yêu cầu).
+   *   2. Giờ bắt đầu (để biết khung giờ).
+   *   3. Giờ kết thúc.
+   *   4. Tên task cha (eyebrow).
+   *   5. Danh sách việc con.
+   *   6. Chip meta.
+   *
+   * Đo bằng `ResizeObserver` vì chiều cao card là % của trục giờ → thay đổi
+   * theo số giờ trong ngày, không tính được từ props.
+   */
+  const blockRef = useRef<HTMLButtonElement | null>(null);
+  const [cardH, setCardH] = useState(0);
+
+  useLayoutEffect(() => {
+    const el = blockRef.current;
+    if (!el) return;
+    const measure = () => setCardH(el.getBoundingClientRect().height);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  /** Còn đủ chỗ hiện tên subtask (dòng phụ) không? */
+  const showSub = cardH >= 46;
+  /** Còn đủ chỗ hiện giờ kết thúc không? */
+  const showTimeEnd = cardH >= 30;
+  /** Còn đủ chỗ hiện danh sách việc con không? */
+  const showSubs = cardH >= 56;
+  /** Còn đủ chỗ hiện chip meta không? */
+  const showMeta = cardH >= 76;
+
+  /**
+   * Mức độ "chật" của card — quyết định cách hiển thị tên task.
+   *
+   * - `tight` (< 34px): chỉ 1 dòng → tên task bị ellipsis nếu dài.
+   * - `mid`   (34–56px): tên task được xuống tối đa 2 dòng.
+   * - undefined (>= 56px): đủ chỗ, hiển thị đầy đủ.
+   */
+  const compactLevel =
+    cardH > 0 && cardH < 34 ? "tight" : cardH > 0 && cardH < 56 ? "mid" : undefined;
+
+  const body = (
+    <>
+      <span className="sch-tg__block-accent" data-tone={dotFor(ev)} aria-hidden="true" />
+      <span className="sch-tg__block-time">
+        <span className="sch-tg__block-time-start">{timeStart}</span>
+        {showTimeEnd && (
+          <span className="sch-tg__block-time-end">{timeEnd}</span>
+        )}
+      </span>
+      <span className="sch-tg__block-body">
+        {/* TEN TASK - dong chinh, luon hien */}
+        <span className="sch-tg__block-title" title={taskName}>
+          {taskName}
+        </span>
+
+        {/* TEN SUBTASK - dong phu, an khi card ngan */}
+        {subName && showSub && (
+          <span className="sch-tg__block-parent" title={subName}>
+            {subName}
+          </span>
+        )}
+
+        {/* Danh sách việc con (giờ · tên) */}
+        {subRows.length > 0 && showSubs && (
+          <span className="sch-tg__block-subs">
+            {subRows.map((r) => (
+              <span key={r.id} className="sch-tg__block-sub">
+                <span className="sch-tg__block-sub-time">{r.time}</span>
+                <span className="sch-tg__block-sub-title">{r.title}</span>
+              </span>
+            ))}
+          </span>
+        )}
+
+        {/* Chip meta: loại công việc / nhóm / nguồn */}
+        {showMeta && (
+        <span className="sch-tg__block-meta">
+          {isGroupSlot && ev.groupName ? (
+            <span className="sch-tg__block-tag">
+              <span className="material-symbols-outlined sch-icon-12">groups</span>
+              {ev.groupName}
+            </span>
+          ) : (
+            taskType && <span className="sch-tg__block-tag">{taskType}</span>
+          )}
+          <span className="sch-tg__block-tag sch-tg__block-tag--muted">
+            {isGroupSlot ? "Group work" : sourceLabel(ev.source)}
+          </span>
+        </span>
+        )}
+      </span>
+    </>
+  );
+
+  /*
+   * Vị trí khối trên lưới (theo % chiều cao cột ngày).
+   *
+   * Card luôn đứng độc lập trong cột ngày — KHÔNG bọc trong wrapper, không
+   * kèm nút Start/Make up bên cạnh. Mọi hành động focus (Start / Stop /
+   * Make up / Add minutes) nằm bên trong modal chi tiết khi bấm vào card.
+   */
+  const boxStyle = {
+    top: `${topPct}%`,
+    height: `${heightPct}%`,
+    left: `calc(${(lane / lanes) * 100}% + 2px)`,
+    width: `calc(${(1 / lanes) * 100}% - 4px)`,
+  };
+
+  return (
+    <button
+      ref={blockRef}
+      type="button"
+      className={`sch-tg__block${isDone ? " sch-tg__block--done" : ""}`}
+      /*
+       * `data-compact="tight"` khi card quá ngắn → CSS thu padding lại để
+       * dành chỗ cho tên task.
+       */
+      data-compact={compactLevel}
+      style={boxStyle}
+      onClick={() => onClick(focusSlotId)}
+      data-tone={dotFor(ev)}
+      title={`${taskName}${subName ? ` · ${subName}` : ""} · ${fmtTime(seg.start)} – ${fmtTime(seg.end)}`}
+    >
+      {body}
+    </button>
+  );
+}
+
+/* ===========================================================
  * Month grid — 6 rows x 7 cols
  * =========================================================== */
 function MonthGrid({
-  days, onSelectEvent, spans, onCellClick, accentByKey, gridRef, blockedReasonFor,
+  days, onSelectEvent, spans, onCellClick, accentByKey, gridRef,
 }: {
   days: DayPlan[];
   onSelectEvent: (e: CalEvent) => void;
@@ -2546,8 +3089,6 @@ function MonthGrid({
   accentByKey: Map<string, CellAccent | null>;
   /** Ref tới grid — để parent cuộn tới ô "hôm nay". */
   gridRef?: Ref<HTMLDivElement>;
-  /** Lý do bị chặn theo luật "làm trước - làm sau". */
-  blockedReasonFor?: (ev: CalEvent, day?: Date) => string | null;
 }) {
   return (
     <div className="sch-month">
@@ -2639,7 +3180,7 @@ function MonthGrid({
               </div>
               <div className="sch-month__events">
                 {visible.map((ev) => (
-                  <EventChip key={ev.id} ev={ev} compact onClick={() => onSelectEvent(ev)} blockedReasonFor={blockedReasonFor} day={d.date} />
+                  <EventChip key={ev.id} ev={ev} compact onClick={() => onSelectEvent(ev)} />
                 ))}
                 {more > 0 && (
                   <button type="button" className="sch-month__more">+{more} more</button>
@@ -2847,260 +3388,20 @@ function GanttView({
 }
 
 /* ===========================================================
- * TaskCard — card lớn cho tuần view (mở rộng giao diện lịch)
- *
- * Yêu cầu: mỗi task là 1 ô vuông riêng, đọc được như trong ảnh tham chiếu:
- *   - Task KHÔNG có subtask  → 1 ô: tên task + thông tin ngày giờ bên dưới.
- *   - Task CÓ subtask        → 1 ô: tên task ở trên, bên dưới là danh sách
- *                               subtask kèm khung giờ tương ứng.
- *   - Click vào ô → mở popup chi tiết (dùng lại `EventModal` hiện có).
- *
- * Giữ nguyên hành vi Start/Stop của Focus Session: nút Start/Stop đặt cạnh
- * card (không lồng button trong button — HTML không hợp lệ).
- * =========================================================== */
-function TaskCard({
-  ev, onClick, taskType, subtasksByTaskId, day, blockedReasonFor,
-}: {
-  ev: CalEvent;
-  onClick: () => void;
-  taskType?: string;
-  /** Subtask của từng task — dùng để hiển thị danh sách con bên dưới tên task. */
-  subtasksByTaskId?: Map<string, SubtaskDto[]>;
-  /** Ngày của ô lịch đang hiển thị — chỉ hiện subtask thuộc đúng ngày này. */
-  day?: Date;
-  /** Lý do bị chặn (tiếng Anh) theo luật "làm trước - làm sau". */
-  blockedReasonFor?: (ev: CalEvent, day?: Date) => string | null;
-}) {
-  const isDone = (() => {
-    const s = (ev.status ?? "").toLowerCase();
-    return s === "done" || s === "completed";
-  })();
-
-  const isSlot = ev.source === "slot" && !!ev.scheduleSlotId && !!ev.taskId;
-
-  /**
-   * Slot của **việc nhóm** (mục 10 của cập nhật BE): `taskId = null`, các
-   * trường dự án / khách hàng / loại công việc cũng `null`.
-   *
-   * → Không điều hướng sang trang task cá nhân, không hiện nút Start của
-   *   nhánh cá nhân (Start nhóm đi qua `POST /api/group-tasks/{id}/focus/start`).
-   */
-  const isGroupSlot =
-    ev.source === "slot" && !!ev.scheduleSlotId && !!ev.groupTaskId;
-
-  /**
-   * Danh sách "khối" hiển thị dưới tên task:
-   *  - Ưu tiên các event con đã gộp (đúng thứ đang hiện trên lịch).
-   *  - Fallback: subtask của task theo `orderIndex`.
-   *
-   * ⚠️ CHỈ hiện khối thuộc **đúng ngày** của ô đang hiển thị. Một task có
-   * thể kéo dài nhiều ngày (VD: 3 subtask ở 3 ngày khác nhau) → mỗi ngày
-   * hiện 1 ô riêng, chỉ list subtask của ngày đó. Nếu không lọc, ngày đầu
-   * sẽ gom hết subtask của cả tuần vào 1 ô.
-   */
-  const blocks = useMemo(() => {
-    /** Khối có trùng ngày `day` không (hoặc không xác định ngày → giữ). */
-    const inDay = (start: Date | null, end: Date | null) => {
-      if (!day) return true;
-      if (!start && !end) return true;
-      const dayStart = startOfDay(day);
-      const dayEnd = addDays(dayStart, 1);
-      // Khối có thời gian bắt đầu trước và kết thúc sau ngày này → vẫn tính.
-      if (start && end) {
-        return start < dayEnd && end > dayStart;
-      }
-      const d = start ?? end!;
-      return isSameDay(d, day);
-    };
-
-    if (ev.aggregatedEvents && ev.aggregatedEvents.length > 0) {
-      return ev.aggregatedEvents
-        .slice()
-        .sort((a, b) => a.start.getTime() - b.start.getTime())
-        .map((e) => ({
-          id: e.subTaskId ?? e.id,
-          title: e.subtask?.title ?? e.title,
-          start: e.start,
-          end: e.end,
-        }))
-        .filter((b) => inDay(b.start, b.end));
-    }
-    const subs = ev.taskId ? (subtasksByTaskId?.get(ev.taskId) ?? []) : [];
-    return subs
-      .map((s) => ({
-        id: s.id,
-        title: s.title,
-        start: s.scheduledStart ? new Date(s.scheduledStart) : null,
-        end: s.scheduledEnd ? new Date(s.scheduledEnd) : null,
-      }))
-      .filter((b) => inDay(b.start, b.end));
-  }, [ev, subtasksByTaskId, day]);
-
-  /** Task có subtask trong ngày này không (để chọn layout 2 phần). */
-  const hasSubtasks = blocks.length > 0;
-
-  const body = (
-    <>
-      {/* ============ Header: tên task + số việc con + dấu xong ============ */}
-      <span className="sch-tcard__head">
-        <span className="sch-tcard__title">{ev.title}</span>
-        {hasSubtasks && (
-          <span
-            className="sch-tcard__count"
-            title={`${blocks.length} subtasks in this day`}
-          >
-            {blocks.length}
-          </span>
-        )}
-        {isDone && (
-          <span className="sch-tcard__done" title="Completed">
-            <span className="material-symbols-outlined sch-icon-12">check_circle</span>
-          </span>
-        )}
-      </span>
-
-      {/*
-        ============ Meta ============
-        Task KHÔNG có subtask → hiện giờ của task + chip phân loại.
-        Task CÓ subtask → giờ nằm ở từng dòng subtask bên dưới, dòng meta
-        này bị ẩn để card gọn, không bị rối mắt.
-      */}
-      {!hasSubtasks && (
-        <span className="sch-tcard__meta">
-          <span className="sch-tcard__time">
-            <span className="material-symbols-outlined sch-icon-12">schedule</span>
-            {eventTimeRange(ev)}
-          </span>
-          {/*
-            Slot việc nhóm: hiện TÊN NHÓM thay cho loại công việc (taskType
-            luôn `null` với slot nhóm).
-          */}
-          {isGroupSlot && ev.groupName ? (
-            <span className="sch-tcard__tag sch-tcard__tag--group">
-              <span className="material-symbols-outlined sch-icon-12">
-                groups
-              </span>
-              <span className="sch-tcard__tag-text">{ev.groupName}</span>
-            </span>
-          ) : (
-            taskType && <span className="sch-tcard__tag">{taskType}</span>
-          )}
-          <span className="sch-tcard__tag sch-tcard__tag--muted">
-            {isGroupSlot ? "Group work" : sourceLabel(ev.source)}
-          </span>
-        </span>
-      )}
-
-      {/* ============ Subtask: timeline dọc — giờ · tên ============ */}
-      {hasSubtasks && (
-        <ul className="sch-tcard__subs">
-          {blocks.map((b) => (
-            <li key={b.id} className="sch-tcard__sub">
-              {/* Cột giờ cố định bên trái → các mốc thẳng hàng dọc */}
-              <span className="sch-tcard__sub-time">
-                {b.start ? fmtTime(b.start) : "--:--"}
-              </span>
-              <span className="sch-tcard__sub-title">{b.title}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </>
-  );
-
-  const card = (
-    <button
-      type="button"
-      className={`sch-tcard${isDone ? " sch-tcard--done" : ""}`}
-      onClick={onClick}
-      data-tone={dotFor(ev)}
-      /* Hover để xem loại task + nguồn (thay vì chip rải rác trên card). */
-      title={
-        [
-          ev.title,
-          isGroupSlot ? ev.groupName : taskType,
-          isGroupSlot ? "Group work" : sourceLabel(ev.source),
-          hasSubtasks ? `${blocks.length} việc con` : null,
-        ]
-          .filter(Boolean)
-          .join(" · ")
-      }
-    >
-      <span className="sch-tcard__accent" data-tone={dotFor(ev)} aria-hidden="true" />
-      <span className="sch-tcard__body">{body}</span>
-    </button>
-  );
-
-  /*
-   * Slot việc nhóm: KHÔNG hiện nút Start của nhánh cá nhân.
-   *
-   * `SlotFocusActions` gọi `POST /api/focus/start` với `taskId` — mà slot
-   * nhóm có `taskId = null` → không dùng được. Việc nhóm bấm giờ ở trang
-   * `/my-group-tasks` và trang chi tiết nhóm.
-   *
-   * ⚠️ KHÔNG hiện nút xóa ở trên lịch — chỉ xóa được từ modal detail
-   * (nút "Remove Slot"). Lịch phải gọn, không rối mắt.
-   */
-  if (!isSlot) return card;
-
-  /*
-   * Không lồng `<button>` trong `<button>` (HTML không hợp lệ, và click vào
-   * nút con sẽ kích hoạt cả nút cha → mở modal thay vì Start).
-   * Ta bọc card trong 1 `<div>` rồi đặt nút Start/Stop cạnh bên.
-   */
-  return (
-    <div className="sch-card-wrap">
-      {card}
-      <SlotFocusActions
-        slotId={ev.scheduleSlotId ?? null}
-        taskId={ev.taskId ?? null}
-        /*
-         * ⚠️ `subTaskId` phải lấy từ SLOT, không từ event.
-         *
-         * Spec mục 6.1: "Slot gắn subtask nhưng **không gửi** `subTaskId` khi
-         * Start → Phiên **không** có subtask. Backend **không tự lấy**
-         * `subTaskId` từ slot."
-         */
-        subTaskId={ev.scheduleSlot?.subTaskId ?? ev.subTaskId ?? null}
-        status={ev.slotStatus ?? ev.status}
-        plannedMinutes={ev.slotPlannedMinutes ?? undefined}
-        taskTitle={ev.task?.title ?? ev.subtask?.title ?? null}
-        /*
-         * Luật "làm trước - làm sau" (chỉ ở FE): nếu việc này đến sau một
-         * việc khác còn dở → nút Start hiện nhưng disable + tooltip giải
-         * thích phải làm việc nào trước.
-         */
-        blockedReason={blockedReasonFor?.(ev, day) ?? null}
-      />
-    </div>
-  );
-}
-
-/* ===========================================================
  * EventChip — used in Week & Month
  * =========================================================== */
 function EventChip({
-  ev, onClick, compact, taskType, blockedReasonFor, day,
+  ev, onClick, compact, taskType,
 }: {
   ev: CalEvent;
   onClick: () => void;
   compact?: boolean;
   taskType?: string;
-  /** Lý do bị chặn theo luật "làm trước - làm sau". */
-  blockedReasonFor?: (ev: CalEvent, day?: Date) => string | null;
-  /** Ngày của ô lịch (quan trọng với task gộp nhiều subtask). */
-  day?: Date;
 }) {
   const isDone = (() => {
     const s = (ev.status ?? "").toLowerCase();
     return s === "done" || s === "completed";
   })();
-
-  /**
-   * Chỉ slot (`source === "slot"`) mới có nút Start/Stop.
-   * Item từ Google Calendar chỉ để xem — không gắn phiên làm việc.
-   */
-  const isSlot = ev.source === "slot" && !!ev.scheduleSlotId && !!ev.taskId;
 
   /**
    * Slot của việc nhóm (mục 10 của cập nhật BE): `taskId = null`.
@@ -3115,9 +3416,17 @@ function EventChip({
       className={`sch-chip-event${compact ? " sch-chip-event--compact" : ""}${isDone ? " sch-chip-event--done" : ""}`}
       onClick={onClick}
       data-tone={dotFor(ev)}
+      title={[ev.task?.title, ev.title].filter(Boolean).join(" · ")}
     >
       <span className="sch-chip-event__dot" data-tone={dotFor(ev)} />
       <div className="sch-chip-event__body">
+        {/*
+          Ô là 1 subtask cụ thể → hiện tên TASK ở dòng nhỏ phía trên, tên
+          SUBTASK là dòng chính (đọc được cả 2 tầng như yêu cầu).
+        */}
+        {compact && ev.task?.title && ev.task.title !== ev.title && (
+          <span className="sch-chip-event__parent">{ev.task.title}</span>
+        )}
         <span className="sch-chip-event__title">{ev.title}</span>
         {!compact && (
           <span className="sch-chip-event__meta">
@@ -3138,56 +3447,20 @@ function EventChip({
   );
 
   /*
-   * ⚠️ KHÔNG hiện nút xóa ở trên lịch — chỉ xóa được từ modal detail
-   * (nút "Remove Slot"). Lịch phải gọn, không rối mắt.
+   * ⚠️ KHÔNG hiện nút Start/Make up/Remove ở trên lịch — mọi hành động
+   * focus nằm bên trong modal chi tiết (bấm vào chip để mở). Lịch phải
+   * gọn, không rối mắt.
    */
-  if (!isSlot) return chip;
-
-  /*
-   * Không lồng `<button>` trong `<button>` (HTML không hợp lệ, và click vào
-   * nút con sẽ kích hoạt cả nút cha → mở modal thay vì Start).
-   * Ta bọc chip trong 1 `<div>` rồi đặt nút Start/Stop cạnh bên.
-   */
-  return (
-    <div className="sch-chip-wrap">
-      {chip}
-      <SlotFocusActions
-        slotId={ev.scheduleSlotId ?? null}
-        taskId={ev.taskId ?? null}
-        /*
-         * ⚠️ `subTaskId` phải lấy từ SLOT, không từ event.
-         *
-         * Spec mục 6.1: "Slot gắn subtask nhưng **không gửi** `subTaskId` khi
-         * Start → Phiên **không** có subtask. Backend **không tự lấy**
-         * `subTaskId` từ slot."
-         *
-         * Với event gộp nhiều slot của 1 task, `event.subTaskId` là `null`
-         * (aggregate) → dùng nó sẽ làm mất nhãn subtask của phiên. Ta tra
-         * slot gốc để lấy đúng `subTaskId` của slot đang bấm.
-         */
-        subTaskId={ev.scheduleSlot?.subTaskId ?? ev.subTaskId ?? null}
-        status={ev.slotStatus ?? ev.status}
-        plannedMinutes={ev.slotPlannedMinutes ?? undefined}
-        taskTitle={ev.task?.title ?? ev.subtask?.title ?? null}
-        /* Luật "làm trước - làm sau" — xem TaskCard. */
-        blockedReason={blockedReasonFor?.(ev, day) ?? null}
-        compact
-      />
-    </div>
-  );
+  return chip;
 }
 
 /* ===========================================================
- * Google Calendar connection card
+ * GoogleCalendarSyncButton — nût "Đồng bộ Google Calendar" ộ header.
  *
- * Hiển thị trạng thái liên kết Google Calendar của user và cho phép
- * Connect (redirect OAuth) / Sync / Disconnect.
- *
- * Đặt ở dải công cụ ngang phía trên lịch (thay vì sidebar) để lịch được
- * rộng hết chiều ngang. Logic ở hook `useGoogleCalendar` để user menu
- * (SiteLayout) dùng chung cùng một nguồn sự thật.
+ * Thay thẻf card "Integrations" cũ (dài đểt). Giữ nguyên logic
+ * connect / sync / disconnect + hộp thoại chọn hướng + khoảng ngày.
  * =========================================================== */
-function GoogleCalendarCard({
+function GoogleCalendarSyncButton({
   toast,
   onSynced,
 }: {
@@ -3196,7 +3469,6 @@ function GoogleCalendarCard({
 }) {
   const {
     isConnected,
-    loading,
     busy,
     error,
     connect,
@@ -3209,30 +3481,33 @@ function GoogleCalendarCard({
   const [syncOpen, setSyncOpen] = useState(false);
   /** Lỗi 400 từ server khi sync (VD: `to` trước `from`). */
   const [syncError, setSyncError] = useState<string | null>(null);
-  /** Kết quả sync vừa rồi → hiển thị chi tiết (kèm `pushErrors`). */
+  /** Kết quả sync vừa rồi → hiển chi tiết. */
   const [syncResult, setSyncResult] = useState<GoogleCalendarSyncResultDto | null>(
     null,
   );
+  /** Menu nhỏ: Disconnect + trạng thái kết nối. */
+  const [menuOpen, setMenuOpen] = useState(false);
 
-  /**
-   * Mở hộp thoại đồng bộ (chọn hướng + khoảng ngày).
-   *
-   * Theo spec `GOOGLE_CALENDAR_SYNC_FE.md` mục 5: phải hỏi rõ hướng vì
-   * chiều đẩy lên sẽ **ghi vào lịch Google thật** của user.
-   */
   function openSyncDialog() {
     setSyncError(null);
     setSyncResult(null);
     setSyncOpen(true);
+    setMenuOpen(false);
   }
 
   /**
-   * Gửi sync với hướng + khoảng ngày đã chọn.
-   *
-   * Sau khi thành công → đóng hộp thoại, báo kết quả (kéo về + đẩy lên) và
-   * nạp lại lịch (spec mục 5: "Sau khi đồng bộ xong hãy tải lại
-   * `GET /api/calendar` cho khoảng đang xem").
+   * Bấm nút chính:
+   * - Chưa kết nối → bảt đầu OAuth (redirect sang Google).
+   * - Đã kết nối → mở hộp thoại chọn hướng + khoảng ngày.
    */
+  function handleMainClick() {
+    if (!isConnected) {
+      void connect();
+      return;
+    }
+    openSyncDialog();
+  }
+
   async function handleSync(options: {
     from: string | null;
     to: string | null;
@@ -3244,8 +3519,6 @@ function GoogleCalendarCard({
       direction: options.direction,
     });
     if (!res.ok) {
-      // 400 = `to` trước `from` / chưa kết nối / sai định dạng.
-      // 409 = kết nối hết hạn → gợi ý kết nối lại. 502 = Google lỗi/mất mạng.
       if (res.status === 409 && res.errorCode === "GOOGLE_RECONNECT_REQUIRED") {
         setSyncError(
           "Your Google Calendar connection expired or was revoked. Reconnect Google Calendar and try syncing again.",
@@ -3262,7 +3535,6 @@ function GoogleCalendarCard({
       return;
     }
     setSyncError(null);
-    // Giữ hộp thoại mở để user xem kết quả chi tiết (đặc biệt `pushErrors`).
     setSyncResult(res.data);
 
     const { added, updated, cancelled } = res.data;
@@ -3277,8 +3549,6 @@ function GoogleCalendarCard({
     if (pushed > 0 || pushFailed > 0) {
       parts.push(`${pushed} pushed`);
     }
-    // Chế độ BE đã dùng (spec mục 3): `Range` = lấy đầy đủ trong khoảng,
-    // `Incremental` = chỉ lấy phần thay đổi theo `syncToken`.
     if (res.data.mode === "Range") {
       parts.push("by date range");
     }
@@ -3292,11 +3562,11 @@ function GoogleCalendarCard({
       toast.success("Google Calendar synced", parts.join(" · "));
     }
 
-    // Nạp lại lịch để thấy sự kiện vừa kéo về / slot vừa đẩy lên.
     onSynced?.();
   }
 
   async function handleDisconnect() {
+    setMenuOpen(false);
     const res = await disconnect();
     if (res.ok) {
       toast.success("Disconnected", "Google Calendar has been unlinked.");
@@ -3309,79 +3579,86 @@ function GoogleCalendarCard({
   const connecting = busy === "connect";
 
   return (
-    <div className="sch-card sch-gcal">
-      <div className="sch-card__head">
-        <span className="sch-card__eyebrow">Integrations</span>
-        <span
-          className={
-            "sch-gcal__badge" + (isConnected ? " sch-gcal__badge--on" : "")
-          }
-        >
-          {loading ? "…" : isConnected ? "Connected" : "Not connected"}
+    <div className="sch-gcal-btn">
+      <button
+        type="button"
+        className="sch-btn sch-btn--primary"
+        onClick={handleMainClick}
+        disabled={busy !== null}
+        title={
+          isConnected
+            ? "Sync your schedule with Google Calendar (choose direction and date range)"
+            : "Connect Google Calendar to sync your schedule with it"
+        }
+      >
+        <span className="material-symbols-outlined sch-icon-18">
+          {connecting ? "progress_activity" : "sync"}
         </span>
-      </div>
-      <h3 className="sch-card__title">Google Calendar</h3>
+        {connecting
+          ? "Redirecting…"
+          : busy === "sync"
+            ? "Syncing…"
+            : "Sync Google Calendar"}
+      </button>
 
-      {/*
-        * Vùng nội dung — bọc trong 1 div riêng để mọi đoạn văn (hint, token
-        * meta, note) xếp dọc bên nhau. Nếu để trực tiếp là con của grid
-        * `.sch-gcal` thì chúng cùng nhận `grid-area: body` → chồng lên nhau.
-        */}
-      <div className="sch-gcal__body">
-        {loading ? (
-          <p className="sch-card__hint">Checking connection…</p>
-        ) : isConnected ? (
-          <p className="sch-card__hint">
-            Events sync two-way with your Google account.
-          </p>
-        ) : (
-          <>
-            <p className="sch-card__hint">
-              Connect to mirror your scheduled blocks into Google Calendar.
-            </p>
-            <button
-              type="button"
-              className="sch-btn sch-btn--primary sch-gcal__btn sch-gcal__btn--full"
-              onClick={() => void connect()}
-              disabled={connecting}
-            >
-              <span className="material-symbols-outlined sch-icon-18">
-                {connecting ? "progress_activity" : "link"}
-              </span>
-              {connecting ? "Redirecting…" : "Connect Google Calendar"}
-            </button>
-            <p className="sch-gcal__note">
-              Bạn sẽ được chuyển sang Google để cấp quyền{" "}
-              <code>calendar.events</code>, sau đó quay lại đây.
-            </p>
-          </>
-        )}
+      {/* Menu phụ: trạng thái kết nối + ngát kết nối */}
+      {isConnected && (
+        <>
+          <button
+            type="button"
+            className="sch-btn sch-btn--soft sch-gcal-btn__more"
+            onClick={() => setMenuOpen((v) => !v)}
+            disabled={busy !== null}
+            aria-label="Google Calendar options"
+            aria-expanded={menuOpen}
+            title="Google Calendar options"
+          >
+            <span className="material-symbols-outlined sch-icon-18">
+              more_vert
+            </span>
+          </button>
 
-        {error && <p className="sch-gcal__error">{error}</p>}
-      </div>
+          {menuOpen && (
+            <>
+              {/* Lầp nền để bấm menu đóng khi bấm ra ngoài */}
+              <div
+                className="sch-gcal-btn__scrim"
+                onClick={() => setMenuOpen(false)}
+                aria-hidden="true"
+              />
+              <div className="sch-gcal-btn__menu" role="menu">
+                <div className="sch-gcal-btn__status">
+                  <span className="material-symbols-outlined sch-icon-14">
+                    check_circle
+                  </span>
+                  <span>Google Calendar connected</span>
+                </div>
+                <button
+                  type="button"
+                  className="sch-gcal-btn__item"
+                  role="menuitem"
+                  onClick={() => void handleDisconnect()}
+                  disabled={busy !== null}
+                >
+                  <span className="material-symbols-outlined sch-icon-14">
+                    link_off
+                  </span>
+                  <span>
+                    {busy === "disconnect" ? "Disconnecting…" : "Disconnect"}
+                  </span>
+                </button>
+              </div>
+            </>
+          )}
+        </>
+      )}
 
-      <div className="sch-gcal__actions">
-        <button
-          type="button"
-          className="sch-btn sch-btn--primary sch-gcal__btn"
-          onClick={openSyncDialog}
-          disabled={busy !== null}
-        >
-          <span className="material-symbols-outlined sch-icon-18">sync</span>
-          {busy === "sync" ? "Syncing…" : "Sync"}
-        </button>
-        <button
-          type="button"
-          className="sch-btn sch-btn--soft sch-gcal__btn"
-          onClick={handleDisconnect}
-          disabled={busy !== null}
-        >
-          <span className="material-symbols-outlined sch-icon-18">link_off</span>
-          {busy === "disconnect" ? "Disconnecting…" : "Disconnect"}
-        </button>
-      </div>
+      {error && !isConnected && (
+        <span className="sch-gcal-btn__error" title={error}>
+          <span className="material-symbols-outlined sch-icon-14">error</span>
+        </span>
+      )}
 
-      {/* Hộp thoại đồng bộ — chọn hướng + khoảng ngày */}
       {syncOpen && (
         <GoogleCalendarSyncDialog
           busy={busy === "sync"}
@@ -3630,10 +3907,17 @@ function NowBadge({ start, end }: { start: Date; end: Date }) {
 }
 
 function EventDetailModal({
-  event, subtasks, onClose, onDelete, onSlotChanged,
+  event, subtasks, focusSlotId, blockedReasonFor, onClose, onDelete, onSlotChanged,
 }: {
   event: CalEvent;
   subtasks: SubtaskDto[];
+  /**
+   * Slot cụ thể người dùng vừa bấm trên lịch (null = không xác định).
+   *
+   * ⚠️ 1 task có nhiều khối giờ rời rạc → nút Start/Make up phải áp dụng
+   * cho ĐÚNG khối đã bấm, không phải slot đầu tiên.
+   */
+  focusSlotId?: string | null;
   onClose: () => void;
   /**
    * Mở pop-up xác nhận xóa slot.
@@ -3644,6 +3928,14 @@ function EventDetailModal({
   onDelete?: (slotId: string, title: string, isGroup?: boolean) => void;
   /** Refetch lịch sau khi slot đổi trạng thái (Start/Stop). */
   onSlotChanged?: () => void;
+  /**
+   * Lý do bị chặn theo luật "làm trước - làm sau" (tiếng Anh) — hoặc `null`
+   * nếu được phép Start.
+   *
+   * Luật này trước đây áp dụng ngay trên card lịch; nay các nút nằm trong
+   * modal → vẫn truyền xuống để nút Start bị disable + tooltip giải thích.
+   */
+  blockedReasonFor?: (ev: CalEvent, day?: Date) => string | null;
 }) {
   const task = event.task;
   const subtask = event.subtask;
@@ -3706,6 +3998,14 @@ function EventDetailModal({
        */
       slotId?: string | null;
       subtaskId?: string;
+      /** Task sở hữu slot (dùng cho Focus Session: `POST /api/focus/start`). */
+      taskId?: string | null;
+      /** Status của SLOT gốc — quy tắc Start/Stop dựa trên status này. */
+      slotStatus?: string | null;
+      /** Phút dự kiến của slot. */
+      slotPlannedMinutes?: number | null;
+      /** Event gốc của khối (dùng để tra luật "làm trước - làm sau"). */
+      ev?: CalEvent;
     }>
   >(() => {
     // Ưu tiên event gốc đã gộp — khớp chính xác với những gì lịch đang hiển thị
@@ -3724,6 +4024,10 @@ function EventDetailModal({
             slot: e.scheduleSlot,
             slotId: e.scheduleSlot?.id ?? e.scheduleSlotId ?? null,
             subtaskId: e.subTaskId ?? undefined,
+            taskId: e.taskId ?? null,
+            slotStatus: e.slotStatus ?? e.status ?? null,
+            slotPlannedMinutes: e.slotPlannedMinutes ?? null,
+            ev: e,
           };
         });
     }
@@ -3737,6 +4041,59 @@ function EventDetailModal({
       subtaskId: st.id,
     }));
   }, [isAggregate, event.aggregatedEvents, event.start, event.end, subtasks, taskSubtasks]);
+
+  /**
+   * Khối (block) trong danh sách subtask tương ứng với slot đang focus.
+   *
+   * Dùng để đặt nút Start/Make up NGAY TRONG khối đó (đúng khối giờ người
+   * dùng bấm trên lịch), thay vì 1 khối dùng chung ở cột trái.
+   */
+  const focusBlock = useMemo(() => {
+    if (focusSlotId) {
+      return detailBlocks.find((b) => b.slotId === focusSlotId) ?? null;
+    }
+    return detailBlocks.find((b) => b.slotId && b.slotId === slotId) ?? null;
+  }, [detailBlocks, focusSlotId, slotId]);
+
+  /**
+   * Thông tin slot đang focus — gom từ event gốc (không phụ thuộc DTO slot
+   * đầy đủ).
+   *
+   * ⚠️ Ở `/schedule`, dữ liệu đến từ `GET /api/calendar` → event KHÔNG có
+   * `scheduleSlot` (chỉ có `scheduleSlotId`). Nếu chỉ dựa vào DTO slot thì
+   * status / subTaskId / phút dự kiến đều mất → nút Start sai trạng thái.
+   *
+   * → Gom từ `aggregatedEvents` (đã có `slotStatus`, `slotPlannedMinutes`,
+   *   `subTaskId`) — đúng dữ liệu đang hiển thị trên lịch.
+   */
+  const focusInfo = useMemo(() => {
+    /** Event gốc tương ứng với slot đang focus. */
+    const child =
+      focusSlotId
+        ? event.aggregatedEvents?.find((e) => e.scheduleSlotId === focusSlotId)
+        : undefined;
+
+    /** DTO slot gốc (có thể null trên path calendar). */
+    const dto = child?.scheduleSlot ?? (slot?.id === focusSlotId ? slot : undefined);
+
+    return {
+      slotId: focusSlotId ?? slotId,
+      taskId: child?.taskId ?? event.taskId ?? null,
+      subTaskId:
+        dto?.subTaskId ?? child?.subTaskId ?? event.subTaskId ?? null,
+      status: dto?.status ?? child?.slotStatus ?? event.status,
+      plannedMinutes:
+        dto?.proposedMinutes ??
+        child?.slotPlannedMinutes ??
+        event.slotPlannedMinutes ??
+        undefined,
+    };
+  }, [focusSlotId, slotId, slot, event, focusBlock]);
+
+  /** Task sở hữu slot đang focus (fallback về task của event). */
+  const focusTaskId = focusInfo.taskId;
+  /** `subTaskId` của SLOT đang focus (không phải của event — spec mục 6.1). */
+  const focusSubTaskId = focusInfo.subTaskId;
 
   return (
     <div className="sch-modal" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -3886,20 +4243,32 @@ function EventDetailModal({
             */}
             {!isGroupSlot && (
               <SlotFocusPanel
-                slotId={slot?.id ?? event.scheduleSlotId ?? null}
-                taskId={event.taskId}
+                /*
+                 * Ưu tiên slot vừa bấm (`focusSlot`) → nút Start/Make up áp
+                 * dụng đúng khối giờ người dùng chọn trên lịch.
+                 */
+                slotId={focusInfo.slotId}
+                taskId={focusTaskId}
                 /*
                  * ⚠️ `subTaskId` của SLOT, không của event — spec mục 6.1:
                  * backend không tự lấy `subTaskId` từ slot khi Start.
                  * Với event aggregate (gộp nhiều slot của 1 task) thì
                  * `event.subTaskId` là null → phải tra slot gốc.
                  */
-                subTaskId={slot?.subTaskId ?? event.subTaskId ?? null}
-                status={slot?.status ?? event.status}
-                plannedMinutes={
-                  slot?.proposedMinutes ?? event.slotPlannedMinutes ?? undefined
-                }
+                subTaskId={focusSubTaskId}
+                status={focusInfo.status}
+                plannedMinutes={focusInfo.plannedMinutes}
                 taskTitle={event.task?.title ?? event.subtask?.title ?? null}
+                /*
+                 * Nếu khối giờ đã hiện nút Start/Make up riêng bên cột phải
+                 * → ẩn bộ nút ở đây để không trùng.
+                 */
+                showActions={!focusBlock}
+                blockedReason={
+                  blockedReasonFor
+                    ? blockedReasonFor(focusBlock?.ev ?? event)
+                    : null
+                }
                 onChanged={onSlotChanged}
               />
             )}
@@ -3992,6 +4361,37 @@ function EventDetailModal({
                               style={{ marginLeft: `${offsetPct}%`, width: `${pct}%` }}
                             />
                           </div>
+                          {/*
+                            Nút Start / Make up / Stop của riêng khối này.
+
+                            ⚠️ Trước đây các nút này nằm NGAY BÊN CẠNH card
+                            trên lịch → làm card bị kéo giãn / trượt dài xuống
+                            và trông như bị duplicate. Nay chuyển vào trong
+                            modal chi tiết: bấm card → mở modal → bấm Start
+                            tại đúng khối giờ đó.
+                          */}
+                          {!isGroupSlot &&
+                            focusBlock?.key === b.key &&
+                            b.slotId &&
+                            b.taskId && (
+                              <div className="sch-aggregate__focus">
+                                <SlotFocusActions
+                                  slotId={b.slotId}
+                                  taskId={b.taskId}
+                                  subTaskId={b.slot?.subTaskId ?? b.subtaskId ?? null}
+                                  status={b.slotStatus ?? b.status}
+                                  plannedMinutes={b.slotPlannedMinutes ?? undefined}
+                                  taskTitle={b.title}
+                                  /* Luật "làm trước - làm sau" — xem TaskCard. */
+                                  blockedReason={
+                                    b.ev && blockedReasonFor
+                                      ? blockedReasonFor(b.ev)
+                                      : null
+                                  }
+                                  onChanged={onSlotChanged}
+                                />
+                              </div>
+                            )}
                           {/*
                             Nút xóa slot của khối này.
                             ⚠️ Chỉ mở pop-up xác nhận — KHÔNG xóa ngay.

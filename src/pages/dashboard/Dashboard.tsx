@@ -8,9 +8,13 @@ import {
   getProjectProgress,
   listCalendar,
   listProjects,
+  getProductiveHours,
+  getTodayBriefing,
+  type BriefingResponse,
   type CalendarItemDto,
   type GoogleCalendarSyncDirection,
   type GoogleCalendarSyncResultDto,
+  type ProductiveHoursDto,
 } from "../../lib/api-client";
 import "./dashboard.css";
 
@@ -22,6 +26,21 @@ const TICK_MS = 30 * 1000;
 /** Số project tối đa hiện trong Deadline radar (cột phải). */
 const RADAR_LIMIT = 5;
 
+/* ---------- Hằng số cho metric card (dữ liệu thật từ API) ---------- */
+/**
+ * Ngưỡng coi 1 giờ là "khung giờ hiệu quả" (0–1 → phần trăm).
+ * Chỉ dùng để tô màu thanh nhiệt, KHÔNG phải ngưỡng AI dùng để xếp lịch.
+ */
+const HOUR_SCALE = 100;
+/**
+ * Ngưỡng TƯƠNG ĐỐI để gom khung giờ vàng: giờ chỉ được tính vào khung nếu
+ * đạt ≥ 70% điểm đỉnh. Dùng mốc tương đối để không gom nhầm giờ "vừa có
+ * dữ liệu" (mọi giờ > 0) thành 1 khum hết ngày.
+ */
+const PEAK_RATIO = 70;
+/** Số giờ nhóm liền kề gộp lại thành 1 "khung giờ vàng" (vd 9–12, 14–18). */
+const PEAK_BLOCK_MIN_HOURS = 1;
+
 /** "42m" / "1h 05" — định dạng ngắn cho phần thời gian còn lại. */
 function formatRemain(ms: number): string {
   if (ms <= 0) return "0m";
@@ -29,6 +48,97 @@ function formatRemain(ms: number): string {
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
   return h > 0 ? `${h}h ${String(m).padStart(2, "0")}` : `${m}m`;
+}
+
+/** "09:00" / "9:00" — giờ từ số (0–23) hoặc chuỗi ISO. */
+function fmtHourLabel(h: number): string {
+  return `${String(h).padStart(2, "0")}:00`;
+}
+
+/**
+ * "09:00" / "09:00:00" / "9" → số giờ (0–23). Trả `null` nếu không parse được.
+ * Dùng cho `top_hours[]` của API (BE trả chuỗi giờ dạng text).
+ */
+function parseHourFromClock(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const first = value.trim().split(":")[0];
+  const n = Number(first);
+  if (!Number.isFinite(n) || n < 0 || n > 23) return null;
+  return Math.floor(n);
+}
+
+/**
+ * Chuẩn hoá 1 điểm giờ (0–1) về phần trăm (0–100).
+ * BE có thể trả 0–1 hoặc 0–100 → đọc cả hai để không phụ thuộc shape.
+ */
+function toPercent(value: number | null | undefined): number | null {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return null;
+  }
+  const pct = value <= 1 ? value * HOUR_SCALE : value;
+  return Math.max(0, Math.min(100, Math.round(pct)));
+}
+
+/**
+ * Từ mảng `hours[24]` → khung giờ hiệu quả nhất (giờ có điểm cao nhất).
+ * Trả `null` khi BE chưa có dữ liệu (user chưa onboard, hoặc chưa học được).
+ */
+function findPeakHour(hours: number[] | undefined): number | null {
+  if (!hours || hours.length === 0) return null;
+  let best: number | null = null;
+  for (let i = 0; i < hours.length; i++) {
+    const v = toPercent(hours[i]);
+    if (v === null) continue;
+    if (best === null || v > (toPercent(hours[best]) ?? -1)) best = i;
+  }
+  return best;
+}
+
+/**
+ * Gom các giờ hiệu quả thành các khung liên tục → "09:00 – 12:00".
+ *
+ * Ngưỡng là **tương đối**: chỉ tính giờ đạt ≥ `PEAK_RATIO` (mặc định 70%)
+ * của điểm đỉnh. Nếu dùng mốc tuyệt đối (> 0) thì mọi giờ có dữ liệu
+ * đều bị gộp thành 1 khum hết ngày.
+ *
+ * Trả về tối đa `maxBlocks` khung, mỗi khung là `{ start, end }` (end = giờ kế tiếp).
+ */
+function findPeakBlocks(
+  hours: number[] | undefined,
+  maxBlocks = 2,
+): { start: number; end: number }[] {
+  if (!hours || hours.length === 0) return [];
+  const peak = findPeakHour(hours);
+  if (peak === null) return [];
+  const peakPct = toPercent(hours[peak]) ?? 0;
+  if (peakPct <= 0) return [];
+  const threshold = (peakPct * PEAK_RATIO) / HOUR_SCALE;
+
+  const good: boolean[] = hours.map((v) => {
+    const pct = toPercent(v);
+    return pct !== null && pct > 0 && pct / HOUR_SCALE >= threshold;
+  });
+
+  const blocks: { start: number; end: number }[] = [];
+  let i = 0;
+  while (i < good.length) {
+    if (!good[i]) {
+      i++;
+      continue;
+    }
+    const start = i;
+    while (i < good.length && good[i]) i++;
+    const end = i; // exclusive
+    if (end - start >= PEAK_BLOCK_MIN_HOURS) blocks.push({ start, end });
+  }
+  // Ưu tiên khung dài nhất (đây là khung "vàng" nhất).
+  blocks.sort((a, b) => b.end - b.start - (a.end - a.start));
+  return blocks.slice(0, maxBlocks);
+}
+
+/** "09:00 – 12:00" — nhãn 1 khung giờ hiệu quả. */
+function fmtPeakBlock(b: { start: number; end: number }): string {
+  return `${fmtHourLabel(b.start)} – ${fmtHourLabel(b.end)}`;
 }
 
 /* ---------- Types ---------- */
@@ -396,6 +506,12 @@ export function DashboardPage() {
   // Deadline radar: project sắp tới hạn + progress thật (cột phải).
   const [radar, setRadar] = useState<RadarItem[]>([]);
   const [radarLoading, setRadarLoading] = useState(true);
+  /* ---------- Dữ liệu metric card (API thật) ---------- */
+  // GET /profile/productive-hours → điểm giờ hiệu quả + khung giờ vàng.
+  const [productive, setProductive] = useState<ProductiveHoursDto | null>(null);
+  // GET /briefing/today → task ưu tiên + task thiếu thời gian (at risk).
+  const [briefing, setBriefing] = useState<BriefingResponse | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   /** Mở hộp thoại đồng bộ (chọn hướng + khoảng ngày). */
   const [syncOpen, setSyncOpen] = useState(false);
@@ -587,6 +703,34 @@ export function DashboardPage() {
         }),
       );
       setRadarLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /* ---------- Load dữ liệu metric card từ API ----------
+   * 2 nguồn, gọi song song:
+   *   GET /profile/productive-hours → điểm giờ hiệu quả (khung giờ vàng)
+   *   GET /briefing/today           → task ưu tiên + task thiếu thời gian
+   *
+   * Cả 2 đều là endpoint READ-ONLY của AI service, **không** tốn lượt AI.
+   * Lỗi 1 nguồn không chặn nguồn kia → mỗi metric tự hiển thị "—".
+   */
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      const [hoursRes, briefRes] = await Promise.all([
+        getProductiveHours(),
+        getTodayBriefing("en"),
+      ]);
+      if (cancelled) return;
+
+      if (hoursRes.ok) setProductive(hoursRes.data);
+      if (briefRes.ok) setBriefing(briefRes.data);
+      setMetricsLoading(false);
     })();
 
     return () => {
@@ -788,6 +932,90 @@ export function DashboardPage() {
     weekday: "long",
   });
 
+  /* ---------- Số liệu metric card (100% từ API, không bịa) ---------- */
+
+  /* Metric 1: Giờ hiệu quả — GET /profile/productive-hours */
+  // Giờ có điểm cao nhất (null = BE chưa có dữ liệu).
+  const peakHour = useMemo(
+    () => findPeakHour(productive?.hours),
+    [productive?.hours],
+  );
+  // Điểm của giờ đỉnh (phần trăm 0–100), null = chưa có dữ liệu.
+  const peakScore = useMemo(() => {
+    if (peakHour === null) return null;
+    return toPercent(productive?.hours?.[peakHour]);
+  }, [productive?.hours, peakHour]);
+  // Khung giờ vàng. Ưu tiên `top_hours` do BE trả (đã tính sẵn từ hồ sơ
+  // năng suất); fallback tự gom từ `hours[]` nếu BE chưa có.
+  const peakBlocks = useMemo(() => {
+    const top = productive?.top_hours ?? [];
+    const fromApi = top
+      .map((r) => {
+        const start = parseHourFromClock(r.start);
+        const end = parseHourFromClock(r.end);
+        if (start === null || end === null || end <= start) return null;
+        return { start, end };
+      })
+      .filter((b): b is { start: number; end: number } => b !== null);
+    if (fromApi.length > 0) return fromApi;
+    return findPeakBlocks(productive?.hours);
+  }, [productive]);
+  // Nhãn khung giờ vàng đầu tiên, fallback sang giờ đỉnh đơn lẻ.
+  const peakLabel = peakBlocks.length
+    ? fmtPeakBlock(peakBlocks[0])
+    : peakHour !== null
+      ? fmtHourLabel(peakHour)
+      : "—";
+
+  /* Metric 2: Task ưu tiên — GET /briefing/today */
+  const topTasks = useMemo(() => briefing?.top_tasks ?? [], [briefing]);
+  // Tổng phút còn lại của các task ưu tiên (BE đã quy đổi sẵn).
+  const topRemainingMinutes = useMemo(
+    () => topTasks.reduce((sum, t) => sum + (t.remaining_minutes ?? 0), 0),
+    [topTasks],
+  );
+
+  /* Metric 3: Task thiếu thời gian — GET /briefing/today (at_risk) */
+  const atRisk = useMemo(() => briefing?.at_risk ?? [], [briefing]);
+  // Task at-risk sắp hết hạn nhất → hiển thị deadline gần nhất.
+  const nearestRisk = useMemo(() => {
+    if (atRisk.length === 0) return null;
+    return atRisk
+      .filter((t) => t.deadline && !Number.isNaN(new Date(t.deadline).getTime()))
+      .sort(
+        (a, b) =>
+          new Date(a.deadline).getTime() - new Date(b.deadline).getTime(),
+      )[0] ?? null;
+  }, [atRisk]);
+  // Tổng phút còn thiếu của các task at-risk.
+  const atRiskMissingMinutes = useMemo(
+    () => atRisk.reduce((sum, t) => sum + (t.missing_minutes ?? 0), 0),
+    [atRisk],
+  );
+  // Nhãn deadline gần nhất: "Due today" / "in 2d" / "3d overdue".
+  const nearestRiskLabel = useMemo(() => {
+    if (!nearestRisk) return "—";
+    const days = daysUntil(nearestRisk.deadline);
+    if (days === null) return "—";
+    return fmtDaysLeft(days);
+  }, [nearestRisk]);
+  // Tỉ lệ task thiếu thời gian / tổng task AI đang theo dõi (0–100).
+  const riskRatioPercent = useMemo(() => {
+    const tracked = topTasks.length + atRisk.length;
+    if (tracked === 0) return 0;
+    return Math.round((atRisk.length / tracked) * 100);
+  }, [topTasks.length, atRisk.length]);
+
+  /* Metric 4: Lịch hôm nay — tổng phút đã xếp (kể cả khung chưa tới giờ). */
+  const scheduledMinutes = useMemo(
+    () =>
+      focusSlots.reduce((acc, s) => {
+        const mins = Math.round((s.endMs - s.startMs) / 60_000);
+        return acc + (Number.isFinite(mins) && mins > 0 ? mins : 0);
+      }, 0),
+    [focusSlots],
+  );
+
   /* ---------- Mini calendar: lưới 6 tuần của tháng đang xem ---------- */
   const miniDays = useMemo(
     () => buildMiniMonth(monthAnchor, monthCounts),
@@ -902,11 +1130,11 @@ export function DashboardPage() {
           </div>
         </section>
 
-        {/* ================= 3 Key Metrics ================= */}
+        {/* ================= 4 Key Metrics (dữ liệu thật từ API) ================= */}
         <section
           className={"dash-metrics" + (pageMounted ? " dash-metrics--in" : "")}
         >
-          {/* Metric 1: Energy Peak */}
+          {/* Metric 1: Giờ hiệu quả — GET /profile/productive-hours */}
           <article
             className={
               "dash-metric" +
@@ -915,43 +1143,61 @@ export function DashboardPage() {
             style={metricsAnim.getDelay(0)}
           >
             <div className="dash-metric-head">
-              <span className="dash-metric-label">Focus energy</span>
-              <span className="dash-chip dash-chip--success">Optimal</span>
+              <span className="dash-metric-label">Peak focus hours</span>
+              <span
+                className={
+                  "dash-chip " +
+                  (productive?.onboarded
+                    ? "dash-chip--success"
+                    : "dash-chip--muted")
+                }
+              >
+                {productive?.onboarded ? "Set" : "Not set"}
+              </span>
             </div>
             <div className="dash-metric-value">
-              <span className="dash-metric-number">88%</span>
+              <span className="dash-metric-number">
+                {peakScore === null ? "—" : `${peakScore}%`}
+              </span>
               <span className="dash-metric-trend">
-                <span className="material-symbols-outlined">north_east</span>
-                Bio peak
+                <span className="material-symbols-outlined">schedule</span>
+                Best hour
               </span>
             </div>
             <div className="dash-metric-foot">
               <span>Deep work window</span>
-              <span className="dash-metric-foot-emph">14:00 - 16:30</span>
+              <span className="dash-metric-foot-emph">{peakLabel}</span>
             </div>
-            <div className="dash-sparkline" aria-hidden="true">
-              <svg
-                className="dash-sparkline-svg"
-                fill="none"
-                preserveAspectRatio="none"
-                viewBox="0 0 100 32"
-              >
-                <path
-                  d="M0,26 Q20,23 35,13 T65,5 T85,20 T100,16 L100,32 L0,32 Z"
-                  fill="currentColor"
-                  fillOpacity="0.15"
-                />
-                <path
-                  d="M0,26 Q20,23 35,13 T65,5 T85,20 T100,16"
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeWidth="2"
-                />
-              </svg>
+            {/* Thanh nhiệt 24 giờ — dựng từ `hours[]` thật của API. */}
+            <div
+              className="dash-hours"
+              role="img"
+              aria-label={
+                peakScore === null
+                  ? "No productive hours data yet"
+                  : `Peak focus ${peakScore}% at ${peakLabel}`
+              }
+            >
+              {(productive?.hours ?? Array.from({ length: 24 }, () => 0)).map(
+                (v, i) => {
+                  const pct = toPercent(v) ?? 0;
+                  return (
+                    <span
+                      key={i}
+                      className={
+                        "dash-hour" +
+                        (i === peakHour ? " dash-hour--peak" : "")
+                      }
+                      style={{ opacity: pct === 0 ? 0.12 : 0.25 + pct / 133 }}
+                      title={`${fmtHourLabel(i)} — ${pct}%`}
+                    />
+                  );
+                },
+              )}
             </div>
           </article>
 
-          {/* Metric 2: K_bias */}
+          {/* Metric 2: Task ưu tiên — GET /briefing/today (top_tasks) */}
           <article
             className={
               "dash-metric" +
@@ -960,42 +1206,49 @@ export function DashboardPage() {
             style={metricsAnim.getDelay(1)}
           >
             <div className="dash-metric-head">
-              <span className="dash-metric-label">
-                Time multiplier
-              </span>
+              <span className="dash-metric-label">Priority tasks</span>
               <span className="dash-chip dash-chip--primary">AI</span>
             </div>
 
             <div className="dash-metric-value">
-              <span className="dash-metric-number">1.34x</span>
+              <span className="dash-metric-number">
+                {metricsLoading ? "…" : topTasks.length}
+              </span>
+              {topTasks.length > 0 && (
+                <span className="dash-metric-trend">
+                  <span className="material-symbols-outlined">timer</span>
+                  {fmtMinutes(topRemainingMinutes)} left
+                </span>
+              )}
             </div>
 
             <div className="dash-metric-foot dash-metric-foot--pinned">
-              <span>Bias compensation</span>
-              <span className="dash-metric-foot-emph">+34%</span>
+              <span>Time needed today</span>
+              <span className="dash-metric-foot-emph">
+                {topTasks.length === 0
+                  ? "Nothing queued"
+                  : fmtMinutes(topRemainingMinutes)}
+              </span>
             </div>
 
+            {/* Thanh: phần phút đã ước tính / tổng phút việc hôm nay. */}
             <div
               className="dash-bar"
               role="img"
-              aria-label="60 min base, 20 min bias compensation, 20 min recovery buffer"
+              aria-label={
+                topTasks.length === 0
+                  ? "No priority tasks"
+                  : `${topTasks.length} priority tasks, ${fmtMinutes(topRemainingMinutes)} remaining`
+              }
             >
               <div
-                className="dash-bar-seg dash-bar-seg--60"
-                style={{ width: "60%" }}
-              />
-              <div
-                className="dash-bar-seg dash-bar-seg--20a"
-                style={{ width: "20%" }}
-              />
-              <div
-                className="dash-bar-seg dash-bar-seg--20b"
-                style={{ width: "20%" }}
+                className="dash-bar-seg dash-bar-seg--tasks"
+                style={{ width: "100%" }}
               />
             </div>
           </article>
 
-          {/* Metric 3: Today tasks */}
+          {/* Metric 3: Task thiếu thời gian — GET /briefing/today (at_risk) */}
           <article
             className={
               "dash-metric" +
@@ -1004,39 +1257,55 @@ export function DashboardPage() {
             style={metricsAnim.getDelay(2)}
           >
             <div className="dash-metric-head">
-              <span className="dash-metric-label">Today's tasks</span>
-              <span className="dash-chip dash-chip--success">
-                {weekdayLabel}
+              <span className="dash-metric-label">At risk</span>
+              <span
+                className={
+                  "dash-chip " +
+                  (atRisk.length > 0
+                    ? "dash-chip--warning"
+                    : "dash-chip--success")
+                }
+              >
+                {atRisk.length > 0 ? "Needs time" : "All clear"}
               </span>
             </div>
             <div className="dash-metric-value">
               <span className="dash-metric-number">
-                {doneSlots}/{totalSlots}
+                {metricsLoading ? "…" : atRisk.length}
               </span>
+              {atRisk.length > 0 && (
+                <span className="dash-metric-trend">
+                  <span className="material-symbols-outlined">warning</span>
+                  {fmtMinutes(atRiskMissingMinutes)} short
+                </span>
+              )}
             </div>
             <div className="dash-metric-foot dash-metric-foot--pinned">
-              <span>Remaining today</span>
+              <span>Nearest deadline</span>
               <span className="dash-metric-foot-emph">
-                {totalSlots - doneSlots === 0
-                  ? "All cleared"
-                  : `${totalSlots - doneSlots} to resolve`}
+                {nearestRiskLabel}
               </span>
             </div>
+            {/* Thanh: tỉ lệ task thiếu thời gian trong tổng việc AI đang theo dõi. */}
             <div
-              className="dash-progress"
-              role="progressbar"
-              aria-valuenow={donePercent}
-              aria-valuemin={0}
-              aria-valuemax={100}
+              className="dash-bar"
+              role="img"
+              aria-label={
+                atRisk.length === 0
+                  ? "No tasks are missing time"
+                  : `${atRisk.length} tasks are missing ${fmtMinutes(atRiskMissingMinutes)} of time`
+              }
             >
               <div
-                className="dash-progress-fill"
-                style={{ width: `${donePercent}%` }}
+                className="dash-bar-seg dash-bar-seg--risk"
+                style={{
+                  width: `${riskRatioPercent}%`,
+                }}
               />
             </div>
           </article>
 
-          {/* Metric 4: Focus minutes đã hoàn thành hôm nay */}
+          {/* Metric 4: Lịch hôm nay — GET /api/calendar (đã load sẵn cho timeline) */}
           <article
             className={
               "dash-metric" +
@@ -1045,18 +1314,30 @@ export function DashboardPage() {
             style={metricsAnim.getDelay(3)}
           >
             <div className="dash-metric-head">
-              <span className="dash-metric-label">Focus time</span>
-              <span className="dash-chip dash-chip--primary">Log</span>
+              <span className="dash-metric-label">Today's schedule</span>
+              <span className="dash-chip dash-chip--success">
+                {weekdayLabel}
+              </span>
             </div>
             <div className="dash-metric-value">
               <span className="dash-metric-number">
-                {fmtMinutes(doneMinutes)}
+                {doneSlots}/{totalSlots}
               </span>
+              {totalSlots > 0 && (
+                <span className="dash-metric-trend">
+                  <span className="material-symbols-outlined">schedule</span>
+                  {fmtMinutes(scheduledMinutes)}
+                </span>
+              )}
             </div>
             <div className="dash-metric-foot dash-metric-foot--pinned">
-              <span>Completed today</span>
+              <span>Remaining today</span>
               <span className="dash-metric-foot-emph">
-                {doneSlots} {doneSlots === 1 ? "block" : "blocks"}
+                {totalSlots === 0
+                  ? "Nothing scheduled"
+                  : totalSlots - doneSlots === 0
+                    ? "All cleared"
+                    : `${totalSlots - doneSlots} to resolve`}
               </span>
             </div>
             <div

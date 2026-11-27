@@ -991,9 +991,10 @@ function ProjectDetailBody({
         <div className="pd-section-head">
           <div>
             <span className="pd-section-eyebrow">Choose your flow</span>
-            <h2 className="pd-section-title">How do you want to decompose this project?</h2>
+            <h2 className="pd-section-title">How do you want to work on this project?</h2>
             <p className="pd-section-sub">
-              METANOIA supports two flows: create tasks manually, or let AI decompose and schedule them automatically.
+              METANOIA supports two flows: create tasks manually and place them on
+              a schedule, or talk to AI and let it plan the work with you.
             </p>
           </div>
         </div>
@@ -1019,26 +1020,31 @@ function ProjectDetailBody({
             </div>
           </Link>
 
-          <Link
-            to={`/projects/${project.id}/execution`}
-            className="pd-direction pd-direction--execution"
-            aria-label="Open AI project planner"
-          >
-            <div className="pd-direction-badge">AI</div>
-            <div className="pd-direction-icon">
-              <span className="material-symbols-outlined">auto_awesome</span>
-            </div>
-            <div className="pd-direction-body">
-              <h3 className="pd-direction-title">AI auto-decompose</h3>
-              <p className="pd-direction-desc">
-                Paste the client brief — AI proposes milestones + tasks, you review and apply.
-              </p>
-            </div>
-            <div className="pd-direction-cta">
-              <span>Explore</span>
-              <span className="material-symbols-outlined">arrow_forward</span>
-            </div>
-          </Link>
+          {/*
+            TODO: tạm thời ẩn luồng "AI auto-decompose" (/projects/:id/execution)
+            cho tới khi luồng này ổn định. Route vẫn còn trong App.tsx nên
+            deep-link vẫn vào được — chỉ ẩn entry point trên trang này.
+            <Link
+              to={`/projects/${project.id}/execution`}
+              className="pd-direction pd-direction--execution"
+              aria-label="Open AI project planner"
+            >
+              <div className="pd-direction-badge">AI</div>
+              <div className="pd-direction-icon">
+                <span className="material-symbols-outlined">auto_awesome</span>
+              </div>
+              <div className="pd-direction-body">
+                <h3 className="pd-direction-title">AI auto-decompose</h3>
+                <p className="pd-direction-desc">
+                  Paste the client brief — AI proposes milestones + tasks, you review and apply.
+                </p>
+              </div>
+              <div className="pd-direction-cta">
+                <span>Explore</span>
+                <span className="material-symbols-outlined">arrow_forward</span>
+              </div>
+            </Link>
+          */}
 
           <Link
             to={`/projects/${project.id}/chat`}

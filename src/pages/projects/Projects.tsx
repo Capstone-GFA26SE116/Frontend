@@ -676,7 +676,7 @@ export function ProjectsPage() {
    *
    * Nút "Approve" cũ chỉ setState (không gọi API) và áp dụng cho status
    * `pending` — vốn không tồn tại trong enum backend. Nay mọi project còn sống
-   * (Active / OnHold) đều dùng chung 2 nút: Manual decompose + AI decompose.
+   * (Active / OnHold) đều dùng chung 2 nút: Manual decompose + AI chat.
    */
 
   async function handleDeleteProject(projectId: string) {
@@ -2225,7 +2225,6 @@ function ProjectCard(p: ProjectCardProps) {
          * `OnHold` vẫn chat/Apply được (FR-08b-1 #28) → dùng chung nhánh này.
          */}
         <>
-          {/* 2-direction split: Manual (planning) vs AI (execution) */}
           <Link
             to={`/projects/${prj.id}/planning`}
             className="proj-action proj-action--plain proj-action--flex"
@@ -2237,16 +2236,25 @@ function ProjectCard(p: ProjectCardProps) {
             </span>
             <span>Manual decompose</span>
           </Link>
+          {/*
+            * 2-direction split: Manual (planning) vs AI (chat).
+            *
+            * ⚠️ Nút "AI decompose" trỏ tới `/projects/:id/execution` (luồng AI
+            * brief → milestone + task) nhưng luồng đó đang tạm ẩn ở trang
+            * Project Detail. Để 2 nơi hành xử nhất quán, nút này dẫn tới AI
+            * chat (`/projects/:id/chat`) — giống hệt card "AI chat" bên trong
+            * Project Detail.
+            */}
           <Link
-            to={`/projects/${prj.id}/execution`}
+            to={`/projects/${prj.id}/chat`}
             className="proj-action proj-action--ai proj-action--flex"
-            title="AI reads the client brief, decomposes it into milestones + tasks, then you review and apply"
+            title="Chat with AI about this project — it proposes milestones + tasks, you review and apply"
             onClick={(e) => e.stopPropagation()}
           >
             <span className="material-symbols-outlined proj-action-icon">
-              auto_awesome
+              forum
             </span>
-            <span>AI decompose</span>
+            <span>AI chat</span>
           </Link>
         </>
       </div>

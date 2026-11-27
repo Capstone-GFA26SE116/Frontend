@@ -539,35 +539,28 @@ body.has-focus-bar .site-main {
   max-width: 80rem;
   margin: 0 auto;
   padding: 40px 32px;
-  display: flex;
-  flex-direction: column;
+  /*
+   * Grid 3 cột: logo | nav | (ô trống).
+   *
+   * ⚠️ Trước đây dùng `flex + space-between` → khi bỏ khối copyright ở
+   * cuối, nav bị đẩy sang hết bên phải. Grid cố định 3 cột giữ nav luôn
+   * ở GIỮA dù có hay không có phần tử thứ 3.
+   */
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   gap: 16px;
   color: var(--body);
   font-family: var(--font-sans);
   font-size: 14px;
   line-height: 20px;
 }
-@media (min-width: 768px) {
-  .site-footer-inner { flex-direction: row; }
-}
 
 .site-footer-left {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-.site-footer-version {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--mute);
-  padding: 4px 10px;
-  border-radius: 4px;
-  background-color: var(--canvas-soft);
-  border: 1px solid var(--hairline);
-  letter-spacing: 0;
+  justify-self: start;
 }
 
 .site-footer-nav {
@@ -576,6 +569,7 @@ body.has-focus-bar .site-main {
   gap: 24px;
   flex-wrap: wrap;
   justify-content: center;
+  justify-self: center;
 }
 .site-footer-link {
   font-family: var(--font-sans);
@@ -587,19 +581,17 @@ body.has-focus-bar .site-main {
 }
 .site-footer-link:hover { color: var(--primary); }
 
-.site-footer-meta {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--mute);
-  text-align: center;
-  letter-spacing: 0;
-}
-
 /* ================= Responsive tweaks ================= */
 @media (max-width: 640px) {
   .site-header-inner { padding: 12px 20px; }
   .site-header-left { gap: 16px; }
   .site-nav-link { padding: 8px 8px; }
+  /* Footer: xuống dòng trên mobile — nav nằm dưới logo, căn giữa. */
+  .site-footer-inner {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+  .site-footer-left { justify-self: center; }
 }
 
 /* Respect reduced motion */

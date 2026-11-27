@@ -503,7 +503,6 @@ export function SiteLayout() {
         <div className="site-footer-inner">
           <div className="site-footer-left">
             <MetanoiaLogo size={22} tone="dark" />
-            <span className="site-footer-version">v2.4 Neural Sync</span>
           </div>
           <nav className="site-footer-nav" aria-label="Secondary">
             {isAuthenticated ? (
@@ -535,13 +534,7 @@ export function SiteLayout() {
             <Link to="/pricing" className="site-footer-link">
               Pricing
             </Link>
-            <a href="#security" className="site-footer-link">
-              Security
-            </a>
           </nav>
-          <div className="site-footer-meta">
-            © 2025 METANOIA AI Labs. Minimal cognitive workspace.
-          </div>
         </div>
       </footer>
     </div>

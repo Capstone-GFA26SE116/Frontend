@@ -803,10 +803,11 @@ select.pd-input {
 @media (min-width: 768px) {
   .pd-direction-grid { grid-template-columns: 1fr 1fr; }
 }
-/* 3 thẻ (Manual / AI auto-decompose / AI chat) → 3 cột ở màn rộng. */
-@media (min-width: 1200px) {
-  .pd-direction-grid { grid-template-columns: repeat(3, 1fr); }
-}
+/*
+ * Hiện chỉ 2 thẻ (Manual decompose / AI chat) → 2 cột ở mọi màn rộng.
+ * Khi bật lại luồng "AI auto-decompose" (card thứ 3) thì đổi lại thành
+ * `repeat(3, 1fr)` ở breakpoint 1200px.
+ */
 
 .pd-direction {
   position: relative;

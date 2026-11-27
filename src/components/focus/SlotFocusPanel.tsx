@@ -33,6 +33,19 @@ export interface SlotFocusPanelProps {
   onChanged?: () => void;
   /** Tên task — hiện trong dialog "Cần thêm phút". */
   taskTitle?: string | null;
+  /**
+   * Ẩn nút Start/Stop (chỉ giữ phần tổng kết).
+   *
+   * Dùng khi modal đã hiện nút riêng TRONG khối giờ cụ thể → tránh 2 bộ
+   * nút trùng nhau trong cùng 1 modal.
+   */
+  showActions?: boolean;
+  /**
+   * Lý do bị chặn theo luật "làm trước - làm sau" (tiếng Anh).
+   *
+   * Khi có giá trị → nút Start hiện nhưng bị disable + tooltip giải thích.
+   */
+  blockedReason?: string | null;
 }
 
 export function SlotFocusPanel({
@@ -43,6 +56,8 @@ export function SlotFocusPanel({
   plannedMinutes,
   onChanged,
   taskTitle,
+  showActions = true,
+  blockedReason,
 }: SlotFocusPanelProps) {
   const { currentSlotId, hasActiveSession } = useFocusActions();
   const [summary, setSummary] = useState<FocusTimeSummaryResponse | null>(null);
@@ -77,16 +92,19 @@ export function SlotFocusPanel({
         <span className="fc-panel__title">Focus session</span>
       </header>
 
-      <SlotFocusActions
-        slotId={slotId}
-        taskId={taskId}
-        subTaskId={subTaskId}
-        status={status}
-        plannedMinutes={plannedMinutes}
-        blockedByOtherSession={blockedByOtherSession}
-        onChanged={onChanged}
-        taskTitle={taskTitle}
-      />
+      {showActions && (
+        <SlotFocusActions
+          slotId={slotId}
+          taskId={taskId}
+          subTaskId={subTaskId}
+          status={status}
+          plannedMinutes={plannedMinutes}
+          blockedByOtherSession={blockedByOtherSession}
+          blockedReason={blockedReason}
+          onChanged={onChanged}
+          taskTitle={taskTitle}
+        />
+      )}
 
       {loading && !hasData ? (
         <p className="fc-panel__hint">Loading summary…</p>

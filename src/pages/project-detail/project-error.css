@@ -1,0 +1,337 @@
+/**
+ * ===========================================================
+ * Hộp thoại báo lỗi — Project Detail.
+ * ===========================================================
+ *
+ * Token theo `DESIGN.md`:
+ *   --canvas #101010, --canvas-soft #1a1a1a, --hairline #3d3a39
+ *   --ink #f2f2f2, --body #bdbdbd, --mute #8b949e
+ *   --primary #00d992, --primary-soft #2fd6a1
+ *   Radius: button 6px, card 8px
+ */
+
+.perr-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(3px);
+  animation: perr-fade 140ms ease;
+}
+
+@keyframes perr-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.perr-modal {
+  width: 100%;
+  max-width: 520px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 24px;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 8px;
+  background: var(--canvas, #101010);
+  color: var(--ink, #f2f2f2);
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(148, 163, 184, 0.1) inset;
+  animation: perr-rise 160ms ease;
+}
+
+@keyframes perr-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ===========================================================
+ * Đầu
+ * =========================================================== */
+
+.perr-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.perr-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+}
+.perr-icon .material-symbols-outlined {
+  font-size: 20px;
+}
+
+.perr-icon--error {
+  background: rgba(255, 107, 107, 0.14);
+  color: var(--danger, #ff6b6b);
+}
+.perr-icon--warning {
+  background: rgba(227, 179, 65, 0.14);
+  color: #e3b341;
+}
+.perr-icon--info {
+  background: rgba(0, 217, 146, 0.14);
+  color: var(--primary, #00d992);
+}
+
+.perr-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding-top: 6px;
+  font-family: var(--font-sans, Inter, system-ui, sans-serif);
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--ink-strong, #fff);
+  overflow-wrap: anywhere;
+}
+
+.perr-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mute, #8b949e);
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    color 160ms ease;
+}
+.perr-close:hover {
+  border-color: var(--danger, #ff6b6b);
+  color: var(--danger, #ff6b6b);
+}
+.perr-close .material-symbols-outlined {
+  font-size: 18px;
+}
+
+/* ===========================================================
+ * Thân
+ * =========================================================== */
+
+.perr-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.perr-message {
+  margin: 0;
+  font-family: var(--font-sans, Inter, system-ui, sans-serif);
+  font-size: 15px;
+  line-height: 23px;
+  color: var(--body, #bdbdbd);
+}
+
+/* ---------- Gợi ý hành động ---------- */
+
+.perr-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(0, 217, 146, 0.28);
+  border-radius: 8px;
+  background: rgba(0, 217, 146, 0.06);
+  font-family: var(--font-sans, Inter, system-ui, sans-serif);
+  font-size: 14px;
+  line-height: 21px;
+  color: var(--ink, #f2f2f2);
+}
+.perr-hint .material-symbols-outlined {
+  flex-shrink: 0;
+  font-size: 18px;
+  color: var(--primary, #00d992);
+}
+
+/* ---------- Danh sách chi tiết ---------- */
+
+.perr-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.perr-subtitle {
+  margin: 0;
+  font-family: var(--font-sans, Inter, system-ui, sans-serif);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute, #8b949e);
+}
+
+.perr-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.perr-list-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 6px;
+  background: var(--canvas-soft, #1a1a1a);
+  flex-wrap: wrap;
+}
+
+.perr-list-title {
+  flex: 1;
+  min-width: 140px;
+  font-family: var(--font-sans, Inter, system-ui, sans-serif);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ink, #f2f2f2);
+  overflow-wrap: anywhere;
+}
+
+.perr-list-meta {
+  font-family: var(--font-sans, Inter, system-ui, sans-serif);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--mute, #8b949e);
+}
+
+/* ---------- Chi tiết kỹ thuật ---------- */
+
+.perr-raw {
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 6px;
+  background: var(--canvas-soft, #1a1a1a);
+  overflow: hidden;
+}
+
+.perr-raw-summary {
+  padding: 9px 12px;
+  font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mute, #8b949e);
+  cursor: pointer;
+  user-select: none;
+}
+.perr-raw-summary:hover {
+  color: var(--primary-soft, #2fd6a1);
+}
+
+.perr-raw-text {
+  margin: 0;
+  padding: 0 12px 10px;
+  font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--body, #bdbdbd);
+  overflow-wrap: anywhere;
+}
+
+.perr-raw-code {
+  margin: 0;
+  padding: 0 12px 12px;
+  font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--mute, #8b949e);
+}
+.perr-raw-code code {
+  color: var(--primary-soft, #2fd6a1);
+}
+
+/* ===========================================================
+ * Chân
+ * =========================================================== */
+
+.perr-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.perr-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-family: var(--font-sans, Inter, system-ui, sans-serif);
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+.perr-btn--primary {
+  background: var(--primary, #00d992);
+  color: var(--on-primary, #101010);
+}
+.perr-btn--primary:hover {
+  background: var(--primary-soft, #2fd6a1);
+}
+
+.perr-btn--ghost {
+  background: transparent;
+  color: var(--ink, #f2f2f2);
+  border-color: var(--hairline, #3d3a39);
+}
+.perr-btn--ghost:hover {
+  border-color: var(--primary, #00d992);
+  color: var(--primary-soft, #2fd6a1);
+}
+
+.perr-btn--danger {
+  background: var(--danger, #ff6b6b);
+  color: #101010;
+}
+.perr-btn--danger:hover {
+  background: #ff8585;
+}

@@ -1299,6 +1299,39 @@ select.pd-input {
 }
 .pd-del-btn--sm span { font-size: 14px; }
 
+/* ----- Nút sửa (milestone / task / subtask) ----- */
+.pd-edit-btn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  border-radius: 6px;
+  border: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--mute);
+  cursor: pointer;
+  transition: border-color 160ms ease, color 160ms ease,
+    background-color 160ms ease, transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.pd-edit-btn span { font-size: 15px; }
+.pd-edit-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: rgba(0, 217, 146, 0.08);
+  transform: translateY(-1px);
+}
+.pd-edit-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.pd-edit-btn--sm {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+}
+.pd-edit-btn--sm span { font-size: 14px; }
+
 /* Task của phase — xuống dòng, full width */
 .pd-ms-tasks {
   flex-basis: 100%;

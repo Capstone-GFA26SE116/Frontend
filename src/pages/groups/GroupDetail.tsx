@@ -65,6 +65,7 @@ import {
   parseAssigneeBusyDetails,
   removeGroupMember,
   restoreGroup,
+  updateGroup,
   updateGroupMilestone,
   updateGroupSubTaskStatus,
   updateGroupTaskStatus,
@@ -176,6 +177,16 @@ export function GroupDetailPage() {
   const [commentDraft, setCommentDraft] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
 
+  /* ---------- Modal sửa thông tin nhóm ---------- */
+  const [groupModalOpen, setGroupModalOpen] = useState(false);
+  const [groupForm, setGroupForm] = useState({
+    name: "",
+    description: "",
+    startDate: "",
+    deadline: "",
+  });
+  const [groupFormError, setGroupFormError] = useState<string | null>(null);
+
   /* ---------- Modal tạo việc ---------- */
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [taskForm, setTaskForm] = useState({
@@ -198,6 +209,24 @@ export function GroupDetailPage() {
     status: "Planned" as GroupMilestoneStatus,
   });
   const [msFormError, setMsFormError] = useState<string | null>(null);
+
+  /* ---------- Modal sửa giai đoạn ---------- */
+  /**
+   * Giai đoạn đang sửa (null = modal đóng).
+   *
+   * Dùng chung form với modal TẠO giai đoạn? Không — tách riêng để không
+   * lẫn trạng thái giữa 2 modal (mở lại modal tạo sẽ phải reset form).
+   */
+  const [msEditTarget, setMsEditTarget] = useState<GroupMilestoneDto | null>(
+    null,
+  );
+  const [msEditForm, setMsEditForm] = useState({
+    name: "",
+    orderIndex: "1",
+    dueDate: "",
+    status: "Planned" as GroupMilestoneStatus,
+  });
+  const [msEditFormError, setMsEditFormError] = useState<string | null>(null);
 
   /* ---------- Modal thêm việc con ---------- */
   const [subModalFor, setSubModalFor] = useState<string | null>(null);
@@ -224,6 +253,12 @@ export function GroupDetailPage() {
     milestone: GroupMilestoneDto;
     status: GroupMilestoneStatus;
     details: import("../../lib/group-api").GroupMilestoneOpenTasksDetails;
+    /**
+     * Nguồn phát sinh 409:
+     *  - `"status"` → đổi status bằng dropdown (dùng milestone cũ).
+     *  - `"edit"`   → lưu từ modal sửa (dùng form đang nhập + `confirmOpenTasks`).
+     */
+    source: "status" | "edit";
   } | null>(null);
 
   /**
@@ -967,7 +1002,7 @@ export function GroupDetailPage() {
       if (res.status === 409) {
         const details = parseMilestoneOpenTasksDetails(res.details);
         if (details) {
-          setMsOpenTasksWarning({ milestone: ms, status, details });
+          setMsOpenTasksWarning({ milestone: ms, status, details, source: "status" });
           return;
         }
       }
@@ -978,6 +1013,112 @@ export function GroupDetailPage() {
       prev.map((m) => (m.id === ms.id ? res.data : m)),
     );
     toast.success("Milestone updated");
+  }
+
+  /* ---------- Mở modal sửa giai đoạn ---------- */
+  function openMilestoneEditModal(ms: GroupMilestoneDto) {
+    setMsEditForm({
+      name: ms.name ?? "",
+      orderIndex: String(ms.orderIndex ?? 1),
+      dueDate: toDateInput(ms.dueDate),
+      status: (ms.status ?? "Planned") as GroupMilestoneStatus,
+    });
+    setMsEditFormError(null);
+    setMsEditTarget(ms);
+  }
+
+  /**
+   * Lưu giai đoạn đã sửa → `PUT /api/group-milestones/{milestoneId}`.
+   *
+   * Body: `{ name, orderIndex, dueDate, status, confirmOpenTasks }`.
+   *
+   * ⚠️ Khi đổi status sang `Delivered` mà còn việc dở, BE trả 409
+   * `MILESTONE_HAS_OPEN_TASKS` → ta mở modal xác nhận (tiếng Anh) để user
+   * chọn "giao dù còn việc dở" (gửi lại kèm `confirmOpenTasks: true`).
+   */
+  async function handleSaveMilestone(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!msEditTarget) return;
+    const name = msEditForm.name.trim();
+    if (!name) {
+      setMsEditFormError("Please enter a milestone name.");
+      return;
+    }
+    const orderIndex = Number(msEditForm.orderIndex);
+    if (!Number.isFinite(orderIndex) || orderIndex < 1) {
+      setMsEditFormError("Order index must be 1 or greater.");
+      return;
+    }
+    setMsEditFormError(null);
+    setBusy(true);
+    const res = await updateGroupMilestone(msEditTarget.id, {
+      name,
+      orderIndex,
+      dueDate: msEditForm.dueDate || null,
+      status: msEditForm.status,
+    });
+    setBusy(false);
+    if (!res.ok) {
+      // 409 MILESTONE_HAS_OPEN_TASKS → mở modal xác nhận (tiếng Anh).
+      if (res.status === 409) {
+        const details = parseMilestoneOpenTasksDetails(res.details);
+        if (details) {
+          setMsOpenTasksWarning({
+            milestone: { ...msEditTarget, ...msEditForm, name } as GroupMilestoneDto,
+            status: msEditForm.status,
+            details,
+            source: "edit",
+          });
+          return;
+        }
+      }
+      setMsEditFormError(
+        toGroupErrorView(res, undefined, {
+          action: "update this milestone",
+        }).message,
+      );
+      showApiError(res, "update this milestone");
+      return;
+    }
+    setMilestones((prev) =>
+      prev.map((m) => (m.id === res.data.id ? res.data : m)),
+    );
+    setMsEditTarget(null);
+    toast.success("Milestone updated", res.data.name);
+  }
+
+  /**
+   * Giao giai đoạn dù còn việc dở — gửi lại cùng body kèm
+   * `confirmOpenTasks: true` (BE chấp nhận, việc dở giữ nguyên).
+   */
+  async function handleSaveMilestoneAnyway() {
+    if (!msEditTarget) return;
+    const name = msEditForm.name.trim();
+    const orderIndex = Number(msEditForm.orderIndex);
+    setMsOpenTasksWarning(null);
+    setBusy(true);
+    const res = await updateGroupMilestone(msEditTarget.id, {
+      name,
+      orderIndex: Number.isFinite(orderIndex) ? orderIndex : 1,
+      dueDate: msEditForm.dueDate || null,
+      status: msEditForm.status,
+      confirmOpenTasks: true,
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setMsEditFormError(
+        toGroupErrorView(res, undefined, {
+          action: "deliver this milestone anyway",
+        }).message,
+      );
+      showApiError(res, "deliver this milestone anyway");
+      return;
+    }
+    setMilestones((prev) =>
+      prev.map((m) => (m.id === res.data.id ? res.data : m)),
+    );
+    setMsEditTarget(null);
+    toast.success("Milestone updated", res.data.name);
   }
 
   /* ---------- Thêm việc con ---------- */
@@ -1090,6 +1231,59 @@ export function GroupDetailPage() {
     }
     toast.info("Left the group");
     window.location.href = "/groups";
+  }
+
+  /* ---------- Mở modal sửa thông tin nhóm ---------- */
+  function openGroupEditModal() {
+    if (!group) return;
+    setGroupForm({
+      name: group.name ?? "",
+      description: group.description ?? "",
+      startDate: toDateInput(group.startDate),
+      deadline: toDateInput(group.deadline),
+    });
+    setGroupFormError(null);
+    setGroupModalOpen(true);
+  }
+
+  /**
+   * Lưu thông tin nhóm đã sửa → `PUT /api/groups/{groupId}`.
+   *
+   * Body: `{ name, description, startDate, deadline }`.
+   */
+  async function handleSaveGroup(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!group) return;
+    const name = groupForm.name.trim();
+    if (!name) {
+      setGroupFormError("Please enter a group name.");
+      return;
+    }
+    if (groupForm.startDate && groupForm.deadline) {
+      if (new Date(groupForm.deadline) < new Date(groupForm.startDate)) {
+        setGroupFormError("Deadline must be on or after the start date.");
+        return;
+      }
+    }
+    setGroupFormError(null);
+    setBusy(true);
+    const res = await updateGroup(group.id, {
+      name,
+      description: groupForm.description.trim() || null,
+      startDate: groupForm.startDate || null,
+      deadline: groupForm.deadline || null,
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setGroupFormError(
+        toGroupErrorView(res, undefined, { action: "update this group" }).message,
+      );
+      showApiError(res, "update this group");
+      return;
+    }
+    setGroup(res.data);
+    setGroupModalOpen(false);
+    toast.success("Group updated", res.data.name);
   }
 
   /* ---------- Lưu trữ / khôi phục ---------- */
@@ -1243,16 +1437,14 @@ export function GroupDetailPage() {
             {leader && !archived && (
               <button
                 type="button"
-                className="gdt-btn gdt-btn--primary"
-                onClick={() => {
-                  setTaskFormError(null);
-                  setTaskModalOpen(true);
-                }}
+                className="gdt-btn gdt-btn--ghost"
+                onClick={openGroupEditModal}
+                title="Edit group name, description and dates"
               >
                 <span className="material-symbols-outlined gdt-btn-icon">
-                  add_task
+                  edit
                 </span>
-                <span>New task</span>
+                <span>Edit group</span>
               </button>
             )}
           </div>
@@ -1459,6 +1651,21 @@ export function GroupDetailPage() {
                 <span className="gdt-toolbar-count">
                   {visibleTasks.length}/{tasks.length} tasks
                 </span>
+                {leader && !archived && (
+                  <button
+                    type="button"
+                    className="gdt-btn gdt-btn--primary"
+                    onClick={() => {
+                      setTaskFormError(null);
+                      setTaskModalOpen(true);
+                    }}
+                  >
+                    <span className="material-symbols-outlined gdt-btn-icon">
+                      add_task
+                    </span>
+                    <span>New task</span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -2102,6 +2309,19 @@ export function GroupDetailPage() {
                           {leader && !archived && (
                             <button
                               type="button"
+                              className="gdt-icon-btn gdt-icon-btn--sm gdt-icon-btn--edit"
+                              title="Edit milestone"
+                              aria-label={`Edit milestone ${m.name}`}
+                              onClick={() => openMilestoneEditModal(m)}
+                            >
+                              <span className="material-symbols-outlined">
+                                edit
+                              </span>
+                            </button>
+                          )}
+                          {leader && !archived && (
+                            <button
+                              type="button"
                               className="gdt-icon-btn gdt-icon-btn--sm"
                               title="Delete milestone"
                               aria-label={`Delete milestone ${m.name}`}
@@ -2700,6 +2920,147 @@ export function GroupDetailPage() {
         </div>
       )}
 
+      {/* ================= Modal sửa giai đoạn ================= */}
+      {msEditTarget && (
+        <div
+          className="gdt-modal-backdrop"
+          onClick={() => setMsEditTarget(null)}
+          role="presentation"
+        >
+          <div
+            className="gdt-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="gdt-ms-edit-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="gdt-modal-head">
+              <h2 id="gdt-ms-edit-title" className="gdt-modal-title">
+                <span
+                  className="material-symbols-outlined gdt-modal-title-icon"
+                  aria-hidden="true"
+                >
+                  edit
+                </span>
+                Edit milestone
+              </h2>
+              <button
+                type="button"
+                className="gdt-modal-close"
+                onClick={() => setMsEditTarget(null)}
+                aria-label="Close"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <form className="gdt-form" onSubmit={handleSaveMilestone}>
+              <div className="gdt-field">
+                <label className="gdt-label" htmlFor="gdt-f-ms-edit-name">
+                  Name *
+                </label>
+                <input
+                  id="gdt-f-ms-edit-name"
+                  type="text"
+                  className="gdt-input"
+                  placeholder="e.g. Design phase"
+                  value={msEditForm.name}
+                  onChange={(e) =>
+                    setMsEditForm((f) => ({ ...f, name: e.target.value }))
+                  }
+                  required
+                />
+              </div>
+
+              <div className="gdt-field-row">
+                <div className="gdt-field">
+                  <label className="gdt-label" htmlFor="gdt-f-ms-edit-order">
+                    Order index
+                  </label>
+                  <input
+                    id="gdt-f-ms-edit-order"
+                    type="number"
+                    min={1}
+                    className="gdt-input"
+                    value={msEditForm.orderIndex}
+                    onChange={(e) =>
+                      setMsEditForm((f) => ({
+                        ...f,
+                        orderIndex: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="gdt-field">
+                  <label className="gdt-label" htmlFor="gdt-f-ms-edit-due">
+                    Due date
+                  </label>
+                  <input
+                    id="gdt-f-ms-edit-due"
+                    type="date"
+                    className="gdt-input"
+                    value={msEditForm.dueDate}
+                    onChange={(e) =>
+                      setMsEditForm((f) => ({ ...f, dueDate: e.target.value }))
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="gdt-field">
+                <label className="gdt-label" htmlFor="gdt-f-ms-edit-status">
+                  Status
+                </label>
+                <select
+                  id="gdt-f-ms-edit-status"
+                  className="gdt-input"
+                  value={msEditForm.status}
+                  onChange={(e) =>
+                    setMsEditForm((f) => ({
+                      ...f,
+                      status: e.target.value as GroupMilestoneStatus,
+                    }))
+                  }
+                >
+                  {GROUP_MILESTONE_STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {milestoneStatusLabel(s).label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {msEditFormError && (
+                <p className="gdt-form-error">
+                  <span className="material-symbols-outlined" aria-hidden="true">
+                    error
+                  </span>
+                  {msEditFormError}
+                </p>
+              )}
+
+              <div className="gdt-form-actions">
+                <button
+                  type="button"
+                  className="gdt-btn gdt-btn--ghost"
+                  onClick={() => setMsEditTarget(null)}
+                  disabled={busy}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="gdt-btn gdt-btn--primary"
+                  disabled={busy}
+                >
+                  {busy ? "Saving…" : "Save changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* ================= Modal thêm việc con ================= */}
       {subModalFor && (
         <div
@@ -3015,9 +3376,13 @@ export function GroupDetailPage() {
                 className="gdt-btn gdt-btn--primary"
                 disabled={busy}
                 onClick={() => {
-                  const { milestone, status } = msOpenTasksWarning;
+                  const { milestone, status, source } = msOpenTasksWarning;
                   setMsOpenTasksWarning(null);
-                  void handleMilestoneStatus(milestone, status, true);
+                  if (source === "edit") {
+                    void handleSaveMilestoneAnyway();
+                  } else {
+                    void handleMilestoneStatus(milestone, status, true);
+                  }
                 }}
               >
                 Mark as {milestoneStatusLabel(msOpenTasksWarning.status).label}{" "}
@@ -3114,7 +3479,154 @@ export function GroupDetailPage() {
         secondaryLabel="Try again"
       />
 
+      {/* ============ Modal sửa thông tin nhóm ============ */}
+      {groupModalOpen && group && (
+        <div
+          className="gdt-modal-backdrop"
+          onClick={() => setGroupModalOpen(false)}
+          role="presentation"
+        >
+          <div
+            className="gdt-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="gdt-group-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="gdt-modal-head">
+              <h2 id="gdt-group-title" className="gdt-modal-title">
+                <span
+                  className="material-symbols-outlined gdt-modal-title-icon"
+                  aria-hidden="true"
+                >
+                  edit
+                </span>
+                Edit group
+              </h2>
+              <button
+                type="button"
+                className="gdt-modal-close"
+                onClick={() => setGroupModalOpen(false)}
+                aria-label="Close"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <form className="gdt-form" onSubmit={handleSaveGroup}>
+              <div className="gdt-field">
+                <label className="gdt-label" htmlFor="gdt-gf-name">
+                  Name *
+                </label>
+                <input
+                  id="gdt-gf-name"
+                  type="text"
+                  className="gdt-input"
+                  placeholder="e.g. Website redesign"
+                  value={groupForm.name}
+                  onChange={(e) =>
+                    setGroupForm((f) => ({ ...f, name: e.target.value }))
+                  }
+                  required
+                />
+              </div>
+
+              <div className="gdt-field">
+                <label className="gdt-label" htmlFor="gdt-gf-desc">
+                  Description
+                </label>
+                <textarea
+                  id="gdt-gf-desc"
+                  rows={3}
+                  className="gdt-input gdt-input--textarea"
+                  placeholder="What is this group working on?"
+                  value={groupForm.description}
+                  onChange={(e) =>
+                    setGroupForm((f) => ({
+                      ...f,
+                      description: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="gdt-field-row">
+                <div className="gdt-field">
+                  <label className="gdt-label" htmlFor="gdt-gf-start">
+                    Start date
+                  </label>
+                  <input
+                    id="gdt-gf-start"
+                    type="date"
+                    className="gdt-input"
+                    value={groupForm.startDate}
+                    onChange={(e) =>
+                      setGroupForm((f) => ({ ...f, startDate: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="gdt-field">
+                  <label className="gdt-label" htmlFor="gdt-gf-deadline">
+                    Deadline
+                  </label>
+                  <input
+                    id="gdt-gf-deadline"
+                    type="date"
+                    className="gdt-input"
+                    value={groupForm.deadline}
+                    onChange={(e) =>
+                      setGroupForm((f) => ({
+                        ...f,
+                        deadline: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+
+              {groupFormError && (
+                <p className="gdt-form-error">
+                  <span className="material-symbols-outlined" aria-hidden="true">
+                    error
+                  </span>
+                  {groupFormError}
+                </p>
+              )}
+
+              <div className="gdt-form-actions">
+                <button
+                  type="button"
+                  className="gdt-btn gdt-btn--ghost"
+                  onClick={() => setGroupModalOpen(false)}
+                  disabled={busy}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="gdt-btn gdt-btn--primary"
+                  disabled={busy}
+                >
+                  {busy ? "Saving…" : "Save changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <CenterToasts toasts={toasts} onDismiss={toast.dismiss} />
     </div>
   );
+}
+
+/**
+ * "2026-11-27" — chuẩn hoá ngày về `yyyy-MM-dd` cho `<input type="date">`.
+ *
+ * BE trả ngày ở nhiều dạng (`2026-11-27`, ISO đầy đủ) → chỉ lấy phần ngày.
+ */
+function toDateInput(value: string | null | undefined): string {
+  if (!value) return "";
+  const s = value.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
 }

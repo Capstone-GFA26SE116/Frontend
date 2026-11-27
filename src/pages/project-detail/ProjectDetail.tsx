@@ -2,23 +2,48 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { CenterToasts, useCenterToast } from "../../components/Toast";
+import { ProjectErrorDialog } from "./ProjectErrorDialog";
+import {
+  rawServerMessage,
+  toProjectErrorView,
+  type ProjectErrorView,
+} from "./project-errors";
 import {
   deleteMilestone,
   deleteSubtask,
   deleteTask,
   getProject,
   listClients,
+  listDomains,
   listMilestones,
   listSubtasks,
   listTasks,
+  updateMilestone,
   updateProject,
+  updateSubtask,
+  updateTask,
+  type ApiErr,
   type ClientDto,
+  type DomainDto,
   type MilestoneDto,
   type ProjectDto,
   type SubtaskDto,
   type TaskDto,
 } from "../../lib/api-client";
 import "./project-detail.css";
+
+/**
+ * Đối tượng đang được sửa ở Project Detail.
+ *
+ * `kind` quyết định modal nào hiện và endpoint PUT nào được gọi:
+ *   - `milestone` → PUT /api/milestones/{id}
+ *   - `task`      → PUT /api/tasks/{id}
+ *   - `subtask`   → PUT /api/subtasks/{id}
+ */
+type EditTarget =
+  | { kind: "milestone"; item: MilestoneDto }
+  | { kind: "task"; item: TaskDto }
+  | { kind: "subtask"; item: SubtaskDto };
 
 /**
  * Project detail page
@@ -81,11 +106,57 @@ export function ProjectDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [toasts, toast] = useCenterToast();
 
+  /* ---------- Hộp thoại báo lỗi (tiếng Anh) ---------- */
+  /**
+   * Lỗi đang hiển thị.
+   *
+   * ⚠️ KHÔNG dùng toast cho lỗi — toast tự tắt sau 3.2s, người dùng không
+   * kịp đọc. Lỗi dùng modal có nút "Close" + gợi ý hành động.
+   */
+  const [errorDialog, setErrorDialog] = useState<{
+    view: ProjectErrorView;
+    raw: string;
+  } | null>(null);
+
+  /**
+   * 409 `MILESTONE_HAS_OPEN_TASKS` — milestone còn task dở, BE từ chối
+   * chuyển sang `Delivered`.
+   *
+   * Ta lưu lại body đã sửa + milestone id để khi user bấm
+   * "Deliver anyway" thì gửi lại kèm `confirmOpenTasks: true`.
+   */
+  const [openTasksWarning, setOpenTasksWarning] = useState<{
+    milestoneId: string;
+    body: {
+      name: string;
+      orderIndex: number;
+      dueDate: string | null;
+      status: string;
+      revisionCount: number;
+    };
+    openTaskCount: number;
+    openSubTaskCount: number;
+    tasks: string[];
+  } | null>(null);
+
   /* ---------- Sửa project (PUT /api/projects/{projectId}) ---------- */
   /** Mở/đóng modal sửa project. */
   const [editOpen, setEditOpen] = useState(false);
   /** Danh sách client để chọn trong modal sửa. */
   const [clients, setClients] = useState<ClientDto[]>([]);
+  /** Danh sách domain (loại công việc) để chọn khi sửa task. */
+  const [domains, setDomains] = useState<DomainDto[]>([]);
+
+  /* ---------- Sửa milestone / task / subtask ---------- */
+  /**
+   * Đối tượng đang được sửa.
+   *
+   * `kind` quyết định modal nào hiện và endpoint PUT nào được gọi:
+   *   - `milestone` → PUT /api/milestones/{id}
+   *   - `task`      → PUT /api/tasks/{id}
+   *   - `subtask`   → PUT /api/subtasks/{id}
+   */
+  const [editing, setEditing] = useState<EditTarget | null>(null);
 
   // Lazy-load subtasks for a task (only first time)
   function loadSubtasks(taskId: string) {
@@ -94,6 +165,9 @@ export function ProjectDetailPage() {
     void listSubtasks(taskId).then((res) => {
       setSubtasksMap((p) => ({ ...p, [taskId]: res.ok ? res.data : [] }));
       setSubtasksLoading((p) => ({ ...p, [taskId]: false }));
+      if (!res.ok) {
+        showApiError(res, "load the subtasks of this task");
+      }
     });
   }
 
@@ -155,6 +229,7 @@ export function ProjectDetailPage() {
         setMilestonesError(null);
       } else {
         setMilestonesError(res.error ?? "Failed to load milestones");
+        showApiError(res, "load the milestones of this project");
       }
       setMilestonesLoading(false);
     })();
@@ -175,6 +250,7 @@ export function ProjectDetailPage() {
         setTasksError(null);
       } else {
         setTasksError(res.error ?? "Failed to load tasks");
+        showApiError(res, "load the tasks of this project");
       }
       setTasksLoading(false);
     })();
@@ -188,6 +264,22 @@ export function ProjectDetailPage() {
   }
 
   /**
+   * Đổi lỗi API thành hộp thoại dễ hiểu (tiếng Anh).
+   *
+   * @param action Động từ ngắn mô tả thao tác, VD: "delete this task".
+   */
+  function showApiError(
+    res: { ok: false } & Record<string, unknown>,
+    action?: string,
+  ) {
+    const err = res as ApiErr;
+    setErrorDialog({
+      view: toProjectErrorView(err, undefined, { action }),
+      raw: rawServerMessage(err, undefined),
+    });
+  }
+
+  /**
    * Mở modal sửa project.
    *
    * Load danh sách client (để chọn `clientId`) — lỗi load client không
@@ -198,6 +290,21 @@ export function ProjectDetailPage() {
     void listClients().then((res) => {
       if (res.ok) setClients(res.data);
     });
+  }
+
+  /**
+   * Mở modal sửa milestone / task / subtask.
+   *
+   * Load danh sách domain (loại công việc) để chọn khi sửa task — lỗi load
+   * không block, user vẫn sửa được các trường khác.
+   */
+  function openEditItem(target: EditTarget) {
+    setEditing(target);
+    if (target.kind === "task" && domains.length === 0) {
+      void listDomains().then((res) => {
+        if (res.ok) setDomains(res.data);
+      });
+    }
   }
 
   /**
@@ -241,7 +348,7 @@ export function ProjectDetailPage() {
       const res = await deleteMilestone(target.id);
       setDeleting(false);
       if (!res.ok) {
-        toast.error("Couldn't delete the milestone", res.error ?? undefined);
+        showApiError(res, "delete this milestone");
         return;
       }
       setMilestones((prev) => prev.filter((m) => m.id !== target.id));
@@ -260,7 +367,7 @@ export function ProjectDetailPage() {
       const res = await deleteSubtask(target.id);
       setDeleting(false);
       if (!res.ok) {
-        toast.error("Couldn't delete the subtask", res.error ?? undefined);
+        showApiError(res, "delete this subtask");
         return;
       }
       // Xoá khỏi list subtask đã load của task cha.
@@ -280,7 +387,7 @@ export function ProjectDetailPage() {
     const res = await deleteTask(target.id);
     setDeleting(false);
     if (!res.ok) {
-      toast.error("Couldn't delete the task", res.error ?? undefined);
+      showApiError(res, "delete this task");
       return;
     }
     setTasks((prev) => prev.filter((t) => t.id !== target.id));
@@ -315,12 +422,143 @@ export function ProjectDetailPage() {
     if (!project) return;
     const res = await updateProject(project.id, body);
     if (!res.ok) {
-      toast.error("Couldn't update the project", res.error ?? undefined);
+      showApiError(res, "update this project");
       return;
     }
     setProject(res.data);
     setEditOpen(false);
     toast.success("Project updated", res.data.name);
+  }
+
+  /**
+   * Lưu milestone đã sửa → `PUT /api/milestones/{milestoneId}`.
+   *
+   * ⚠️ Khi đổi status sang `Delivered` mà còn task dở, BE trả 409
+   * `MILESTONE_HAS_OPEN_TASKS` → ta báo lỗi, user có thể xử lý task trước
+   * hoặc đổi status khác.
+   */
+  async function handleSaveMilestone(body: {
+    name: string;
+    orderIndex: number;
+    dueDate: string | null;
+    status: string;
+    revisionCount: number;
+  }) {
+    if (!editing || editing.kind !== "milestone") return;
+    const milestoneId = editing.item.id;
+    const res = await updateMilestone(milestoneId, body);
+
+    // 409 MILESTONE_HAS_OPEN_TASKS → hỏi user có giao giai đoạn dù còn task dở.
+    if (!res.ok && res.status === 409 && isOpenTasksError(res)) {
+      const details = (res.details ?? {}) as {
+        openTaskCount?: number;
+        openSubTaskCount?: number;
+        tasks?: { title?: string }[];
+      };
+      setOpenTasksWarning({
+        milestoneId,
+        body,
+        openTaskCount: details.openTaskCount ?? 0,
+        openSubTaskCount: details.openSubTaskCount ?? 0,
+        tasks: (details.tasks ?? [])
+          .map((t) => t?.title ?? "")
+          .filter((t) => t.length > 0),
+      });
+      return;
+    }
+
+    if (!res.ok) {
+      showApiError(res, "update this milestone");
+      return;
+    }
+    setMilestones((prev) =>
+      prev.map((m) => (m.id === res.data.id ? res.data : m)),
+    );
+    setEditing(null);
+    toast.success("Milestone updated", res.data.name);
+  }
+
+  /**
+   * Giao giai đoạn dù còn task dở — gửi lại cùng body kèm
+   * `confirmOpenTasks: true` (BE chấp nhận, task dở giữ nguyên).
+   */
+  async function handleDeliverAnyway() {
+    if (!openTasksWarning) return;
+    const { milestoneId, body } = openTasksWarning;
+    setOpenTasksWarning(null);
+    const res = await updateMilestone(milestoneId, {
+      ...body,
+      confirmOpenTasks: true,
+    });
+    if (!res.ok) {
+      showApiError(res, "deliver this milestone anyway");
+      return;
+    }
+    setMilestones((prev) =>
+      prev.map((m) => (m.id === res.data.id ? res.data : m)),
+    );
+    setEditing(null);
+    toast.success("Milestone delivered", res.data.name);
+  }
+
+  /**
+   * Lưu task đã sửa → `PUT /api/tasks/{taskId}`.
+   *
+   * ⚠️ BE dùng **partial update** → chỉ gửi trường thực sự đổi.
+   */
+  async function handleSaveTask(body: {
+    title: string;
+    description: string;
+    taskType: string;
+    status: string;
+    domainId: string | null;
+    milestoneId: string | null;
+    deadline: string | null;
+    estimatedMinutes: number;
+    aiEstimatedMinutes: number;
+    fixedStart: string | null;
+    fixedEnd: string | null;
+  }) {
+    if (!editing || editing.kind !== "task") return;
+    const res = await updateTask(editing.item.id, body);
+    if (!res.ok) {
+      showApiError(res, "update this task");
+      return;
+    }
+    setTasks((prev) => prev.map((t) => (t.id === res.data.id ? res.data : t)));
+    setEditing(null);
+    toast.success("Task updated", res.data.title);
+  }
+
+  /**
+   * Lưu subtask đã sửa → `PUT /api/subtasks/{subtaskId}`.
+   */
+  async function handleSaveSubtask(body: {
+    title: string;
+    description: string | null;
+    estimatedMinutes: number;
+    orderIndex: number;
+    status: string;
+  }) {
+    if (!editing || editing.kind !== "subtask") return;
+    const res = await updateSubtask(editing.item.id, body);
+    if (!res.ok) {
+      showApiError(res, "update this subtask");
+      return;
+    }
+    // Cập nhật list subtask đã load của task cha.
+    setSubtasksMap((prev) => {
+      const list = prev[res.data.taskId];
+      if (!list) return prev;
+      return {
+        ...prev,
+        [res.data.taskId]: list.map((s) =>
+          s.id === res.data.id ? res.data : s,
+        ),
+      };
+    });
+    setEditing(null);
+    toast.success("Subtask updated", res.data.title);
   }
 
   async function retry() {
@@ -464,6 +702,7 @@ export function ProjectDetailPage() {
             onDeleteMilestone={requestDeleteMilestone}
             onDeleteTask={requestDeleteTask}
             onDeleteSubtask={requestDeleteSubtask}
+            onEdit={openEditItem}
           />
         )}
 
@@ -474,6 +713,31 @@ export function ProjectDetailPage() {
             clients={clients}
             onClose={() => setEditOpen(false)}
             onSave={handleSaveProject}
+          />
+        )}
+
+        {/* Modal sửa milestone / task / subtask */}
+        {editing?.kind === "milestone" && (
+          <EditMilestoneModal
+            milestone={editing.item}
+            onClose={() => setEditing(null)}
+            onSave={handleSaveMilestone}
+          />
+        )}
+        {editing?.kind === "task" && (
+          <EditTaskModal
+            task={editing.item}
+            milestones={milestones}
+            domains={domains}
+            onClose={() => setEditing(null)}
+            onSave={handleSaveTask}
+          />
+        )}
+        {editing?.kind === "subtask" && (
+          <EditSubtaskModal
+            subtask={editing.item}
+            onClose={() => setEditing(null)}
+            onSave={handleSaveSubtask}
           />
         )}
 
@@ -507,6 +771,41 @@ export function ProjectDetailPage() {
         />
       </div>
 
+      {/* Hộp thoại báo lỗi (tiếng Anh) — thay cho toast 3.2s */}
+      <ProjectErrorDialog
+        error={errorDialog?.view ?? null}
+        rawMessage={errorDialog?.raw || undefined}
+        onClose={() => setErrorDialog(null)}
+      />
+
+      {openTasksWarning && (
+        <ProjectErrorDialog
+          error={{
+            title: "This milestone still has unfinished work",
+            message:
+              "A milestone can only be marked as Delivered once every task inside it is done or skipped." +
+              (openTasksWarning.openTaskCount > 0
+                ? ` Right now ${openTasksWarning.openTaskCount} task${openTasksWarning.openTaskCount > 1 ? "s are" : " is"} still open`
+                : "") +
+              (openTasksWarning.openSubTaskCount > 0
+                ? `, plus ${openTasksWarning.openSubTaskCount} unfinished subtask${openTasksWarning.openSubTaskCount > 1 ? "s" : ""}.`
+                : "."),
+            hint: "Finish the remaining tasks first, or deliver the milestone anyway — the open tasks will stay as they are.",
+            tone: "warning",
+            code: "MILESTONE_HAS_OPEN_TASKS",
+            status: 409,
+          }}
+          itemsTitle="Tasks that are still open"
+          items={openTasksWarning.tasks.map((t) => ({ title: t }))}
+          confirmLabel="Deliver anyway"
+          confirmDanger
+          onClose={() => setOpenTasksWarning(null)}
+          onConfirm={() => void handleDeliverAnyway()}
+          onSecondary={() => setOpenTasksWarning(null)}
+          secondaryLabel="Finish tasks first"
+        />
+      )}
+
       <CenterToasts toasts={toasts} onDismiss={toast.dismiss} />
     </section>
   );
@@ -532,6 +831,7 @@ function ProjectDetailBody({
   onDeleteMilestone,
   onDeleteTask,
   onDeleteSubtask,
+  onEdit,
 }: {
   project: ProjectDto;
   tasks: TaskDto[];
@@ -552,6 +852,8 @@ function ProjectDetailBody({
   onDeleteTask: (task: TaskDto) => void;
   /** Mở hộp thoại xác nhận xóa subtask (tiếng Anh). */
   onDeleteSubtask: (subtask: SubtaskDto, taskId: string) => void;
+  /** Mở modal sửa milestone / task / subtask. */
+  onEdit: (target: EditTarget) => void;
 }) {
   const timeline = useMemo(
     () => computeTimeline(project.startDate, project.deadline),
@@ -657,6 +959,7 @@ function ProjectDetailBody({
         onToggleMilestone={onToggleMilestone}
         onDeleteMilestone={onDeleteMilestone}
         onDeleteTask={onDeleteTask}
+        onEditMilestone={(m) => onEdit({ kind: "milestone", item: m })}
       />
 
       {/* Tasks preview */}
@@ -671,6 +974,8 @@ function ProjectDetailBody({
         onToggleTask={onToggleTask}
         onDeleteTask={onDeleteTask}
         onDeleteSubtask={onDeleteSubtask}
+        onEditTask={(t) => onEdit({ kind: "task", item: t })}
+        onEditSubtask={(s) => onEdit({ kind: "subtask", item: s })}
       />
 
       {/* Direction cards */}
@@ -842,6 +1147,8 @@ function MilestonesPreview({
   onToggleMilestone,
   onDeleteMilestone,
   onDeleteTask,
+  onEditMilestone,
+  onEditTask,
 }: {
   projectId: string;
   milestones: MilestoneDto[];
@@ -856,6 +1163,10 @@ function MilestonesPreview({
   onDeleteMilestone: (milestone: MilestoneDto) => void;
   /** Mở hộp thoại xác nhận xóa task (tiếng Anh). */
   onDeleteTask: (task: TaskDto) => void;
+  /** Mở modal sửa milestone. */
+  onEditMilestone: (milestone: MilestoneDto) => void;
+  /** Mở modal sửa task. */
+  onEditTask: (task: TaskDto) => void;
 }) {
   const stats = useMemo(() => {
     const total = milestones.length;
@@ -1027,6 +1338,19 @@ function MilestonesPreview({
                   <span className="material-symbols-outlined">delete</span>
                 </button>
 
+                {/*
+                  Nút sửa milestone → mở modal `EditMilestoneModal`.
+                */}
+                <button
+                  type="button"
+                  className="pd-edit-btn"
+                  onClick={() => onEditMilestone(m)}
+                  title={`Edit milestone "${m.name}"`}
+                  aria-label={`Edit milestone ${m.name}`}
+                >
+                  <span className="material-symbols-outlined">edit</span>
+                </button>
+
                 {/* Task của phase */}
                 {isOpen && (
                   <div className="pd-ms-tasks">
@@ -1057,6 +1381,7 @@ function MilestonesPreview({
                             key={t.id}
                             task={t}
                             onDelete={onDeleteTask}
+                            onEdit={onEditTask}
                           />
                         ))}
                       </ul>
@@ -1078,10 +1403,13 @@ function MilestonesPreview({
 function MilestoneTaskLine({
   task,
   onDelete,
+  onEdit,
 }: {
   task: TaskDto;
   /** Mở hộp thoại xác nhận xóa task (tiếng Anh). */
   onDelete: (task: TaskDto) => void;
+  /** Mở modal sửa task. */
+  onEdit: (task: TaskDto) => void;
 }) {
   const status = (task.status ?? "").toLowerCase();
   const isDone = status === "done" || status === "completed";
@@ -1155,6 +1483,16 @@ function MilestoneTaskLine({
       >
         <span className="material-symbols-outlined">delete</span>
       </button>
+      {/* Nút sửa task → mở modal `EditTaskModal`. */}
+      <button
+        type="button"
+        className="pd-edit-btn pd-edit-btn--sm"
+        onClick={() => onEdit(task)}
+        title={`Edit task "${task.title}"`}
+        aria-label={`Edit task ${task.title}`}
+      >
+        <span className="material-symbols-outlined">edit</span>
+      </button>
     </li>
   );
 }
@@ -1175,6 +1513,8 @@ function TasksPreview({
   onToggleTask,
   onDeleteTask,
   onDeleteSubtask,
+  onEditTask,
+  onEditSubtask,
 }: {
   projectId: string;
   tasks: TaskDto[];
@@ -1188,6 +1528,10 @@ function TasksPreview({
   onDeleteTask: (task: TaskDto) => void;
   /** Mở hộp thoại xác nhận xóa subtask (tiếng Anh). */
   onDeleteSubtask: (subtask: SubtaskDto, taskId: string) => void;
+  /** Mở modal sửa task. */
+  onEditTask: (task: TaskDto) => void;
+  /** Mở modal sửa subtask. */
+  onEditSubtask: (subtask: SubtaskDto) => void;
 }) {
   // Compute stats
   const stats = useMemo(() => {
@@ -1300,6 +1644,8 @@ function TasksPreview({
               subtasksLoading={subtasksLoading[t.id] ?? false}
               onDelete={onDeleteTask}
               onDeleteSubtask={onDeleteSubtask}
+              onEdit={onEditTask}
+              onEditSubtask={onEditSubtask}
             />
           ))}
         </div>
@@ -1316,6 +1662,8 @@ function TaskPreviewRow({
   subtasksLoading,
   onDelete,
   onDeleteSubtask,
+  onEdit,
+  onEditSubtask,
 }: {
   task: TaskDto;
   isExpanded: boolean;
@@ -1326,6 +1674,10 @@ function TaskPreviewRow({
   onDelete: (task: TaskDto) => void;
   /** Mở hộp thoại xác nhận xóa subtask (tiếng Anh). */
   onDeleteSubtask: (subtask: SubtaskDto, taskId: string) => void;
+  /** Mở modal sửa task. */
+  onEdit: (task: TaskDto) => void;
+  /** Mở modal sửa subtask. */
+  onEditSubtask: (subtask: SubtaskDto) => void;
 }) {
   const status = (task.status ?? "").toLowerCase();
   const isDone = status === "done" || status === "completed";
@@ -1413,6 +1765,17 @@ function TaskPreviewRow({
         >
           <span className="material-symbols-outlined">delete</span>
         </button>
+
+        {/* Nút sửa task → mở modal `EditTaskModal`. */}
+        <button
+          type="button"
+          className="pd-edit-btn pd-edit-btn--sm"
+          onClick={() => onEdit(task)}
+          title={`Edit task "${task.title}"`}
+          aria-label={`Edit task ${task.title}`}
+        >
+          <span className="material-symbols-outlined">edit</span>
+        </button>
       </div>
 
       {isExpanded && (
@@ -1430,6 +1793,7 @@ function TaskPreviewRow({
                   subtask={s}
                   taskId={task.id}
                   onDelete={onDeleteSubtask}
+                  onEdit={onEditSubtask}
                 />
               ))}
             </ul>
@@ -1449,12 +1813,15 @@ function SubtaskPreviewRow({
   subtask,
   taskId,
   onDelete,
+  onEdit,
 }: {
   subtask: SubtaskDto;
   /** Id của task cha (để cập nhật list sau khi xóa). */
   taskId: string;
   /** Mở hộp thoại xác nhận xóa subtask (tiếng Anh). */
   onDelete: (subtask: SubtaskDto, taskId: string) => void;
+  /** Mở modal sửa subtask. */
+  onEdit: (subtask: SubtaskDto) => void;
 }) {
   const status = (subtask.status ?? "").toLowerCase();
   const isDone = status === "done" || status === "completed";
@@ -1502,6 +1869,16 @@ function SubtaskPreviewRow({
         aria-label={`Delete subtask ${subtask.title}`}
       >
         <span className="material-symbols-outlined">delete</span>
+      </button>
+      {/* Nút sửa subtask → mở modal `EditSubtaskModal`. */}
+      <button
+        type="button"
+        className="pd-edit-btn pd-edit-btn--sm"
+        onClick={() => onEdit(subtask)}
+        title={`Edit subtask "${subtask.title}"`}
+        aria-label={`Edit subtask ${subtask.title}`}
+      >
+        <span className="material-symbols-outlined">edit</span>
       </button>
     </li>
   );
@@ -2003,4 +2380,811 @@ function toDateInput(value: string | null | undefined): string {
   if (!value) return "";
   const s = value.slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
+}
+
+/**
+ * Lỗi 409 `MILESTONE_HAS_OPEN_TASKS`?
+ *
+ * BE có thể trả mã ở nhiều chỗ:
+ *   - `errorCode` (đã được `api-client` rút ra)
+ *   - `details.code` (bản BE cũ chỉ nhét mã vào `details`)
+ */
+function isOpenTasksError(err: {
+  errorCode?: string;
+  details?: unknown;
+}): boolean {
+  if (err.errorCode === "MILESTONE_HAS_OPEN_TASKS") return true;
+  const details = err.details as { code?: string } | undefined;
+  return details?.code === "MILESTONE_HAS_OPEN_TASKS";
+}
+
+/* ============================================================
+ * EditMilestoneModal — sửa milestone
+ * ------------------------------------------------------------
+ * API: PUT /api/milestones/{milestoneId}
+ * Body: { name, orderIndex, dueDate, status, revisionCount }
+ * ============================================================ */
+const MILESTONE_STATUS_OPTIONS = [
+  "Planned",
+  "InProgress",
+  "Delivered",
+  "InRevision",
+  "Approved",
+] as const;
+
+function EditMilestoneModal({
+  milestone,
+  onClose,
+  onSave,
+}: {
+  milestone: MilestoneDto;
+  onClose: () => void;
+  onSave: (body: {
+    name: string;
+    orderIndex: number;
+    dueDate: string | null;
+    status: string;
+    revisionCount: number;
+  }) => Promise<void>;
+}) {
+  const [name, setName] = useState(milestone.name ?? "");
+  const [orderIndex, setOrderIndex] = useState(String(milestone.orderIndex ?? 1));
+  const [dueDate, setDueDate] = useState(toDateInput(milestone.dueDate));
+  const [status, setStatus] = useState(milestone.status ?? "Planned");
+  const [revisionCount, setRevisionCount] = useState(
+    String(milestone.revisionCount ?? 0),
+  );
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !submitting) onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [submitting, onClose]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (submitting) return;
+    setError(null);
+
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setError("Milestone name is required.");
+      return;
+    }
+    const order = parseInt(orderIndex, 10);
+    if (!Number.isFinite(order) || order < 1) {
+      setError("Order index must be a number greater than or equal to 1.");
+      return;
+    }
+    const revision = parseInt(revisionCount, 10);
+    if (!Number.isFinite(revision) || revision < 0) {
+      setError("Revision count must be a number greater than or equal to 0.");
+      return;
+    }
+
+    setSubmitting(true);
+    await onSave({
+      name: trimmed,
+      orderIndex: order,
+      dueDate: dueDate || null,
+      status,
+      revisionCount: revision,
+    });
+    setSubmitting(false);
+  }
+
+  return (
+    <div
+      className="pd-modal-backdrop"
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !submitting) onClose();
+      }}
+    >
+      <div
+        className="pd-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Edit milestone"
+      >
+        <div className="pd-modal-head">
+          <div>
+            <span className="pd-section-eyebrow">Edit milestone</span>
+            <h2 className="pd-modal-title">Update milestone details</h2>
+          </div>
+          <button
+            type="button"
+            className="pd-icon-btn pd-icon-btn--sm"
+            onClick={onClose}
+            disabled={submitting}
+            aria-label="Close"
+          >
+            <span className="material-symbols-outlined">close</span>
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div className="pd-modal-body">
+            <label className="pd-field">
+              <span className="pd-label">Name</span>
+              <input
+                className="pd-input"
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Milestone name"
+                disabled={submitting}
+                autoFocus
+              />
+            </label>
+
+            <div className="pd-field-row">
+              <label className="pd-field">
+                <span className="pd-label">Order index</span>
+                <input
+                  className="pd-input"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={orderIndex}
+                  onChange={(e) => setOrderIndex(e.target.value)}
+                  disabled={submitting}
+                />
+              </label>
+
+              <label className="pd-field">
+                <span className="pd-label">Due date</span>
+                <input
+                  className="pd-input"
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  disabled={submitting}
+                />
+              </label>
+            </div>
+
+            <div className="pd-field-row">
+              <label className="pd-field">
+                <span className="pd-label">Status</span>
+                <select
+                  className="pd-input"
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                  disabled={submitting}
+                >
+                  {MILESTONE_STATUS_OPTIONS.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="pd-field">
+                <span className="pd-label">Revision count</span>
+                <input
+                  className="pd-input"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={revisionCount}
+                  onChange={(e) => setRevisionCount(e.target.value)}
+                  disabled={submitting}
+                />
+              </label>
+            </div>
+
+            {error && (
+              <p className="pd-field-error" role="alert">
+                <span className="material-symbols-outlined">error</span>
+                {error}
+              </p>
+            )}
+          </div>
+
+          <div className="pd-modal-actions">
+            <button
+              type="button"
+              className="pd-btn pd-btn--ghost"
+              onClick={onClose}
+              disabled={submitting}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="pd-btn pd-btn--primary"
+              disabled={submitting}
+            >
+              {submitting ? (
+                <>
+                  <span className="material-symbols-outlined pd-btn-icon pd-spin">
+                    progress_activity
+                  </span>
+                  <span>Saving…</span>
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined pd-btn-icon">check</span>
+                  <span>Save changes</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+ * EditTaskModal — sửa task
+ * ------------------------------------------------------------
+ * API: PUT /api/tasks/{taskId}
+ * Body: { title, description, taskType, status, domainId, milestoneId,
+ *         deadline, estimatedMinutes, aiEstimatedMinutes,
+ *         fixedStart, fixedEnd }
+ * ============================================================ */
+const TASK_STATUS_OPTIONS = [
+  "ToDo",
+  "Scheduled",
+  "InProgress",
+  "Done",
+  "Skipped",
+] as const;
+
+const TASK_TYPE_OPTIONS = ["Flexible", "Fixed"] as const;
+
+function EditTaskModal({
+  task,
+  milestones,
+  domains,
+  onClose,
+  onSave,
+}: {
+  task: TaskDto;
+  milestones: MilestoneDto[];
+  domains: DomainDto[];
+  onClose: () => void;
+  onSave: (body: {
+    title: string;
+    description: string;
+    taskType: string;
+    status: string;
+    domainId: string | null;
+    milestoneId: string | null;
+    deadline: string | null;
+    estimatedMinutes: number;
+    aiEstimatedMinutes: number;
+    fixedStart: string | null;
+    fixedEnd: string | null;
+  }) => Promise<void>;
+}) {
+  const [title, setTitle] = useState(task.title ?? "");
+  const [description, setDescription] = useState(task.description ?? "");
+  const [taskType, setTaskType] = useState(task.taskType ?? "Flexible");
+  const [status, setStatus] = useState(task.status ?? "ToDo");
+  const [domainId, setDomainId] = useState(task.domainId ?? "");
+  const [milestoneId, setMilestoneId] = useState(task.milestoneId ?? "");
+  const [deadline, setDeadline] = useState(toDateInput(task.deadline));
+  const [estimatedMinutes, setEstimatedMinutes] = useState(
+    String(task.estimatedMinutes ?? 0),
+  );
+  const [aiEstimatedMinutes, setAiEstimatedMinutes] = useState(
+    String(task.aiEstimatedMinutes ?? 0),
+  );
+  const [fixedStart, setFixedStart] = useState(toDateInput(task.fixedStart));
+  const [fixedEnd, setFixedEnd] = useState(toDateInput(task.fixedEnd));
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !submitting) onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [submitting, onClose]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (submitting) return;
+    setError(null);
+
+    const trimmed = title.trim();
+    if (!trimmed) {
+      setError("Task title is required.");
+      return;
+    }
+    const est = parseInt(estimatedMinutes, 10);
+    if (!Number.isFinite(est) || est < 0) {
+      setError("Estimated minutes must be a number greater than or equal to 0.");
+      return;
+    }
+    const aiEst = parseInt(aiEstimatedMinutes, 10);
+    if (!Number.isFinite(aiEst) || aiEst < 0) {
+      setError("AI estimated minutes must be a number greater than or equal to 0.");
+      return;
+    }
+    if (fixedStart && fixedEnd && new Date(fixedEnd) < new Date(fixedStart)) {
+      setError("The fixed end time must be after the fixed start time.");
+      return;
+    }
+
+    setSubmitting(true);
+    await onSave({
+      title: trimmed,
+      description: description.trim(),
+      taskType,
+      status,
+      domainId: domainId || null,
+      milestoneId: milestoneId || null,
+      deadline: deadline ? new Date(deadline).toISOString() : null,
+      estimatedMinutes: est,
+      aiEstimatedMinutes: aiEst,
+      fixedStart: fixedStart ? new Date(fixedStart).toISOString() : null,
+      fixedEnd: fixedEnd ? new Date(fixedEnd).toISOString() : null,
+    });
+    setSubmitting(false);
+  }
+
+  return (
+    <div
+      className="pd-modal-backdrop"
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !submitting) onClose();
+      }}
+    >
+      <div
+        className="pd-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Edit task"
+      >
+        <div className="pd-modal-head">
+          <div>
+            <span className="pd-section-eyebrow">Edit task</span>
+            <h2 className="pd-modal-title">Update task details</h2>
+          </div>
+          <button
+            type="button"
+            className="pd-icon-btn pd-icon-btn--sm"
+            onClick={onClose}
+            disabled={submitting}
+            aria-label="Close"
+          >
+            <span className="material-symbols-outlined">close</span>
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div className="pd-modal-body">
+            <label className="pd-field">
+              <span className="pd-label">Title</span>
+              <input
+                className="pd-input"
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Task title"
+                disabled={submitting}
+                autoFocus
+              />
+            </label>
+
+            <label className="pd-field">
+              <span className="pd-label">Description</span>
+              <textarea
+                className="pd-input pd-input--textarea"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="What needs to be done"
+                rows={3}
+                disabled={submitting}
+              />
+            </label>
+
+            <div className="pd-field-row">
+              <label className="pd-field">
+                <span className="pd-label">Task type</span>
+                <select
+                  className="pd-input"
+                  value={taskType}
+                  onChange={(e) => setTaskType(e.target.value)}
+                  disabled={submitting}
+                >
+                  {TASK_TYPE_OPTIONS.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="pd-field">
+                <span className="pd-label">Status</span>
+                <select
+                  className="pd-input"
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                  disabled={submitting}
+                >
+                  {TASK_STATUS_OPTIONS.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="pd-field-row">
+              <label className="pd-field">
+                <span className="pd-label">Milestone</span>
+                <select
+                  className="pd-input"
+                  value={milestoneId}
+                  onChange={(e) => setMilestoneId(e.target.value)}
+                  disabled={submitting}
+                >
+                  <option value="">— None —</option>
+                  {milestones.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="pd-field">
+                <span className="pd-label">Domain</span>
+                <select
+                  className="pd-input"
+                  value={domainId}
+                  onChange={(e) => setDomainId(e.target.value)}
+                  disabled={submitting}
+                >
+                  <option value="">— None —</option>
+                  {domains.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <label className="pd-field">
+              <span className="pd-label">Deadline</span>
+              <input
+                className="pd-input"
+                type="date"
+                value={deadline}
+                onChange={(e) => setDeadline(e.target.value)}
+                disabled={submitting}
+              />
+            </label>
+
+            <div className="pd-field-row">
+              <label className="pd-field">
+                <span className="pd-label">Estimated minutes</span>
+                <input
+                  className="pd-input"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={estimatedMinutes}
+                  onChange={(e) => setEstimatedMinutes(e.target.value)}
+                  disabled={submitting}
+                />
+              </label>
+
+              <label className="pd-field">
+                <span className="pd-label">AI estimated minutes</span>
+                <input
+                  className="pd-input"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={aiEstimatedMinutes}
+                  onChange={(e) => setAiEstimatedMinutes(e.target.value)}
+                  disabled={submitting}
+                />
+              </label>
+            </div>
+
+            <div className="pd-field-row">
+              <label className="pd-field">
+                <span className="pd-label">Fixed start</span>
+                <input
+                  className="pd-input"
+                  type="date"
+                  value={fixedStart}
+                  onChange={(e) => setFixedStart(e.target.value)}
+                  disabled={submitting}
+                />
+              </label>
+
+              <label className="pd-field">
+                <span className="pd-label">Fixed end</span>
+                <input
+                  className="pd-input"
+                  type="date"
+                  value={fixedEnd}
+                  onChange={(e) => setFixedEnd(e.target.value)}
+                  disabled={submitting}
+                />
+              </label>
+            </div>
+
+            {error && (
+              <p className="pd-field-error" role="alert">
+                <span className="material-symbols-outlined">error</span>
+                {error}
+              </p>
+            )}
+          </div>
+
+          <div className="pd-modal-actions">
+            <button
+              type="button"
+              className="pd-btn pd-btn--ghost"
+              onClick={onClose}
+              disabled={submitting}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="pd-btn pd-btn--primary"
+              disabled={submitting}
+            >
+              {submitting ? (
+                <>
+                  <span className="material-symbols-outlined pd-btn-icon pd-spin">
+                    progress_activity
+                  </span>
+                  <span>Saving…</span>
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined pd-btn-icon">check</span>
+                  <span>Save changes</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+ * EditSubtaskModal — sửa subtask
+ * ------------------------------------------------------------
+ * API: PUT /api/subtasks/{subtaskId}
+ * Body: { title, description, estimatedMinutes, orderIndex, status }
+ * ============================================================ */
+const SUBTASK_STATUS_OPTIONS = [
+  "ToDo",
+  "Scheduled",
+  "InProgress",
+  "Done",
+  "Skipped",
+] as const;
+
+function EditSubtaskModal({
+  subtask,
+  onClose,
+  onSave,
+}: {
+  subtask: SubtaskDto;
+  onClose: () => void;
+  onSave: (body: {
+    title: string;
+    description: string | null;
+    estimatedMinutes: number;
+    orderIndex: number;
+    status: string;
+  }) => Promise<void>;
+}) {
+  const [title, setTitle] = useState(subtask.title ?? "");
+  const [description, setDescription] = useState(subtask.description ?? "");
+  const [estimatedMinutes, setEstimatedMinutes] = useState(
+    String(subtask.estimatedMinutes ?? 0),
+  );
+  const [orderIndex, setOrderIndex] = useState(String(subtask.orderIndex ?? 0));
+  const [status, setStatus] = useState(subtask.status ?? "ToDo");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !submitting) onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [submitting, onClose]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (submitting) return;
+    setError(null);
+
+    const trimmed = title.trim();
+    if (!trimmed) {
+      setError("Subtask title is required.");
+      return;
+    }
+    const est = parseInt(estimatedMinutes, 10);
+    if (!Number.isFinite(est) || est < 0) {
+      setError("Estimated minutes must be a number greater than or equal to 0.");
+      return;
+    }
+    const order = parseInt(orderIndex, 10);
+    if (!Number.isFinite(order) || order < 0) {
+      setError("Order index must be a number greater than or equal to 0.");
+      return;
+    }
+
+    setSubmitting(true);
+    await onSave({
+      title: trimmed,
+      description: description.trim() || null,
+      estimatedMinutes: est,
+      orderIndex: order,
+      status,
+    });
+    setSubmitting(false);
+  }
+
+  return (
+    <div
+      className="pd-modal-backdrop"
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !submitting) onClose();
+      }}
+    >
+      <div
+        className="pd-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Edit subtask"
+      >
+        <div className="pd-modal-head">
+          <div>
+            <span className="pd-section-eyebrow">Edit subtask</span>
+            <h2 className="pd-modal-title">Update subtask details</h2>
+          </div>
+          <button
+            type="button"
+            className="pd-icon-btn pd-icon-btn--sm"
+            onClick={onClose}
+            disabled={submitting}
+            aria-label="Close"
+          >
+            <span className="material-symbols-outlined">close</span>
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div className="pd-modal-body">
+            <label className="pd-field">
+              <span className="pd-label">Title</span>
+              <input
+                className="pd-input"
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Subtask title"
+                disabled={submitting}
+                autoFocus
+              />
+            </label>
+
+            <label className="pd-field">
+              <span className="pd-label">Description</span>
+              <textarea
+                className="pd-input pd-input--textarea"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Optional details"
+                rows={3}
+                disabled={submitting}
+              />
+            </label>
+
+            <div className="pd-field-row">
+              <label className="pd-field">
+                <span className="pd-label">Estimated minutes</span>
+                <input
+                  className="pd-input"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={estimatedMinutes}
+                  onChange={(e) => setEstimatedMinutes(e.target.value)}
+                  disabled={submitting}
+                />
+              </label>
+
+              <label className="pd-field">
+                <span className="pd-label">Order index</span>
+                <input
+                  className="pd-input"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={orderIndex}
+                  onChange={(e) => setOrderIndex(e.target.value)}
+                  disabled={submitting}
+                />
+              </label>
+            </div>
+
+            <label className="pd-field">
+              <span className="pd-label">Status</span>
+              <select
+                className="pd-input"
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                disabled={submitting}
+              >
+                {SUBTASK_STATUS_OPTIONS.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {error && (
+              <p className="pd-field-error" role="alert">
+                <span className="material-symbols-outlined">error</span>
+                {error}
+              </p>
+            )}
+          </div>
+
+          <div className="pd-modal-actions">
+            <button
+              type="button"
+              className="pd-btn pd-btn--ghost"
+              onClick={onClose}
+              disabled={submitting}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="pd-btn pd-btn--primary"
+              disabled={submitting}
+            >
+              {submitting ? (
+                <>
+                  <span className="material-symbols-outlined pd-btn-icon pd-spin">
+                    progress_activity
+                  </span>
+                  <span>Saving…</span>
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined pd-btn-icon">check</span>
+                  <span>Save changes</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 }

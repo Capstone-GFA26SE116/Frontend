@@ -286,6 +286,11 @@
   border-color: var(--danger, #ff6b6b);
   color: var(--danger, #ff6b6b);
 }
+/* Nút SỬA → hover màu primary (không phải đỏ như nút XOÁ). */
+.gdt-icon-btn--edit:hover {
+  border-color: var(--primary, #00d992);
+  color: var(--primary, #00d992);
+}
 .gdt-icon-btn .material-symbols-outlined {
   font-size: 17px;
 }

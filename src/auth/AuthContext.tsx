@@ -51,6 +51,13 @@ interface AuthContextValue {
    * thành công để cỡng cổng gate ngay (không phải chờ refetch `/api/me`).
    */
   markOnboardingCompleted: () => void;
+  /**
+   * Refetch `GET /api/me` để đồng bộ lại profile (tên, role, gói, onboarding).
+   *
+   * Dùng sau khi BE trả dữ liệu mới ở endpoint khác (VD: onboarding, đổi
+   * gói, admin sửa user) → tránh phải F5 để thấy.
+   */
+  refreshProfile: () => Promise<void>;
   login: (
     email: string,
     password: string,
@@ -164,12 +171,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser((prev) => (prev ? { ...prev, onboardingCompleted: true } : prev));
   }, []);
 
+  /** Refetch `/api/me` → cập nhật user + cờ onboarding. */
+  const refreshProfile = useCallback(async () => {
+    const res = await getMe();
+    if (!res.ok) return;
+    const u: User = {
+      id: res.data.id,
+      email: res.data.email ?? "",
+      name: res.data.fullName ?? "Người dùng",
+      createdAt: new Date().toISOString(),
+      avatarUrl: res.data.avatarUrl ?? undefined,
+      role: res.data.role ?? null,
+      onboardingCompleted: res.data.onboardingCompleted,
+    };
+    setUser(u);
+    setOnboardingCompleted(res.data.onboardingCompleted);
+  }, []);
+
   const loginWithGoogle = useCallback(async (idToken: string) => {
     const res = await loginWithGoogleApi(idToken);
     if (!res.ok) {
       return { ok: false as const, error: "google_auth_failed" as AuthError };
     }
     const dto: AuthResponseDto = res.data;
+
+    /*
+     * `AuthResponseDto` KHÔNG có field `onboardingCompleted` (xem Swagger) →
+     * không suy ra được user cũ đã onboarding hay chưa.
+     *
+     * ⚠️ Vì sao quan trọng: `ProtectedRoute` gate dựa trên cờ này. Nếu để
+     * `undefined` (chưa biết) thì fallback localStorage quyết định → màn
+     * onboarding cũ đã bị thay bằng contract BE nên localStorage luôn rỗng →
+     * user cũ bị đẩy về `/onboarding` vô hạn.
+     *
+     * → Gọi `GET /api/me` để lấy `onboardingCompleted` thật.
+     *   - `isNewUser === true`  → chắc chắn chưa onboarding → `false`.
+     *   - ngược lại            → hỏi BE (fallback `true` = cho qua gate).
+     */
+    let onboardingDone: boolean;
+    if (dto.isNewUser) {
+      onboardingDone = false;
+    } else {
+      const me = await getMe();
+      onboardingDone = me.ok ? me.data.onboardingCompleted : true;
+    }
+
     const u: User = {
       id: dto.userId,
       email: dto.email ?? "",
@@ -177,16 +223,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       createdAt: new Date().toISOString(),
       avatarUrl: dto.avatarUrl ?? undefined,
       role: dto.role ?? null,
-      // `isNewUser = true` → tài khoản vừa tạo → chưa onboarding.
-      onboardingCompleted: dto.isNewUser ? false : undefined,
+      onboardingCompleted: onboardingDone,
     };
     // Lưu vào localStorage để mock code vẫn hoạt động nếu cần
     saveSession({ token: dto.accessToken, email: u.email });
     setUser(u);
     setToken(dto.accessToken);
+    setOnboardingCompleted(onboardingDone);
     if (dto.isNewUser) {
       setIsNewUser(true);
-      setOnboardingCompleted(false);
     }
     return { ok: true as const, session: { user: u, token: dto.accessToken } };
   }, []);
@@ -278,6 +323,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isNewUser,
       onboardingCompleted,
       markOnboardingCompleted,
+      refreshProfile,
       login,
       register,
       createAccount,
@@ -291,6 +337,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isNewUser,
       onboardingCompleted,
       markOnboardingCompleted,
+      refreshProfile,
       login,
       register,
       createAccount,

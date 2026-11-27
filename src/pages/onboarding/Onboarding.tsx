@@ -29,7 +29,7 @@ import "./onboarding.css";
  */
 export function OnboardingPage() {
   const navigate = useNavigate();
-  const { user, markOnboardingCompleted } = useAuth();
+  const { user, markOnboardingCompleted, refreshProfile } = useAuth();
   const [done, setDone] = useState(false);
 
   const { form, setField, toggleProductiveHour, toggleDomain, domains, loadingDomains, errors, submitting, submitError, submit } =
@@ -38,6 +38,14 @@ export function OnboardingPage() {
       // refetch `/api/me`.
       markOnboardingCompleted();
       setDone(true);
+      /*
+       * Đồng bộ lại profile từ BE (tên, role, gói, cờ onboarding).
+       *
+       * ⚠️ Không chặn `setDone`/điều hướng: nếu `GET /api/me` lỗi (mạng
+       * chập chờn) thì vẫn phải cho user rời khỏi màn này — cờ đã được
+       * set cục bộ bởi `markOnboardingCompleted()` nên gate đã mở.
+       */
+      void refreshProfile().catch(() => undefined);
     });
 
   // Scroll lên đầu mỗi lần vào.

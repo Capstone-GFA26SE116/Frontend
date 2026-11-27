@@ -67,7 +67,9 @@ import {
   restoreGroup,
   updateGroup,
   updateGroupMilestone,
+  updateGroupSubTask,
   updateGroupSubTaskStatus,
+  updateGroupTask,
   updateGroupTaskStatus,
   updateGroupTaskAssignee,
   parseMilestoneOpenTasksDetails,
@@ -227,6 +229,43 @@ export function GroupDetailPage() {
     status: "Planned" as GroupMilestoneStatus,
   });
   const [msEditFormError, setMsEditFormError] = useState<string | null>(null);
+
+  /* ---------- Modal sửa việc ---------- */
+  /**
+   * Việc đang sửa (null = modal đóng).
+   *
+   * Tách riêng khỏi modal TẠO việc (giống milestone) để không lẫn trạng thái.
+   */
+  const [taskEditTarget, setTaskEditTarget] = useState<GroupTaskDto | null>(
+    null,
+  );
+  const [taskEditForm, setTaskEditForm] = useState({
+    title: "",
+    description: "",
+    priority: "Medium" as GroupPriority,
+    milestoneId: "",
+    assigneeId: "",
+    deadline: "",
+    estimatedMinutes: "",
+    fixedStart: "",
+    fixedEnd: "",
+  });
+  const [taskEditFormError, setTaskEditFormError] = useState<string | null>(null);
+
+  /* ---------- Modal sửa việc con ---------- */
+  /** Việc con đang sửa (null = modal đóng). */
+  const [subEditTarget, setSubEditTarget] = useState<GroupSubTaskDto | null>(
+    null,
+  );
+  /** Id việc cha (để biết cập nhật list con nào). */
+  const [subEditTaskId, setSubEditTaskId] = useState<string | null>(null);
+  const [subEditForm, setSubEditForm] = useState({
+    title: "",
+    estimatedMinutes: "",
+    assigneeId: "",
+    orderIndex: "1",
+  });
+  const [subEditFormError, setSubEditFormError] = useState<string | null>(null);
 
   /* ---------- Modal thêm việc con ---------- */
   const [subModalFor, setSubModalFor] = useState<string | null>(null);
@@ -1121,6 +1160,178 @@ export function GroupDetailPage() {
     toast.success("Milestone updated", res.data.name);
   }
 
+  /* ===========================================================
+   * SỬA VIỆC — PUT /api/group-tasks/{taskId}
+   * =========================================================== */
+
+  /** Mở modal sửa việc — nạp sẵn giá trị hiện tại vào form. */
+  function openTaskEditModal(t: GroupTaskDto) {
+    setTaskEditForm({
+      title: t.title ?? "",
+      description: t.description ?? "",
+      priority: (t.priority ?? "Medium") as GroupPriority,
+      milestoneId: t.milestoneId ?? "",
+      assigneeId: t.assigneeId ?? "",
+      deadline: toDatetimeLocal(t.deadline),
+      estimatedMinutes:
+        t.estimatedMinutes != null ? String(t.estimatedMinutes) : "",
+      fixedStart: toDatetimeLocal(t.fixedStart),
+      fixedEnd: toDatetimeLocal(t.fixedEnd),
+    });
+    setTaskEditFormError(null);
+    setTaskEditTarget(t);
+  }
+
+  /**
+   * Lưu việc đã sửa → `PUT /api/group-tasks/{taskId}`.
+   *
+   * Body theo Swagger: `{ title, description, priority, milestoneId,
+   * assigneeId, deadline, estimatedMinutes, fixedStart, fixedEnd }`.
+   *
+   * ⚠️ PUT KHÔNG đổi `status` (BE có endpoint riêng cho việc đó) → ta gửi
+   * kèm nhưng không kỳ vọng BE đổi.
+   */
+  async function handleSaveTask(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!taskEditTarget) return;
+    const title = taskEditForm.title.trim();
+    if (!title) {
+      setTaskEditFormError("Please enter a task title.");
+      return;
+    }
+    if (
+      taskEditForm.fixedStart &&
+      taskEditForm.fixedEnd &&
+      new Date(taskEditForm.fixedEnd) <= new Date(taskEditForm.fixedStart)
+    ) {
+      setTaskEditFormError("Fixed end time must be after the fixed start time.");
+      return;
+    }
+    setTaskEditFormError(null);
+    setBusy(true);
+    const res = await updateGroupTask(taskEditTarget.id, {
+      title,
+      description: taskEditForm.description.trim() || null,
+      priority: taskEditForm.priority,
+      milestoneId: taskEditForm.milestoneId || null,
+      assigneeId: taskEditForm.assigneeId || null,
+      deadline: taskEditForm.deadline
+        ? new Date(taskEditForm.deadline).toISOString()
+        : null,
+      estimatedMinutes: taskEditForm.estimatedMinutes
+        ? Number(taskEditForm.estimatedMinutes)
+        : null,
+      fixedStart: taskEditForm.fixedStart
+        ? new Date(taskEditForm.fixedStart).toISOString()
+        : null,
+      fixedEnd: taskEditForm.fixedEnd
+        ? new Date(taskEditForm.fixedEnd).toISOString()
+        : null,
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setTaskEditFormError(
+        toGroupErrorView(res, undefined, { action: "update this task" }).message,
+      );
+      showApiError(res, "update this task");
+      return;
+    }
+    setTasks((prev) => prev.map((t) => (t.id === res.data.id ? res.data : t)));
+    setTaskEditTarget(null);
+    toast.success("Task updated", res.data.title);
+
+    /*
+     * ⚠️ Theo spec, `PUT /api/group-tasks/{id}` có nhận `assigneeId` nhưng BE
+     * có thể BỎ QUA nó (endpoint riêng: `PUT /api/group-tasks/{id}/assignee`).
+     * → So sánh kết quả thực tế: nếu người nhận chưa đúng ý user thì gọi
+     * thêm endpoint chuyên dụng (có xử lý 409 GROUP_ASSIGNEE_BUSY sẵn).
+     */
+    const wantedAssignee = taskEditForm.assigneeId || null;
+    if (wantedAssignee !== (res.data.assigneeId ?? null)) {
+      void handleAssign(
+        { ...res.data, assigneeId: res.data.assigneeId ?? null },
+        wantedAssignee ?? "",
+      );
+    }
+  }
+
+  /* ===========================================================
+   * SỬA VIỆC CON — PUT /api/group-subtasks/{subTaskId}
+   * =========================================================== */
+
+  /** Mở modal sửa việc con. */
+  function openSubTaskEditModal(taskId: string, s: GroupSubTaskDto) {
+    setSubEditForm({
+      title: s.title ?? "",
+      estimatedMinutes:
+        s.estimatedMinutes != null ? String(s.estimatedMinutes) : "",
+      assigneeId: s.assigneeId ?? "",
+      orderIndex: String(s.orderIndex ?? 1),
+    });
+    setSubEditFormError(null);
+    setSubEditTaskId(taskId);
+    setSubEditTarget(s);
+  }
+
+  /**
+   * Lưu việc con đã sửa → `PUT /api/group-subtasks/{subTaskId}`.
+   *
+   * ⚠️ Sau khi đổi, PHẢI gọi lại việc cha (`getGroupTask`) vì status việc cha
+   * có thể tự suy theo việc con.
+   */
+  async function handleSaveSubTask(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!subEditTarget || !subEditTaskId) return;
+    const title = subEditForm.title.trim();
+    if (!title) {
+      setSubEditFormError("Please enter a subtask title.");
+      return;
+    }
+    const orderIndex = Number(subEditForm.orderIndex);
+    if (!Number.isFinite(orderIndex) || orderIndex < 1) {
+      setSubEditFormError("Order index must be 1 or greater.");
+      return;
+    }
+    setSubEditFormError(null);
+    setBusy(true);
+    const res = await updateGroupSubTask(subEditTarget.id, {
+      title,
+      estimatedMinutes: subEditForm.estimatedMinutes
+        ? Number(subEditForm.estimatedMinutes)
+        : null,
+      assigneeId: subEditForm.assigneeId || null,
+      orderIndex,
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setSubEditFormError(
+        toGroupErrorView(res, undefined, { action: "update this subtask" })
+          .message,
+      );
+      showApiError(res, "update this subtask");
+      return;
+    }
+    // Cập nhật list việc con của việc cha.
+    setSubTasks((prev) => ({
+      ...prev,
+      [subEditTaskId]: (prev[subEditTaskId] ?? []).map((s) =>
+        s.id === res.data.id ? res.data : s,
+      ),
+    }));
+    setSubEditTarget(null);
+    setSubEditTaskId(null);
+    toast.success("Subtask updated", res.data.title);
+    // Nạp lại việc cha vì status việc cha có thể suy theo việc con.
+    void refreshParentTask(subEditTaskId);
+  }
+
+  /** Nạp lại 1 việc cha (dùng sau khi sửa việc con). */
+  async function refreshParentTask(taskId: string) {
+    const res = await getGroupTask(taskId);
+    if (!res.ok) return;
+    setTasks((prev) => prev.map((t) => (t.id === res.data.id ? res.data : t)));
+  }
+
   /* ---------- Thêm việc con ---------- */
   async function handleCreateSubTask(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -1927,6 +2138,19 @@ export function GroupDetailPage() {
                           {canManage && !archived && (
                             <button
                               type="button"
+                              className="gdt-icon-btn gdt-icon-btn--edit"
+                              title="Edit task"
+                              aria-label={`Edit task ${t.title}`}
+                              onClick={() => openTaskEditModal(t)}
+                            >
+                              <span className="material-symbols-outlined">
+                                edit
+                              </span>
+                            </button>
+                          )}
+                          {canManage && !archived && (
+                            <button
+                              type="button"
                               className="gdt-icon-btn"
                               title="Delete task"
                               aria-label={`Delete task ${t.title}`}
@@ -2049,6 +2273,21 @@ export function GroupDetailPage() {
                                             </option>
                                           ))}
                                         </select>
+                                      )}
+                                      {canManage && !archived && (
+                                        <button
+                                          type="button"
+                                          className="gdt-icon-btn gdt-icon-btn--sm gdt-icon-btn--edit"
+                                          title="Edit subtask"
+                                          aria-label={`Edit subtask ${s.title}`}
+                                          onClick={() =>
+                                            openSubTaskEditModal(t.id, s)
+                                          }
+                                        >
+                                          <span className="material-symbols-outlined">
+                                            edit
+                                          </span>
+                                        </button>
                                       )}
                                       {canManage && !archived && (
                                         <button
@@ -2776,6 +3015,408 @@ export function GroupDetailPage() {
                   disabled={busy}
                 >
                   Create task
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= Modal sửa việc ================= */}
+      {taskEditTarget && (
+        <div
+          className="gdt-modal-backdrop"
+          onClick={() => setTaskEditTarget(null)}
+          role="presentation"
+        >
+          <div
+            className="gdt-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="gdt-task-edit-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="gdt-modal-head">
+              <h2 id="gdt-task-edit-title" className="gdt-modal-title">
+                <span
+                  className="material-symbols-outlined gdt-modal-title-icon"
+                  aria-hidden="true"
+                >
+                  edit
+                </span>
+                Edit task
+              </h2>
+              <button
+                type="button"
+                className="gdt-modal-close"
+                onClick={() => setTaskEditTarget(null)}
+                aria-label="Close"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <form className="gdt-form" onSubmit={handleSaveTask}>
+              <div className="gdt-field">
+                <label className="gdt-label" htmlFor="gdt-tf-edit-title">
+                  Title *
+                </label>
+                <input
+                  id="gdt-tf-edit-title"
+                  type="text"
+                  className="gdt-input"
+                  placeholder="e.g. Design the home page"
+                  value={taskEditForm.title}
+                  onChange={(e) =>
+                    setTaskEditForm((f) => ({ ...f, title: e.target.value }))
+                  }
+                  required
+                />
+              </div>
+
+              <div className="gdt-field">
+                <label className="gdt-label" htmlFor="gdt-tf-edit-desc">
+                  Description
+                </label>
+                <textarea
+                  id="gdt-tf-edit-desc"
+                  rows={3}
+                  className="gdt-input gdt-input--textarea"
+                  value={taskEditForm.description}
+                  onChange={(e) =>
+                    setTaskEditForm((f) => ({
+                      ...f,
+                      description: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="gdt-field-row">
+                <div className="gdt-field">
+                  <label className="gdt-label" htmlFor="gdt-tf-edit-priority">
+                    Priority
+                  </label>
+                  <select
+                    id="gdt-tf-edit-priority"
+                    className="gdt-input"
+                    value={taskEditForm.priority}
+                    onChange={(e) =>
+                      setTaskEditForm((f) => ({
+                        ...f,
+                        priority: e.target.value as GroupPriority,
+                      }))
+                    }
+                  >
+                    {GROUP_PRIORITIES.map((p) => (
+                      <option key={p} value={p}>
+                        {priorityLabel(p)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="gdt-field">
+                  <label className="gdt-label" htmlFor="gdt-tf-edit-est">
+                    Estimate (min)
+                  </label>
+                  <input
+                    id="gdt-tf-edit-est"
+                    type="number"
+                    min={0}
+                    step={5}
+                    className="gdt-input"
+                    placeholder="90"
+                    value={taskEditForm.estimatedMinutes}
+                    onChange={(e) =>
+                      setTaskEditForm((f) => ({
+                        ...f,
+                        estimatedMinutes: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="gdt-field-row">
+                <div className="gdt-field">
+                  <label className="gdt-label" htmlFor="gdt-tf-edit-ms">
+                    Milestone
+                  </label>
+                  <select
+                    id="gdt-tf-edit-ms"
+                    className="gdt-input"
+                    value={taskEditForm.milestoneId}
+                    onChange={(e) =>
+                      setTaskEditForm((f) => ({
+                        ...f,
+                        milestoneId: e.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">—</option>
+                    {milestones.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.orderIndex}. {m.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="gdt-field">
+                  <label className="gdt-label" htmlFor="gdt-tf-edit-assignee">
+                    Assignee
+                  </label>
+                  <select
+                    id="gdt-tf-edit-assignee"
+                    className="gdt-input"
+                    value={taskEditForm.assigneeId}
+                    onChange={(e) =>
+                      setTaskEditForm((f) => ({
+                        ...f,
+                        assigneeId: e.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">—</option>
+                    {members.map((m) => (
+                      <option key={m.userId} value={m.userId}>
+                        {m.fullName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="gdt-field">
+                <label className="gdt-label" htmlFor="gdt-tf-edit-deadline">
+                  Deadline
+                </label>
+                <input
+                  id="gdt-tf-edit-deadline"
+                  type="datetime-local"
+                  className="gdt-input"
+                  value={taskEditForm.deadline}
+                  onChange={(e) =>
+                    setTaskEditForm((f) => ({
+                      ...f,
+                      deadline: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              {/*
+                Giờ cố định (họp / hẹn) — khung giờ không thể dời được.
+                Gửi `fixedStart` + `fixedEnd` cùng nhau.
+              */}
+              <div className="gdt-field-row">
+                <div className="gdt-field">
+                  <label className="gdt-label" htmlFor="gdt-tf-edit-fixed-start">
+                    Fixed start
+                  </label>
+                  <input
+                    id="gdt-tf-edit-fixed-start"
+                    type="datetime-local"
+                    className="gdt-input"
+                    value={taskEditForm.fixedStart}
+                    onChange={(e) =>
+                      setTaskEditForm((f) => ({
+                        ...f,
+                        fixedStart: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="gdt-field">
+                  <label className="gdt-label" htmlFor="gdt-tf-edit-fixed-end">
+                    Fixed end
+                  </label>
+                  <input
+                    id="gdt-tf-edit-fixed-end"
+                    type="datetime-local"
+                    className="gdt-input"
+                    value={taskEditForm.fixedEnd}
+                    onChange={(e) =>
+                      setTaskEditForm((f) => ({
+                        ...f,
+                        fixedEnd: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+
+              {taskEditFormError && (
+                <p className="gdt-form-error">
+                  <span className="material-symbols-outlined" aria-hidden="true">
+                    error
+                  </span>
+                  {taskEditFormError}
+                </p>
+              )}
+
+              <div className="gdt-form-actions">
+                <button
+                  type="button"
+                  className="gdt-btn gdt-btn--ghost"
+                  onClick={() => setTaskEditTarget(null)}
+                  disabled={busy}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="gdt-btn gdt-btn--primary"
+                  disabled={busy}
+                >
+                  {busy ? "Saving…" : "Save changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= Modal sửa việc con ================= */}
+      {subEditTarget && (
+        <div
+          className="gdt-modal-backdrop"
+          onClick={() => setSubEditTarget(null)}
+          role="presentation"
+        >
+          <div
+            className="gdt-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="gdt-sub-edit-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="gdt-modal-head">
+              <h2 id="gdt-sub-edit-title" className="gdt-modal-title">
+                <span
+                  className="material-symbols-outlined gdt-modal-title-icon"
+                  aria-hidden="true"
+                >
+                  edit
+                </span>
+                Edit subtask
+              </h2>
+              <button
+                type="button"
+                className="gdt-modal-close"
+                onClick={() => setSubEditTarget(null)}
+                aria-label="Close"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <form className="gdt-form" onSubmit={handleSaveSubTask}>
+              <div className="gdt-field">
+                <label className="gdt-label" htmlFor="gdt-sf-edit-title">
+                  Title *
+                </label>
+                <input
+                  id="gdt-sf-edit-title"
+                  type="text"
+                  className="gdt-input"
+                  placeholder="e.g. Write the copy for the landing page"
+                  value={subEditForm.title}
+                  onChange={(e) =>
+                    setSubEditForm((f) => ({ ...f, title: e.target.value }))
+                  }
+                  required
+                />
+              </div>
+
+              <div className="gdt-field-row">
+                <div className="gdt-field">
+                  <label className="gdt-label" htmlFor="gdt-sf-edit-est">
+                    Estimate (min)
+                  </label>
+                  <input
+                    id="gdt-sf-edit-est"
+                    type="number"
+                    min={0}
+                    step={5}
+                    className="gdt-input"
+                    placeholder="45"
+                    value={subEditForm.estimatedMinutes}
+                    onChange={(e) =>
+                      setSubEditForm((f) => ({
+                        ...f,
+                        estimatedMinutes: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="gdt-field">
+                  <label className="gdt-label" htmlFor="gdt-sf-edit-order">
+                    Order index
+                  </label>
+                  <input
+                    id="gdt-sf-edit-order"
+                    type="number"
+                    min={1}
+                    className="gdt-input"
+                    value={subEditForm.orderIndex}
+                    onChange={(e) =>
+                      setSubEditForm((f) => ({
+                        ...f,
+                        orderIndex: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="gdt-field">
+                <label className="gdt-label" htmlFor="gdt-sf-edit-assignee">
+                  Assignee
+                </label>
+                <select
+                  id="gdt-sf-edit-assignee"
+                  className="gdt-input"
+                  value={subEditForm.assigneeId}
+                  onChange={(e) =>
+                    setSubEditForm((f) => ({
+                      ...f,
+                      assigneeId: e.target.value,
+                    }))
+                  }
+                >
+                  <option value="">—</option>
+                  {members.map((m) => (
+                    <option key={m.userId} value={m.userId}>
+                      {m.fullName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {subEditFormError && (
+                <p className="gdt-form-error">
+                  <span className="material-symbols-outlined" aria-hidden="true">
+                    error
+                  </span>
+                  {subEditFormError}
+                </p>
+              )}
+
+              <div className="gdt-form-actions">
+                <button
+                  type="button"
+                  className="gdt-btn gdt-btn--ghost"
+                  onClick={() => setSubEditTarget(null)}
+                  disabled={busy}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="gdt-btn gdt-btn--primary"
+                  disabled={busy}
+                >
+                  {busy ? "Saving…" : "Save changes"}
                 </button>
               </div>
             </form>
@@ -3629,4 +4270,23 @@ function toDateInput(value: string | null | undefined): string {
   if (!value) return "";
   const s = value.slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
+}
+
+/**
+ * "2026-11-27T14:30" — chuẩn hoá thời gian về `yyyy-MM-ddTHH:mm` cho
+ * `<input type="datetime-local">`.
+ *
+ * ⚠️ `datetime-local` KHÔNG có timezone → ta dùng giờ LOCAL của máy user.
+ * Khi gửi lên BE ta quyết định `.toISOString()` (UTC) → nhất quán với
+ * luồng tạo việc (`handleCreateTask`).
+ */
+function toDatetimeLocal(value: string | null | undefined): string {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  );
 }

@@ -1974,7 +1974,7 @@ export async function proposeSchedule(
   );
   if (ids.length === 0) {
     // Chặn sớm: AI service trả 422 nếu task_ids rỗng, thông báo rõ ràng hơn cho UI.
-    return { ok: false, status: 0, error: "Cần ít nhất 1 task để xếp lịch." };
+    return { ok: false, status: 0, error: "At least 1 task is needed to schedule." };
   }
   return aiFetch<ProposeScheduleResponse>("/schedule/propose", {
     method: "POST",
@@ -2044,7 +2044,7 @@ export async function reportOverrun(
   if (!Number.isFinite(extra) || extra < 5 || extra > 480) {
     return {
       ok: false,
-      error: "Số phút thêm phải từ 5 đến 480 phút.",
+      error: "Extra minutes must be between 5 and 480.",
     };
   }
   return aiFetch<OverrunResponse>("/schedule/overrun", {

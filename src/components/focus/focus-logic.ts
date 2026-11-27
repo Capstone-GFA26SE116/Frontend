@@ -148,31 +148,31 @@ export function isSlotFaded(phase: FocusSlotPhase): boolean {
   return phase === "Postponed";
 }
 
-/** Nhãn tiếng Việt của trạng thái slot — dùng cho badge. */
+/** Nhãn tiếng Anh của trạng thái slot — dùng cho badge. */
 export function slotPhaseLabel(phase: FocusSlotPhase): string {
   switch (phase) {
     case "Proposed":
-      return "Chờ duyệt";
+      return "Pending approval";
     case "Approved":
-      return "Đã duyệt";
+      return "Approved";
     case "Due":
-      return "Đến giờ";
+      return "Due";
     case "InProgress":
-      return "Đang làm";
+      return "In progress";
     case "Overrun":
-      return "Quá giờ";
+      return "Overrun";
     case "Done":
-      return "Hoàn thành";
+      return "Completed";
     case "Missed":
-      return "Đã bỏ lỡ";
+      return "Missed";
     case "Skipped":
-      return "Bỏ qua";
+      return "Skipped";
     case "Cancelled":
-      return "Đã huỷ";
+      return "Cancelled";
     case "Postponed":
-      return "Đã dời";
+      return "Moved";
     default:
-      return "Chưa rõ";
+      return "Unknown";
   }
 }
 
@@ -290,22 +290,22 @@ export function canTransitionSubtask(
 /* ---------- Trạng thái phiên (sessions) ---------- */
 
 /**
- * Nhãn tiếng Việt cho `state` của phiên (spec mục 6).
+ * Nhãn tiếng Anh cho `state` của phiên (spec mục 6).
  */
 export function sessionStateLabel(state: string | null | undefined): string {
   switch (state) {
     case "Running":
-      return "Đang chạy";
+      return "Running";
     case "Stopped":
-      return "Đã dừng";
+      return "Stopped";
     case "PendingConfirmation":
-      return "Chờ xác nhận";
+      return "Awaiting confirmation";
     case "Confirmed":
-      return "Đã xác nhận";
+      return "Confirmed";
     case "Discarded":
-      return "Đã loại bỏ";
+      return "Discarded";
     default:
-      return "Chưa rõ";
+      return "Unknown";
   }
 }
 
@@ -339,12 +339,12 @@ export function isCountedSession(state: string | null | undefined): boolean {
 
 /* ---------- Lý do dừng ---------- */
 
-/** Nhãn tiếng Việt cho `stopReason`. */
+/** Nhãn tiếng Anh cho `stopReason`. */
 export const STOP_REASON_LABELS: Record<FocusStopReason, string> = {
-  Completed: "Đã xong",
-  Interrupted: "Tạm dừng / bị gián đoạn",
-  Blocked: "Bị chặn",
-  Other: "Lý do khác",
+  Completed: "Completed",
+  Interrupted: "Paused / interrupted",
+  Blocked: "Blocked",
+  Other: "Other reason",
 };
 
 /**
@@ -377,10 +377,10 @@ export function stopReasonNeedsNote(reason: FocusStopReason): boolean {
  */
 export const STOP_REASON_HINTS: Record<FocusStopReason, string> = {
   Completed:
-    "Slot chuyển sang Done. Bạn sẽ được hỏi có đánh dấu xong task/subtask không.",
-  Interrupted: "Slot trở lại Due để bạn làm tiếp.",
-  Blocked: "Slot trở lại Due để bạn làm tiếp.",
-  Other: "Slot trở lại Due để bạn làm tiếp.",
+    "Slot moves to Done. You'll be asked whether to mark the task/subtask done.",
+  Interrupted: "Slot returns to Due so you can continue.",
+  Blocked: "Slot returns to Due so you can continue.",
+  Other: "Slot returns to Due so you can continue.",
 };
 
 /**
@@ -397,15 +397,15 @@ export const STOP_REASON_SLOT_RESULT: Record<FocusStopReason, FocusSlotPhase> = 
   Other: "Due",
 };
 
-/** Nhãn tiếng Việt cho trạng thái slot (dùng trong hộp thoại Stop). */
+/** Nhãn tiếng Anh cho trạng thái slot (dùng trong hộp thoại Stop). */
 export function slotPhaseShortLabel(phase: FocusSlotPhase): string {
   switch (phase) {
     case "Done":
-      return "Hoàn thành";
+      return "Completed";
     case "Due":
-      return "Đến giờ";
+      return "Due";
     case "Postponed":
-      return "Đang chờ";
+      return "Pending";
     default:
       return slotPhaseLabel(phase);
   }
@@ -419,16 +419,16 @@ export function slotPhaseShortLabel(phase: FocusSlotPhase): string {
  * hiển thị hộp thoại rồi bỏ qua (không gửi đi đâu).
  */
 export const CHECK_IN_QUESTIONS = [
-  "Công việc đã xong chưa?",
-  "Bạn thấy thế nào về buổi làm vừa rồi?",
+  "Is the work done?",
+  "How did you feel about the session?",
 ];
 
 /** Gợi ý câu trả lời nhanh cho hộp thoại check-in. */
 export const CHECK_IN_OPTIONS = [
-  "Hoàn thành tốt",
-  "Tạm ổn",
-  "Bị gián đoạn",
-  "Chưa xong",
+  "Done well",
+  "Just okay",
+  "Interrupted",
+  "Not finished",
 ];
 
 /* ---------- Body cho POST /api/focus/start ---------- */
@@ -526,13 +526,13 @@ export function toActionType(raw: string | null | undefined): FocusActionType {
 
 /** Thông điệp mặc định cho từng actionType — fallback khi BE không kèm text. */
 export const ACTION_TYPE_MESSAGES: Record<FocusActionType, string> = {
-  PRE_START_REMINDER: "Sắp đến giờ rồi.",
-  START_PROMPT: "Đã đến giờ — sẵn sàng bắt đầu?",
-  NOT_STARTED: "Bạn chưa bắt đầu slot này.",
-  NEAR_END: "Sắp hết giờ rồi.",
-  OVERRUN: "Bạn đã làm quá giờ — nhớ bấm Stop.",
-  AUTO_TIMEOUT: "Hệ thống đã tự ngắt phiên làm việc.",
-  CHECK_IN: "Công việc đã xong chưa?",
-  MISSED_SLOT: "Bạn đã bỏ lỡ slot này.",
-  Unknown: "Bạn có thông báo mới.",
+  PRE_START_REMINDER: "Your slot starts soon.",
+  START_PROMPT: "It's time — ready to start?",
+  NOT_STARTED: "You haven't started this slot yet.",
+  NEAR_END: "You're running out of time.",
+  OVERRUN: "You're over the planned time — remember to press Stop.",
+  AUTO_TIMEOUT: "The focus session was ended automatically.",
+  CHECK_IN: "Is the work done yet?",
+  MISSED_SLOT: "You missed this slot.",
+  Unknown: "You have a new notification.",
 };

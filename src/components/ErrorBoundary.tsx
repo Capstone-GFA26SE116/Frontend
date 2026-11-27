@@ -47,17 +47,17 @@ export class ErrorBoundary extends Component<Props, State> {
         <div className="meb-card">
           <span className="material-symbols-outlined meb-icon">error</span>
           <h2 className="meb-title">
-            {this.props.label ? `${this.props.label} gặp lỗi` : "Đã xảy ra lỗi"}
+            {this.props.label ? `${this.props.label} hit an error` : "Something went wrong"}
           </h2>
           <p className="meb-msg">
-            Ứng dụng gặp lỗi khi hiển thị dữ liệu. Bạn có thể thử lại hoặc tải lại trang —
-            dữ liệu của bạn vẫn được giữ nguyên.
+            The app hit an error while rendering data. You can try again or reload
+            the page — your data is kept safe.
           </p>
           <pre className="meb-detail">{error.message}</pre>
           <div className="meb-actions">
             <button type="button" className="meb-btn meb-btn--primary" onClick={this.reset}>
               <span className="material-symbols-outlined">refresh</span>
-              Thử lại
+              Try again
             </button>
             <button
               type="button"
@@ -65,7 +65,7 @@ export class ErrorBoundary extends Component<Props, State> {
               onClick={() => window.location.reload()}
             >
               <span className="material-symbols-outlined">restart_alt</span>
-              Tải lại trang
+              Reload page
             </button>
           </div>
         </div>

@@ -59,23 +59,23 @@ const GROUP_TITLES: Record<string, string> = {
 function titleFor(actionType: string): string {
   switch (actionType) {
     case "PRE_START_REMINDER":
-      return "Sắp đến giờ";
+      return "Starting soon";
     case "START_PROMPT":
-      return "Đến giờ làm việc";
+      return "Time to work";
     case "NOT_STARTED":
-      return "Bạn chưa bắt đầu";
+      return "You haven't started";
     case "NEAR_END":
-      return "Sắp hết giờ";
+      return "Almost out of time";
     case "OVERRUN":
-      return "Đã quá giờ";
+      return "You're over time";
     case "AUTO_TIMEOUT":
-      return "Hệ thống đã tự ngắt";
+      return "The session was ended automatically";
     case "CHECK_IN":
-      return "Kiểm tra nhanh";
+      return "Quick check-in";
     case "MISSED_SLOT":
-      return "Bạn đã bỏ lỡ slot";
+      return "You missed this slot";
     default:
-      return "Thông báo mới";
+      return "New notification";
   }
 }
 

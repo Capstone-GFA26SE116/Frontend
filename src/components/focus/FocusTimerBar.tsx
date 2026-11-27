@@ -115,7 +115,7 @@ export function FocusTimerBar({
       ref={barRef}
       className={`fc-bar${isOverrun ? " fc-bar--overrun" : ""}${collapsed ? " fc-bar--collapsed" : ""}`}
       role="region"
-      aria-label="Phiên làm việc đang chạy"
+      aria-label="Running focus session"
     >
       {/* ----- Vùng trái: trạng thái + đồng hồ ----- */}
       <div className="fc-bar__lead">
@@ -126,19 +126,19 @@ export function FocusTimerBar({
         />
         <div className="fc-bar__leadtext">
           <span className="fc-bar__eyebrow">
-            {isOverrun ? "Quá giờ dự kiến" : "Đang làm việc"}
+            {isOverrun ? "Over planned time" : "Working"}
           </span>
           {onOpenTask ? (
             <button
               type="button"
               className="fc-bar__task"
               onClick={onOpenTask}
-              title="Mở task"
+              title="Open task"
             >
-              {taskTitle || "Không rõ task"}
+              {taskTitle || "Unknown task"}
             </button>
           ) : (
-            <span className="fc-bar__task">{taskTitle || "Không rõ task"}</span>
+            <span className="fc-bar__task">{taskTitle || "Unknown task"}</span>
           )}
           {/* Tên subtask — chỉ có khi phiên gắn subtask.
               Nguồn: FE tự nhớ lúc Start (spec mục 8.1: `/current` không trả
@@ -146,7 +146,7 @@ export function FocusTimerBar({
           {subTaskTitle && (
             <span
               className="fc-bar__subtask"
-              title="Bạn đang làm subtask này"
+              title="You're working on this subtask"
             >
               <span className="material-symbols-outlined">segment</span>
               {subTaskTitle}
@@ -157,7 +157,7 @@ export function FocusTimerBar({
 
       {/* ----- Vùng giữa: đồng hồ ----- */}
       <div className="fc-bar__clock">
-        <span className="fc-bar__elapsed" aria-label="Thời gian đã làm">
+        <span className="fc-bar__elapsed" aria-label="Time elapsed">
           {formatClock(elapsedSeconds)}
         </span>
         <span className="fc-bar__sep" aria-hidden="true">
@@ -168,8 +168,8 @@ export function FocusTimerBar({
             className={`fc-bar__remaining${isOverrun ? " fc-bar__remaining--over" : ""}`}
             aria-label={
               isOverrun
-                ? `Đã quá giờ ${formatMinutes(overrunSeconds / 60)}`
-                : `Còn ${formatMinutes(remainingSeconds / 60)}`
+                ? `Over by ${formatMinutes(overrunSeconds / 60)}`
+                : `${formatMinutes(remainingSeconds / 60)} left`
             }
           >
             {isOverrun
@@ -178,7 +178,7 @@ export function FocusTimerBar({
           </span>
         ) : (
           <span className="fc-bar__remaining fc-bar__remaining--free">
-            ngoài lịch
+            unscheduled
           </span>
         )}
       </div>
@@ -192,7 +192,7 @@ export function FocusTimerBar({
             aria-valuenow={Math.round(progressPercent)}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-label="Tiến độ so với kế hoạch"
+            aria-label="Progress against plan"
           >
             <span
               className="fc-bar__fill"
@@ -207,14 +207,14 @@ export function FocusTimerBar({
           disabled={busy}
         >
           <span className="material-symbols-outlined">stop_circle</span>
-          <span>Dừng</span>
+          <span>Stop</span>
         </button>
         <button
           type="button"
           className="fc-bar__btn fc-bar__btn--ghost fc-bar__btn--icon"
           onClick={() => setCollapsed((v) => !v)}
-          aria-label={collapsed ? "Mở rộng thanh đồng hồ" : "Thu gọn thanh đồng hồ"}
-          title={collapsed ? "Mở rộng" : "Thu gọn"}
+          aria-label={collapsed ? "Expand timer bar" : "Collapse timer bar"}
+          title={collapsed ? "Expand" : "Collapse"}
         >
           <span className="material-symbols-outlined">
             {collapsed ? "expand_more" : "expand_less"}

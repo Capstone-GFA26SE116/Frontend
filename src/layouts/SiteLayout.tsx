@@ -215,11 +215,11 @@ export function SiteLayout() {
                   to="/notifications"
                   aria-label={
                     notif.unreadCount > 0
-                      ? `Thông báo (${notif.unreadCount} chưa đọc)`
-                      : "Thông báo"
+                      ? `Notifications (${notif.unreadCount} unread)`
+                      : "Notifications"
                   }
                   className="site-icon-btn site-icon-btn--link"
-                  title="Thông báo"
+                  title="Notifications"
                 >
                   <span className="material-symbols-outlined">notifications</span>
                   {notif.unreadCount > 0 && (
@@ -280,7 +280,7 @@ export function SiteLayout() {
                     <div className="site-user-menu" role="menu">
                       <div className="site-user-menu-head">
                         <span className="site-user-menu-name">
-                          {user?.name || "Người dùng"}
+                          {user?.name || "User"}
                         </span>
                         <span className="site-user-menu-email">
                           {user?.email}
@@ -328,7 +328,7 @@ export function SiteLayout() {
                         >
                           group
                         </span>
-                        <span>Việc nhóm của tôi</span>
+                        <span>My group tasks</span>
                       </Link>
                       {/* Lịch sử chat — mọi cuộc chat (dự án + task) */}
                       <Link
@@ -403,7 +403,7 @@ export function SiteLayout() {
                         >
                           bolt
                         </span>
-                        <span>Giờ hiệu quả</span>
+                        <span>Productive hours</span>
                       </Link>
                       {/* Khu vực quản trị — chỉ hiện với role Admin */}
                       {isAdminUser(user) && (
@@ -430,8 +430,8 @@ export function SiteLayout() {
                         disabled={gcal.loading}
                         title={
                           gcal.isConnected
-                            ? "Google Calendar đã kết nối"
-                            : "Kết nối Google Calendar"
+                            ? "Google Calendar is connected"
+                            : "Connect Google Calendar"
                         }
                       >
                         <span

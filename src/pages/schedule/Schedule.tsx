@@ -469,8 +469,8 @@ export function SchedulePage() {
         // Reload data
         setScheduleSlots((prev) => [...prev, res.data]);
         toast.success(
-          "Đã tạo lịch thành công!",
-          `"${taskData.taskTitle}" được gán vào ${start.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })} — ${end.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}.`
+          "Schedule created!",
+          `"${taskData.taskTitle}" was scheduled for ${start.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} — ${end.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}.`
         );
       } else {
         /*
@@ -481,7 +481,7 @@ export function SchedulePage() {
           taskTitle: taskData.taskTitle,
         });
         toast.error(
-          overlapMsg ? "Time slot overlaps" : "Không tạo được lịch",
+          overlapMsg ? "Time slot overlaps" : "Couldn't create the schedule",
           overlapMsg ?? res.error,
         );
       }
@@ -831,18 +831,19 @@ export function SchedulePage() {
 
     if (result.outcome === "connected") {
       toast.success(
-        "Đã kết nối Google Calendar",
-        "Sự kiện giờ được đồng bộ hai chiều với lịch của bạn.",
+        "Google Calendar connected",
+        "Calendar events are now synced both ways with your schedule.",
       );
     } else if (result.outcome === "denied") {
       toast.error(
-        "Bạn đã từ chối cấp quyền",
-        "METANOIA cần quyền calendar.events để đồng bộ lịch.",
+        "You denied the permission",
+        "METANOIA needs the calendar.events permission to sync your schedule.",
       );
     } else {
       toast.error(
-        "Kết nối thất bại",
-        result.message ?? "Không liên kết được Google Calendar. Vui lòng thử lại.",
+        "Connection failed",
+        result.message ??
+          "Couldn't link Google Calendar. Please try again.",
       );
     }
 
@@ -1938,9 +1939,12 @@ export function SchedulePage() {
       const res = await deleteScheduleSlot(slotId);
       if (res.ok) {
         setScheduleSlots((prev) => prev.filter((s) => s.id !== slotId));
-        toast.success("Đã xoá lịch", "Block thời gian đã được gỡ khỏi calendar.");
+        toast.success(
+          "Schedule deleted",
+          "The time block was removed from your calendar.",
+        );
       } else {
-        toast.error("Không xoá được lịch", res.error);
+        toast.error("Couldn't delete the schedule", res.error);
       }
     },
     [toast]
@@ -2008,12 +2012,12 @@ export function SchedulePage() {
               disabled={proposal.loading || schedulableCount === 0}
               title={
                 schedulableCount === 0
-                  ? "Không còn task flexible nào chưa có lịch"
-                  : `AI sẽ đề xuất khung giờ cho ${schedulableCount} task flexible${
+                  ? "No flexible tasks left without a schedule"
+                  : `AI will suggest time slots for ${schedulableCount} flexible tasks${
                       workHours.workDayStart && workHours.workDayEnd
-                        ? ` trong khung giờ làm việc ${workHours.workDayStart}–${workHours.workDayEnd}`
+                        ? ` within your working hours ${workHours.workDayStart}–${workHours.workDayEnd}`
                         : ""
-                    } — bạn tick rồi bấm Apply mới ghi vào lịch`
+                    } — tick them then press Apply to write them to your schedule`
               }
             >
               <span className="material-symbols-outlined sch-icon-18">auto_awesome</span>
@@ -2115,7 +2119,7 @@ export function SchedulePage() {
                 className={`sch-chip sch-chip--toggle${showWeekend ? " sch-chip--active" : ""}`}
                 onClick={() => setShowWeekend((v) => !v)}
                 aria-pressed={showWeekend}
-                title={showWeekend ? "Đang hiện T2 → CN" : "Đang hiện T2 → T6"}
+                title={showWeekend ? "Showing Mon → Sun" : "Showing Mon → Fri"}
               >
                 <span className="material-symbols-outlined sch-icon-14">calendar_view_week</span>
                 Cuối tuần
@@ -2860,13 +2864,13 @@ function TaskCard({
         {hasSubtasks && (
           <span
             className="sch-tcard__count"
-            title={`${blocks.length} việc con trong ngày này`}
+            title={`${blocks.length} subtasks in this day`}
           >
             {blocks.length}
           </span>
         )}
         {isDone && (
-          <span className="sch-tcard__done" title="Đã hoàn thành">
+          <span className="sch-tcard__done" title="Completed">
             <span className="material-symbols-outlined sch-icon-12">check_circle</span>
           </span>
         )}
@@ -3154,13 +3158,13 @@ function GoogleCalendarCard({
       // 409 = kết nối hết hạn → gợi ý kết nối lại. 502 = Google lỗi/mất mạng.
       if (res.status === 409 && res.errorCode === "GOOGLE_RECONNECT_REQUIRED") {
         setSyncError(
-          "Kết nối Google Calendar đã hết hạn hoặc bị thu hồi. Hãy kết nối lại Google Calendar rồi thử đồng bộ lần nữa.",
+          "Your Google Calendar connection expired or was revoked. Reconnect Google Calendar and try syncing again.",
         );
         return;
       }
       if (res.status === 502) {
         setSyncError(
-          "Google Calendar đang lỗi hoặc mất mạng. Vui lòng thử lại sau.",
+          "Google Calendar is having trouble or the connection dropped. Please try again later.",
         );
         return;
       }
@@ -3175,23 +3179,27 @@ function GoogleCalendarCard({
     const pushFailed = res.data.pushFailed ?? 0;
     const pushed = res.data.pushedCreated ?? 0;
 
-    const parts = [`${added} mới`, `${updated} cập nhật`, `${cancelled} huỷ`];
+    const parts = [
+      `${added} added`,
+      `${updated} updated`,
+      `${cancelled} cancelled`,
+    ];
     if (pushed > 0 || pushFailed > 0) {
-      parts.push(`${pushed} đẩy lên`);
+      parts.push(`${pushed} pushed`);
     }
     // Chế độ BE đã dùng (spec mục 3): `Range` = lấy đầy đủ trong khoảng,
     // `Incremental` = chỉ lấy phần thay đổi theo `syncToken`.
     if (res.data.mode === "Range") {
-      parts.push("theo khoảng ngày");
+      parts.push("by date range");
     }
 
     if (pushFailed > 0) {
       toast.error(
-        "Một số slot chưa đồng bộ được",
-        `Thử lại sau. · ${parts.join(" · ")}`,
+        "Some slots couldn't be synced",
+        `Try again later. · ${parts.join(" · ")}`,
       );
     } else {
-      toast.success("Đã đồng bộ Google Calendar", parts.join(" · "));
+      toast.success("Google Calendar synced", parts.join(" · "));
     }
 
     // Nạp lại lịch để thấy sự kiện vừa kéo về / slot vừa đẩy lên.
@@ -3270,7 +3278,7 @@ function GoogleCalendarCard({
           disabled={busy !== null}
         >
           <span className="material-symbols-outlined sch-icon-18">sync</span>
-          {busy === "sync" ? "Syncing…" : "Đồng bộ"}
+          {busy === "sync" ? "Syncing…" : "Sync"}
         </button>
         <button
           type="button"

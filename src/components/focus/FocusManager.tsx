@@ -234,13 +234,13 @@ export function FocusManager({
     async (req: FocusStartRequest) => {
       const res = await focus.start(req);
       if (res.kind === "error") {
-        toast.error("Không bắt đầu được", res.error);
+        toast.error("Couldn't start", res.error);
         return;
       }
       if (res.kind === "conflict") {
         toast.info(
-          "Đang có phiên khác chạy",
-          res.session.taskTitle ?? "Chuyển sang phiên đang chạy",
+          "Another session is already running",
+          res.session.taskTitle ?? "Switching to the running session",
         );
         return;
       }
@@ -254,11 +254,11 @@ export function FocusManager({
       }
       if (res.data.startedEarlyMinutes > 0) {
         toast.info(
-          "Bắt đầu sớm",
-          `Bạn bắt đầu sớm ${res.data.startedEarlyMinutes} phút so với lịch`,
+          "Started early",
+          `You started ${res.data.startedEarlyMinutes} minutes ahead of schedule`,
         );
       } else {
-        toast.success("Đã bắt đầu phiên làm việc");
+        toast.success("Focus session started");
       }
     },
     [focus, toast],
@@ -310,7 +310,7 @@ export function FocusManager({
   const keepEarlySession = useCallback(() => {
     setDialog("none");
     setEarlySessionId(null);
-    toast.success("Đã bắt đầu phiên làm việc");
+    toast.success("Focus session started");
   }, [toast]);
 
   /**
@@ -329,10 +329,10 @@ export function FocusManager({
     if (!sessionId) return;
     const res = await focus.stop("Interrupted", null, sessionId);
     if (res.kind === "stopped" || res.kind === "alreadyStopped") {
-      toast.info("Đã bỏ phiên làm việc");
+      toast.info("Focus session discarded");
     } else {
       toast.error(
-        "Không bỏ được phiên",
+        "Couldn't discard the session",
         res.kind === "error" ? res.error : undefined,
       );
     }
@@ -380,20 +380,20 @@ export function FocusManager({
           return;
         }
         setDialog("none");
-        toast.error("Không dừng được phiên", res.error);
+        toast.error("Couldn't stop the session", res.error);
         return;
       }
       setStopError(null);
       setDialog("none");
       if (res.kind === "alreadyStopped") {
         // 409 = đã dừng trước đó (bấm 2 lần / 2 tab) → coi như thành công.
-        toast.info("Phiên này đã dừng trước đó");
+        toast.info("This session was already stopped");
         return;
       }
       const data = res.data;
       toast.success(
-        "Đã dừng phiên",
-        `Phiên này ${data.sessionMinutes.toFixed(1)} phút · tổng task ${data.taskTotalMinutes.toFixed(1)} phút`,
+        "Session stopped",
+        `Session ${data.sessionMinutes.toFixed(1)} min · task total ${data.taskTotalMinutes.toFixed(1)} min`,
       );
 
       /*
@@ -458,10 +458,10 @@ export function FocusManager({
 
     const put = await markSubtaskDone(sub);
     if (!put.ok) {
-      toast.error("Không đánh dấu được subtask", put.error);
+      toast.error("Couldn't mark the subtask as done", put.error);
       return;
     }
-    toast.success("Đã đánh dấu subtask là xong");
+    toast.success("Subtask marked as done");
 
     /*
      * Nếu mọi subtask đã xong → hỏi tiếp "Đánh dấu cả task là xong?".
@@ -495,19 +495,19 @@ export function FocusManager({
 
     const res = await getTask(taskId);
     if (!res.ok) {
-      toast.error("Không đánh dấu được", res.error);
+      toast.error("Couldn't mark as done", res.error);
       return;
     }
     const put = await markTaskDone(res.data);
     if (!put.ok) {
-      toast.error("Không đánh dấu được task", put.error);
+      toast.error("Couldn't mark the task as done", put.error);
       return;
     }
     setPendingTaskId(null);
     setPendingTaskTitle(null);
     setPendingSubTask(null);
     setPendingSubtasks([]);
-    toast.success("Đã đánh dấu task là xong");
+    toast.success("Task marked as done");
   }, [pendingTaskId, toast]);
 
   /* ---------- Xác nhận phiên bị tự ngắt ---------- */
@@ -523,13 +523,13 @@ export function FocusManager({
       setDialog("none");
       if (ok) {
         toast.success(
-          "Đã xác nhận phiên",
+          "Session confirmed",
           correctedMinutes
-            ? `Ghi nhận ${correctedMinutes} phút`
-            : `Ghi nhận ${item.systemMinutes} phút`,
+            ? `Recorded ${correctedMinutes} min`
+            : `Recorded ${item.systemMinutes} min`,
         );
       } else {
-        toast.error("Không xác nhận được phiên");
+        toast.error("Couldn't confirm the session");
       }
     },
     [focus, toast],
@@ -538,8 +538,8 @@ export function FocusManager({
   const discardTimeout = useCallback(async () => {
     const ok = await focus.confirm({ confirmed: false });
     setDialog("none");
-    if (ok) toast.info("Đã bỏ phiên bị tự ngắt");
-    else toast.error("Không bỏ được phiên");
+    if (ok) toast.info("Auto-ended session discarded");
+    else toast.error("Couldn't discard the session");
   }, [focus, toast]);
 
   /* ---------- Self report ---------- */
@@ -548,7 +548,7 @@ export function FocusManager({
     async (minutes: number, note: string | null) => {
       const taskId = selfReportTaskId;
       if (!taskId) {
-        toast.error("Chọn task trước khi ghi nhận");
+        toast.error("Select a task before recording");
         return;
       }
       const now = Date.now();
@@ -564,8 +564,8 @@ export function FocusManager({
       };
       const ok = await focus.selfReport(body);
       setDialog("none");
-      if (ok) toast.success("Đã ghi nhận thời gian làm việc");
-      else toast.error("Không ghi nhận được", focus.error ?? undefined);
+      if (ok) toast.success("Work time recorded");
+      else toast.error("Couldn't record the time", focus.error ?? undefined);
     },
     [selfReportTaskId, focus, toast],
   );

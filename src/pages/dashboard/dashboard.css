@@ -1309,37 +1309,6 @@
   font-size: 18px;
 }
 
-/* ================= Quick capture (right column) ================= */
-.dash-captured {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.dash-captured-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 8px;
-  background: var(--canvas-soft);
-  border: 1px solid var(--hairline);
-}
-.dash-captured-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 9999px;
-  background: var(--primary);
-  flex-shrink: 0;
-  margin-top: 6px;
-}
-.dash-captured-title {
-  font-family: var(--font-sans);
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--ink);
-  word-break: break-word;
-}
-
 /* ================= Deadline radar (right column) ================= */
 .dash-radar {
   background: var(--canvas);
@@ -1503,58 +1472,6 @@
   display: flex;
   flex-direction: column;
   gap: 1rem;
-}
-
-.dash-input-form {
-  position: relative;
-}
-
-.dash-input {
-  width: 100%;
-  background: var(--canvas-soft);
-  color: var(--ink-strong);
-  font-family: var(--font-sans);
-  font-size: 14px;
-  line-height: 20px;
-  border: 1px solid var(--hairline);
-  border-radius: 6px;
-  padding: 12px 40px 12px 16px;
-  outline: none;
-  transition: border-color 160ms ease;
-  box-sizing: border-box;
-}
-.dash-input::placeholder {
-  color: var(--mute);
-}
-.dash-input:focus {
-  border-color: var(--primary);
-}
-.dash-input--ring {
-  background: var(--canvas-soft);
-  border-color: var(--primary);
-}
-
-.dash-input-submit {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  background: transparent;
-  border: none;
-  color: var(--mute);
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 150ms ease;
-}
-.dash-input-submit:hover {
-  color: var(--primary);
-}
-.dash-input-submit .material-symbols-outlined {
-  font-size: 20px;
 }
 
 .dash-drawer-section {
@@ -1876,13 +1793,6 @@
   animation: dash-stagger-up 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.dash-captured-item {
-  opacity: 0;
-}
-.dash-captured-item--in {
-  animation: dash-stagger-up 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .dash-welcome,
   .dash-metrics,
@@ -1890,8 +1800,7 @@
   .dash-metric,
   .dash-slot,
   .dash-task,
-  .dash-radar-item,
-  .dash-captured-item {
+  .dash-radar-item {
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;

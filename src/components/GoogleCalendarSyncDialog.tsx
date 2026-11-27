@@ -47,20 +47,20 @@ const DIRECTION_OPTIONS: Array<{
 }> = [
   {
     value: "FromGoogle",
-    label: "Từ Google về",
-    hint: "Lấy sự kiện Google trong khoảng để lưu vào METANOIA.",
+    label: "From Google",
+    hint: "Pull Google events in the range and save them to METANOIA.",
     icon: "south",
   },
   {
     value: "ToGoogle",
-    label: "Từ METANOIA lên",
-    hint: "Đẩy các khung giờ đã duyệt lên Google Calendar của bạn.",
+    label: "To Google",
+    hint: "Push your approved time blocks up to your Google Calendar.",
     icon: "north",
   },
   {
     value: "Both",
-    label: "Cả hai chiều",
-    hint: "Kéo sự kiện về trước, rồi đẩy khung giờ lên Google.",
+    label: "Both ways",
+    hint: "Pull events in first, then push your time blocks up to Google.",
     icon: "swap_vert",
   },
 ];
@@ -141,10 +141,10 @@ export function GoogleCalendarSyncDialog({
    * - `to` trước `from` → BE trả 400, ta chặn trước cho UX tốt.
    */
   const dateError = useMemo(() => {
-    if (from && !DATE_RE.test(from)) return "Ngày bắt đầu phải có dạng YYYY-MM-DD.";
-    if (to && !DATE_RE.test(to)) return "Ngày kết thúc phải có dạng YYYY-MM-DD.";
+    if (from && !DATE_RE.test(from)) return "The start date must be in YYYY-MM-DD format.";
+    if (to && !DATE_RE.test(to)) return "The end date must be in YYYY-MM-DD format.";
     if (from && to && DATE_RE.test(from) && DATE_RE.test(to) && to < from) {
-      return "Ngày kết thúc phải sau hoặc bằng ngày bắt đầu.";
+      return "The end date must be on or after the start date.";
     }
     return null;
   }, [from, to]);
@@ -163,10 +163,10 @@ export function GoogleCalendarSyncDialog({
 
   /** Mô tả khoảng ngày đang chọn (để user thấy rõ mình đang đồng bộ gì). */
   const rangeLabel = useMemo(() => {
-    if (from && to) return `Từ ${from} đến hết ngày ${to}`;
-    if (from) return `Từ đầu ngày ${from} trở đi`;
-    if (to) return `Đến hết ngày ${to}`;
-    return "Toàn bộ thay đổi kể từ lần đồng bộ gần nhất";
+    if (from && to) return `From ${from} to the end of ${to}`;
+    if (from) return `From the start of ${from} onwards`;
+    if (to) return `Up to the end of ${to}`;
+    return "All changes since the last sync";
   }, [from, to]);
 
   const isRange = !!(from || to);
@@ -182,7 +182,7 @@ export function GoogleCalendarSyncDialog({
         className="gcs-panel"
         role="dialog"
         aria-modal="true"
-        aria-label="Đồng bộ Google Calendar"
+        aria-label="Sync Google Calendar"
       >
         {/* ---------- Head ---------- */}
         <div className="gcs-head">
@@ -191,14 +191,14 @@ export function GoogleCalendarSyncDialog({
           </div>
           <div className="gcs-head-text">
             <p className="gcs-eyebrow">Google Calendar</p>
-            <h2 className="gcs-title">Đồng bộ lịch</h2>
+            <h2 className="gcs-title">Sync calendar</h2>
           </div>
           <button
             type="button"
             className="gcs-close"
             onClick={onClose}
             disabled={busy}
-            aria-label="Đóng"
+            aria-label="Close"
           >
             <span className="material-symbols-outlined">close</span>
           </button>
@@ -220,15 +220,15 @@ export function GoogleCalendarSyncDialog({
                   <span className="material-symbols-outlined gcs-icon-14">
                     tune
                   </span>
-                  Đổi hướng / khoảng ngày
+                  Change direction / date range
                 </button>
               )}
             </>
           ) : (
             <>
           {/* Hướng đồng bộ */}
-          <p className="gcs-label">Chiều đồng bộ</p>
-          <div className="gcs-directions" role="radiogroup" aria-label="Chiều đồng bộ">
+          <p className="gcs-label">Sync direction</p>
+          <div className="gcs-directions" role="radiogroup" aria-label="Sync direction">
             {DIRECTION_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
@@ -256,23 +256,23 @@ export function GoogleCalendarSyncDialog({
             <p className="gcs-note">
               <span className="material-symbols-outlined">info</span>
               <span>
-                Chiều đẩy lên sẽ ghi vào lịch Google thật của bạn. Chỉ các
-                khung giờ ở trạng thái <strong>Đã duyệt</strong>,{" "}
-                <strong>Đến giờ</strong>, <strong>Đang làm</strong> hoặc{" "}
-                <strong>Quá giờ</strong> mới được đẩy.
+                Pushing up writes to your real Google Calendar. Only blocks in{" "}
+                <strong>Approved</strong>, <strong>Due</strong>,{" "}
+                <strong>In Progress</strong> or <strong>Overrun</strong> status
+                can be pushed.
               </span>
             </p>
           )}
 
           {/* Khoảng ngày */}
-          <p className="gcs-label">Khoảng ngày</p>
+          <p className="gcs-label">Date range</p>
           <p className="gcs-hint">
-            Để trống nếu bạn muốn đồng bộ như cũ — chỉ lấy phần thay đổi kể
-            từ lần đồng bộ gần nhất.
+            Leave blank to sync as before — only pulling the changes since your
+            last sync.
           </p>
           <div className="gcs-dates">
             <label className="gcs-date">
-              <span className="gcs-date-label">Từ ngày</span>
+              <span className="gcs-date-label">From</span>
               <input
                 type="date"
                 className="gcs-input"
@@ -282,7 +282,7 @@ export function GoogleCalendarSyncDialog({
               />
             </label>
             <label className="gcs-date">
-              <span className="gcs-date-label">Đến ngày</span>
+              <span className="gcs-date-label">To</span>
               <input
                 type="date"
                 className="gcs-input"
@@ -300,7 +300,7 @@ export function GoogleCalendarSyncDialog({
             </span>
             <span>{rangeLabel}</span>
             {isRange && (
-              <span className="gcs-summary-mode">Chế độ đầy đủ trong khoảng</span>
+              <span className="gcs-summary-mode">Full range mode</span>
             )}
           </p>
 
@@ -327,7 +327,7 @@ export function GoogleCalendarSyncDialog({
               disabled={busy}
             >
               <span className="material-symbols-outlined gcs-icon-14">link</span>
-              Kết nối lại Google Calendar
+              Reconnect Google Calendar
             </button>
           )}
             </>
@@ -343,7 +343,7 @@ export function GoogleCalendarSyncDialog({
               onClick={onClose}
               disabled={busy}
             >
-              Đóng
+              Close
             </button>
           ) : (
             <>
@@ -353,7 +353,7 @@ export function GoogleCalendarSyncDialog({
                 onClick={onClose}
                 disabled={busy}
               >
-                Huỷ
+                Cancel
               </button>
               <button
                 type="button"
@@ -361,7 +361,7 @@ export function GoogleCalendarSyncDialog({
                 onClick={handleSubmit}
                 disabled={!canSubmit}
               >
-                {busy ? "Đang đồng bộ…" : "Đồng bộ"}
+                {busy ? "Syncing…" : "Sync"}
               </button>
             </>
           )}
@@ -398,17 +398,17 @@ export function GoogleCalendarSyncResult({
 
   /** Nhóm số liệu phía kéo về (Google → METANOIA). */
   const pulled = [
-    { label: "Mới", value: result.added },
-    { label: "Cập nhật", value: result.updated },
-    { label: "Huỷ", value: result.cancelled },
+    { label: "Added", value: result.added },
+    { label: "Updated", value: result.updated },
+    { label: "Cancelled", value: result.cancelled },
   ];
 
   /** Nhóm số liệu phía đẩy lên (METANOIA → Google). */
   const pushed = [
-    { label: "Tạo mới", value: pushedCreated },
-    { label: "Cập nhật", value: pushedUpdated },
-    { label: "Xoá", value: pushedDeleted },
-    { label: "Lỗi", value: pushFailed },
+    { label: "Created", value: pushedCreated },
+    { label: "Updated", value: pushedUpdated },
+    { label: "Deleted", value: pushedDeleted },
+    { label: "Errors", value: pushFailed },
   ];
 
   /**
@@ -435,8 +435,8 @@ export function GoogleCalendarSyncResult({
       ? new Date(result.rangeToUtc).toLocaleString()
       : null;
     if (from && to) return `${from} → ${to}`;
-    if (from) return `từ ${from}`;
-    if (to) return `đến ${to}`;
+    if (from) return `from ${from}`;
+    if (to) return `to ${to}`;
     return null;
   })();
 
@@ -447,22 +447,22 @@ export function GoogleCalendarSyncResult({
         {result.direction && (
           <span className="gcs-meta-chip">
             {result.direction === "FromGoogle"
-              ? "Từ Google về"
+              ? "From Google"
               : result.direction === "ToGoogle"
-                ? "Từ METANOIA lên"
-                : "Cả hai chiều"}
+                ? "To Google"
+                : "Both ways"}
           </span>
         )}
         {result.mode && (
           <span className="gcs-meta-chip">
-            {result.mode === "Range" ? "Theo khoảng ngày" : "Chỉ phần thay đổi"}
+            {result.mode === "Range" ? "By date range" : "Changes only"}
           </span>
         )}
         {rangeText && <span className="gcs-meta-chip gcs-meta-chip--muted">{rangeText}</span>}
       </div>
 
       <div className="gcs-result-group">
-        <p className="gcs-result-title">Từ Google về</p>
+        <p className="gcs-result-title">From Google</p>
         <div className="gcs-result-stats">
           {pulled.map((s) => (
             <div key={s.label} className="gcs-stat">
@@ -474,12 +474,12 @@ export function GoogleCalendarSyncResult({
       </div>
 
       <div className="gcs-result-group">
-        <p className="gcs-result-title">Từ METANOIA lên</p>
+        <p className="gcs-result-title">To Google</p>
         <div className="gcs-result-stats">
           {pushed.map((s) => (
             <div
               key={s.label}
-              className={`gcs-stat${s.label === "Lỗi" && s.value > 0 ? " gcs-stat--bad" : ""}`}
+              className={`gcs-stat${s.label === "Errors" && s.value > 0 ? " gcs-stat--bad" : ""}`}
             >
               <span className="gcs-stat-value">{s.value}</span>
               <span className="gcs-stat-label">{s.label}</span>
@@ -493,10 +493,11 @@ export function GoogleCalendarSyncResult({
         <p className="gcs-note">
           <span className="material-symbols-outlined">info</span>
           <span>
-            Không có khung giờ nào được đẩy lên. Chỉ các khung giờ ở trạng
-            thái <strong>Đã duyệt</strong>, <strong>Đến giờ</strong>,{" "}
-            <strong>Đang làm</strong> hoặc <strong>Quá giờ</strong> mới được
-            đẩy — các khung còn <strong>Chờ duyệt</strong> sẽ không được đẩy.
+            No time blocks were pushed. Only blocks in{" "}
+            <strong>Approved</strong>, <strong>Due</strong>,{" "}
+            <strong>In Progress</strong> or <strong>Overrun</strong> status can
+            be pushed — blocks still <strong>Pending approval</strong> are
+            skipped.
           </span>
         </p>
       )}
@@ -505,7 +506,7 @@ export function GoogleCalendarSyncResult({
         <p className="gcs-warn" role="alert">
           <span className="material-symbols-outlined">warning</span>
           <span>
-            Một số slot chưa đồng bộ được, thử lại sau.
+            Some slots couldn't be synced. Please try again later.
             {pushErrors.length > 0 && (
               <span className="gcs-warn-list">
                 {pushErrors.map((err, i) => (

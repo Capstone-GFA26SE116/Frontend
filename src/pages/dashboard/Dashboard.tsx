@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import { useStaggeredMount } from "../../hooks/useStaggeredMount";
@@ -66,7 +66,7 @@ interface FocusSlot {
 
 /* ---------- Calendar helpers ---------- */
 
-const TZ = "vi-VN";
+const TZ = "en-GB";
 
 /** Số ngày còn lại từ hôm nay tới deadline (âm = quá hạn); null nếu không parse được. */
 function daysUntil(iso: string): number | null {
@@ -268,7 +268,7 @@ function itemToSlot(item: CalendarItemDto, now: Date): FocusSlot | null {  const
   const desc =
     item.explanation?.trim() ||
     descParts.join(" · ") ||
-    "Khối thời gian tập trung từ lịch của bạn.";
+    "A focus block from your schedule.";
 
   // Status dựa trên mốc thời gian + trạng thái task
   const statusLower = (item.status ?? "").toLowerCase();
@@ -372,7 +372,7 @@ function withUpNext(slots: FocusSlot[], nowMs: number): FocusSlot[] {
  *  2) Top 3 Minimalist Key Metrics (energy peak, K_bias, today).
  *  3) Main grid 8/4 (65% / 35%):
  *      - Left  (8/12): Today's recommended schedule (timeline).
- *      - Right (4/12): Quick Task Drawer (input + upcoming + AI tip).
+ *      - Right (4/12): Deadline radar + AI tip.
  *
  * Class prefix `.dash-*`. Render bên trong <SiteLayout /> để có header/footer
  * chuẩn + nav active "Trang chủ".
@@ -380,10 +380,6 @@ function withUpNext(slots: FocusSlot[], nowMs: number): FocusSlot[] {
 export function DashboardPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  // Scratch pad: task user gõ nhanh ở ô quick capture (chỉ tồn tại trong
-  // phiên hiện tại — BE chưa có endpoint "inbox" nên chưa lưu được).
-  const [quickTask, setQuickTask] = useState("");
-  const [captured, setCaptured] = useState<{ id: string; title: string }[]>([]);
   // Tháng đang xem ở mini calendar (rail trái).
   const [monthAnchor, setMonthAnchor] = useState<Date>(() => new Date());
   // Số khối thời gian theo ngày trong tháng đang xem: key `YYYY-MM-DD`.
@@ -425,8 +421,6 @@ export function DashboardPage() {
   const slotsAnim = useStaggeredMount(90, 220, focusSlots.length);
   // Stagger cho các dòng deadline radar (mỗi dòng +80ms), chạy lại khi list đổi.
   const radarAnim = useStaggeredMount(80, 260, radar.length);
-  // Stagger cho các task đã capture (mỗi task +80ms).
-  const capturedAnim = useStaggeredMount(80, 260, captured.length);
 
   function showToast(text: string, icon: string = "check_circle") {
     setToast({ visible: true, text, icon });
@@ -443,7 +437,7 @@ export function DashboardPage() {
    * Tách riêng khỏi `loadTodaySchedule` vì `loadTodaySchedule` setState
    * **đồng bộ** ở đầu → không được gọi trực tiếp trong `useEffect`
    * (react-hooks/set-state-in-effect). Effect dùng hàm này (setState chỉ
-   * chạy sau `await`), còn nút "Thử lại" dùng `loadTodaySchedule`.
+   * chạy sau `await`), còn nút "Retry" dùng `loadTodaySchedule`.
    */
   const fetchTodaySlots = useCallback(async () => {
     // Khoảng [00:00 hôm nay, 00:00 ngày mai) theo local time.
@@ -691,15 +685,6 @@ export function DashboardPage() {
     return () => window.clearInterval(id);
   }, []);
 
-  function handleQuickAdd(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const v = quickTask.trim();
-    if (!v) return;
-    setQuickTask("");
-    setCaptured((prev) => [{ id: `c${Date.now()}`, title: v }, ...prev]);
-    showToast(`Captured "${v.length > 28 ? v.slice(0, 28) + "…" : v}"`);
-  }
-
   /**
    * Mở hộp thoại đồng bộ Google Calendar.
    *
@@ -736,7 +721,7 @@ export function DashboardPage() {
         res.status === 401 || res.status === 400 || res.status === 404;
       if (notConnected && res.status !== 400) {
         showToast(
-          "Google Calendar chưa được liên kết. Kết nối ở trang Schedule.",
+          "Google Calendar isn't linked yet. Connect it on the Schedule page.",
           "error",
         );
         setSyncOpen(false);
@@ -745,12 +730,14 @@ export function DashboardPage() {
       // 409 `GOOGLE_RECONNECT_REQUIRED` → gợi ý kết nối lại (hook set cờ).
       if (res.status === 409 && res.errorCode === "GOOGLE_RECONNECT_REQUIRED") {
         setSyncError(
-          "Kết nối Google Calendar đã hết hạn hoặc bị thu hồi. Hãy kết nối lại Google Calendar rồi thử đồng bộ lần nữa.",
+          "Your Google Calendar connection expired or was revoked. Reconnect Google Calendar and try syncing again.",
         );
         return;
       }
       if (res.status === 502) {
-        setSyncError("Google Calendar đang lỗi hoặc mất mạng. Vui lòng thử lại sau.");
+        setSyncError(
+          "Google Calendar is having trouble or the connection dropped. Please try again later.",
+        );
         return;
       }
       // Lỗi khác (VD `to` trước `from`) → giữ hộp thoại mở để user sửa.
@@ -767,29 +754,24 @@ export function DashboardPage() {
 
     if (pushFailed > 0) {
       showToast(
-        `Đồng bộ xong nhưng có lỗi: ${pushFailed} slot chưa đẩy được, thử lại sau.`,
+        `Sync finished with errors: ${pushFailed} slots couldn't be pushed. Try again later.`,
         "error",
       );
     } else {
-      const parts = [`+${added} mới`, `${updated} cập nhật`, `${cancelled} huỷ`];
-      if (pushed > 0) parts.push(`${pushed} đẩy lên`);
-      showToast(`Đã đồng bộ: ${parts.join(" · ")}`, "sync_done");
+      const parts = [
+        `${added} added`,
+        `${updated} updated`,
+        `${cancelled} cancelled`,
+      ];
+      if (pushed > 0) parts.push(`${pushed} pushed`);
+      showToast(`Synced: ${parts.join(" · ")}`, "sync_done");
     }
     // Slot có thể đổi giờ sau khi sync → nạp lại timeline hôm nay.
     void loadTodaySchedule();
   }
 
-  function handleQuickAddFocus() {
-    const el = document.getElementById("dash-quick-input");
-    if (el) {
-      el.focus({ preventScroll: true });
-      el.classList.add("dash-input--ring");
-      window.setTimeout(() => el.classList.remove("dash-input--ring"), 1000);
-    }
-  }
-
   // Take the first whitespace-separated name part for the greeting
-  // (e.g. "Chào <First> 👋") with a safe fallback when name is null.
+  // (e.g. "Hi <First> 👋") with a safe fallback when name is null.
   const firstName = (user?.name ?? "there").trim().split(/\s+/)[0];
 
   /* ---------- Số liệu phái sinh cho welcome bar + metrics ---------- */
@@ -889,22 +871,22 @@ export function DashboardPage() {
             <Link
               to="/briefing"
               className="dash-btn dash-btn--ghost"
-              title="AI tổng hợp task ưu tiên, task thiếu thời gian và khung giờ tập trung hôm nay"
+              title="AI summary of your priority tasks, tasks missing time and today's focus windows"
             >
               <span className="material-symbols-outlined dash-btn-icon">
                 auto_awesome
               </span>
-              <span>Briefing hôm nay</span>
+              <span>Today's briefing</span>
             </Link>
             <button
               type="button"
               onClick={handleSync}
-              className="dash-btn dash-btn--ghost"
+              className="dash-btn dash-btn--primary"
               disabled={syncing}
               title={
                 googleConnected
-                  ? "Đồng bộ 2 chiều với Google Calendar"
-                  : "Chưa liên kết — kết nối ở trang Schedule & Tasks"
+                  ? "Two-way sync with Google Calendar"
+                  : "Not linked yet — connect it on the Schedule & Tasks page"
               }
             >
               <span
@@ -916,16 +898,6 @@ export function DashboardPage() {
                 sync
               </span>
               <span>{googleConnected ? "Sync Google Calendar" : "Google Calendar"}</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleQuickAddFocus}
-              className="dash-btn dash-btn--primary"
-            >
-              <span className="material-symbols-outlined dash-btn-icon">
-                add
-              </span>
-              <span>Quick add task</span>
             </button>
           </div>
         </section>
@@ -1093,7 +1065,7 @@ export function DashboardPage() {
               aria-valuenow={donePercent}
               aria-valuemin={0}
               aria-valuemax={100}
-              aria-label="Phần thời gian đã hoàn thành trong ngày"
+              aria-label="Completed time today"
             >
               <div
                 className="dash-progress-fill"
@@ -1104,7 +1076,7 @@ export function DashboardPage() {
         </section>
 
         {/* ================= Rail trái: mini calendar + summary ================= */}
-        <aside className="dash-rail" aria-label="Lịch tháng">
+        <aside className="dash-rail" aria-label="Month calendar">
           <div className="dash-rail-block dash-rail-cal">
             <div className="dash-rail-cal-head">
               <button
@@ -1115,7 +1087,7 @@ export function DashboardPage() {
                     (d) => new Date(d.getFullYear(), d.getMonth() - 1, 1),
                   )
                 }
-                aria-label="Tháng trước"
+                aria-label="Previous month"
               >
                 <span className="material-symbols-outlined">chevron_left</span>
               </button>
@@ -1128,7 +1100,7 @@ export function DashboardPage() {
                     (d) => new Date(d.getFullYear(), d.getMonth() + 1, 1),
                   )
                 }
-                aria-label="Tháng sau"
+                aria-label="Next month"
               >
                 <span className="material-symbols-outlined">chevron_right</span>
               </button>
@@ -1162,11 +1134,11 @@ export function DashboardPage() {
                     onClick={() => navigate("/schedule")}
                     title={
                       d.count > 0
-                        ? `${d.count} khối thời gian`
-                        : "Không có lịch"
+                        ? `${d.count} time blocks`
+                        : "Nothing scheduled"
                     }
                     aria-label={`${d.date.getDate()}${
-                      d.count > 0 ? `, ${d.count} khối` : ""
+                      d.count > 0 ? `, ${d.count} blocks` : ""
                     }`}
                   >
                     <span className="dash-rail-cal-day-num">
@@ -1185,28 +1157,28 @@ export function DashboardPage() {
               className="dash-rail-cal-foot"
             >
               <span>
-                {daysWithSlots} ngày có lịch tháng này
+                {daysWithSlots} days with scheduled blocks this month
               </span>
               <span className="material-symbols-outlined">arrow_forward</span>
             </Link>
           </div>
 
           <div className="dash-rail-block">
-            <h3 className="dash-rail-title">Hôm nay</h3>
+            <h3 className="dash-rail-title">Today</h3>
             <div className="dash-rail-stat">
-              <span className="dash-rail-stat-label">Hoàn thành</span>
+              <span className="dash-rail-stat-label">Completed</span>
               <span className="dash-rail-stat-value">
                 {doneSlots}/{totalSlots}
               </span>
             </div>
             <div className="dash-rail-stat">
-              <span className="dash-rail-stat-label">Thời gian focus</span>
+              <span className="dash-rail-stat-label">Focus time</span>
               <span className="dash-rail-stat-value">
                 {fmtMinutes(doneMinutes)}
               </span>
             </div>
             <div className="dash-rail-stat">
-              <span className="dash-rail-stat-label">Kế tiếp</span>
+              <span className="dash-rail-stat-label">Next up</span>
               <span className="dash-rail-stat-value">
                 {nextSlot ? nextSlot.start : "—"}
               </span>
@@ -1235,7 +1207,7 @@ export function DashboardPage() {
                   <span className="material-symbols-outlined dash-slots-state-icon">
                     progress_activity
                   </span>
-                  <span>Đang tải lịch hôm nay…</span>
+                  <span>Loading today's schedule…</span>
                 </div>
               )}
 
@@ -1250,7 +1222,7 @@ export function DashboardPage() {
                     className="dash-slots-state-retry"
                     onClick={() => void loadTodaySchedule()}
                   >
-                    Thử lại
+                    Retry
                   </button>
                 </div>
               )}
@@ -1264,11 +1236,11 @@ export function DashboardPage() {
                     event_available
                   </span>
                   <h3 className="dash-empty-title">
-                    Chưa có khối thời gian nào hôm nay
+                    No time blocks scheduled today
                   </h3>
                   <p className="dash-empty-text">
-                    AI có thể xếp lịch cho bạn trong vài giây — chọn project
-                    trong Copilot, đề xuất khung giờ rồi duyệt là chạy.
+                    AI can schedule for you in a few seconds — pick a project in
+                    Copilot, suggest time slots, then approve and you're done.
                   </p>
                   <div className="dash-empty-actions">
                     <Link
@@ -1278,7 +1250,7 @@ export function DashboardPage() {
                       <span className="material-symbols-outlined dash-btn-icon">
                         auto_awesome
                       </span>
-                      <span>Đề xuất lịch bằng AI</span>
+                      <span>Plan with AI</span>
                     </Link>
                     <Link
                       to="/schedule"
@@ -1287,7 +1259,7 @@ export function DashboardPage() {
                       <span className="material-symbols-outlined dash-btn-icon">
                         calendar_month
                       </span>
-                      <span>Mở Schedule</span>
+                      <span>Open Schedule</span>
                     </Link>
                   </div>
                 </div>
@@ -1316,7 +1288,7 @@ export function DashboardPage() {
             </div>
           </div>
 
-          {/* Right column: Quick capture + Deadline radar + AI tip */}
+          {/* Right column: Deadline radar + AI tip */}
           <aside className="dash-col-right">
             <div className="dash-col-head">
               <div className="dash-col-head-left">
@@ -1330,52 +1302,13 @@ export function DashboardPage() {
               )}
             </div>
 
-            {/* Quick capture — ghi nhanh việc cần làm */}
-            <form className="dash-input-form" onSubmit={handleQuickAdd}>
-              <input
-                id="dash-quick-input"
-                type="text"
-                value={quickTask}
-                onChange={(e) => setQuickTask(e.target.value)}
-                placeholder="Capture a task and press Enter…"
-                className="dash-input"
-              />
-              <button
-                type="submit"
-                aria-label="Save quickly"
-                className="dash-input-submit"
-              >
-                <span className="material-symbols-outlined">
-                  keyboard_return
-                </span>
-              </button>
-            </form>
-
-            {captured.length > 0 && (
-              <div className="dash-captured">
-                {captured.map((c, i) => (
-                  <div
-                    key={`${capturedAnim.bumpKey}-${c.id}`}
-                    className={
-                      "dash-captured-item" +
-                      (capturedAnim.mounted ? " dash-captured-item--in" : "")
-                    }
-                    style={capturedAnim.getDelay(i)}
-                  >
-                    <span className="dash-captured-dot" aria-hidden="true" />
-                    <span className="dash-captured-title">{c.title}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
             <div className="dash-radar">
               {radarLoading && (
                 <div className="dash-radar-state">
                   <span className="material-symbols-outlined dash-radar-state-icon">
                     progress_activity
                   </span>
-                  <span>Đang tải dự án…</span>
+                  <span>Loading projects…</span>
                 </div>
               )}
 
@@ -1384,9 +1317,9 @@ export function DashboardPage() {
                   <span className="material-symbols-outlined dash-radar-state-icon">
                     event_busy
                   </span>
-                  <span>Chưa có dự án nào sắp tới hạn.</span>
+                  <span>No projects are due soon.</span>
                   <Link to="/projects" className="dash-link-primary">
-                    <span>Mở Projects</span>
+                    <span>Open Projects</span>
                     <span className="material-symbols-outlined">arrow_forward</span>
                   </Link>
                 </div>
@@ -1419,8 +1352,8 @@ export function DashboardPage() {
                 </div>
                 <p className="dash-tip-text">
                   {focusSlots.length > 0
-                    ? "Khung giờ tốt nhất hôm nay nằm trong các block đang chạy — ưu tiên deep work trước 16:30."
-                    : "Chưa có lịch hôm nay. Mở Copilot để AI xếp hộ bạn theo deadline gần nhất."}
+                    ? "Your best time today falls inside the blocks that are running — prioritise deep work before 16:30."
+                    : "Nothing scheduled today. Open Copilot and let AI plan around your nearest deadline."}
                 </p>
               </div>
             </div>
@@ -1433,8 +1366,8 @@ export function DashboardPage() {
         type="button"
         className="dash-fab"
         onClick={() => navigate("/copilot")}
-        aria-label="Mở AI Copilot"
-        title="Mở AI Copilot"
+        aria-label="Open AI Copilot"
+        title="Open AI Copilot"
       >
         <span className="dash-fab-glow" aria-hidden="true" />
         <span
@@ -1677,7 +1610,7 @@ function RadarRow({
         aria-valuenow={item.progress}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-label={`Tiến độ ${item.name}`}
+        aria-label={`Progress for ${item.name}`}
       >
         <div
           className="dash-radar-bar-fill"

@@ -9,6 +9,7 @@ import {
   type ImportPreviewProjectDto,
   type ImportPreviewResponseDto,
 } from "../../lib/api-client";
+import { ExcelPlanImport } from "./ExcelPlanImport";
 import "./project-import.css";
 
 /* ===========================================================
@@ -66,6 +67,13 @@ function fmtBytes(bytes: number): string {
 }
 
 export function ProjectImportPage() {
+  const [briefMode, setBriefMode] = useState(false);
+  return briefMode
+    ? <BriefProjectImport onSwitch={() => setBriefMode(false)} />
+    : <ExcelPlanImport onSwitch={() => setBriefMode(true)} />;
+}
+
+function BriefProjectImport({ onSwitch }: { onSwitch: () => void }) {
   const navigate = useNavigate();
   const [toasts, toast] = useCenterToast();
 
@@ -199,6 +207,8 @@ export function ProjectImportPage() {
       language,
       projects: kept.map((e) => ({
         name: e.name.trim(),
+        brief: e.brief ?? "",
+        source: e.source,
         description: e.description?.trim() || null,
         deadline: e.deadline || null,
       })),
@@ -260,6 +270,9 @@ export function ProjectImportPage() {
             File xlsx, csv, pdf, docx, txt hoặc md (tối đa 20 MB). AI đọc ra
             danh sách dự án để bạn xem trước, sửa hoặc bỏ bớt trước khi tạo.
           </p>
+          <button type="button" className="pim-btn pim-btn--ghost" onClick={onSwitch} disabled={previewing || importing}>
+            Nhập kế hoạch Excel
+          </button>
         </header>
 
         {error && (

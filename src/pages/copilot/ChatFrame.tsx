@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  type EditedProjectMilestone,
   type ProjectChatMessageDto,
   type ProjectDraftDto,
   type ProjectDraftMilestoneDto,
@@ -47,6 +48,15 @@ export interface PendingFile {
 }
 
 export interface ChatFrameProps {
+  companion?: {
+    sampleTask?: string;
+    onSampleTask?: () => void;
+    latestDraftId?: string;
+    documentCount: number;
+    documentPicker?: ReactNode;
+    panel?: ReactNode;
+    navigation?: ReactNode;
+  };
   /** Tên dự án (header). */
   projectName: string;
   /** Trạng thái màn hình → quyết định bước sáng + nhãn nút xanh. */
@@ -70,7 +80,7 @@ export interface ChatFrameProps {
   /** Bấm "Áp dụng & xếp lịch". */
   onApplyAndSchedule: (messageId: string) => void;
   /** Bấm "Chỉ áp dụng". */
-  onApplyOnly: (messageId: string) => void;
+  onApplyOnly: (messageId: string, edits?: EditedProjectMilestone[]) => void;
   /** Bấm "Tạo task cố định" ở phần reminders của thẻ kế hoạch. */
   onCreateFixedTask: (reminder: string) => void;
   /** Mở màn đề xuất lịch. */
@@ -111,10 +121,12 @@ export function ChatFrame(props: ChatFrameProps) {
     planLocked,
     aiError,
     onRetry,
+    companion,
   } = props;
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const [mode, setMode] = useState<"discuss" | "plan">("discuss");
   const navigate = useNavigate();
 
@@ -131,7 +143,7 @@ export function ChatFrame(props: ChatFrameProps) {
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     // Enter = gửi · Shift+Enter = xuống dòng
-    if (e.key === "Enter" && !e.shiftKey) {
+      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       onSend();
     }
@@ -140,7 +152,7 @@ export function ChatFrame(props: ChatFrameProps) {
   function handlePickFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const picked = Array.from(e.target.files ?? []);
     e.target.value = "";
-    const room = MAX_FILES_PER_MESSAGE - files.length;
+    const room = MAX_FILES_PER_MESSAGE - files.length - (companion?.documentCount ?? 0);
     const accepted = picked
       .filter((f) => f.size <= MAX_FILE_BYTES)
       .slice(0, Math.max(0, room))
@@ -152,7 +164,9 @@ export function ChatFrame(props: ChatFrameProps) {
     onFilesChange(files.filter((f) => f.id !== id));
   }
 
-  const canSend = draftText.trim().length > 0 || files.length > 0;
+  const canSend = draftText.trim().length > 0 || files.length > 0 || !!companion?.documentCount;
+  const latestReply = messages.findLast((m) => m.role === "assistant");
+  const canDraft = messages.length > 0 && latestReply?.notes?.ready_to_plan !== false;
 
   return (
     <section className="aic-mid" aria-label="Khung chat">
@@ -162,7 +176,7 @@ export function ChatFrame(props: ChatFrameProps) {
           <h1 className="aic-mid__title">{projectName}</h1>
 
           {/* Công tắc chế độ AI */}
-          <div
+          {companion ? companion.navigation : <div
             className="aic-mode"
             role="group"
             aria-label="Chế độ AI"
@@ -187,15 +201,15 @@ export function ChatFrame(props: ChatFrameProps) {
             >
               Lên kế hoạch
             </button>
-          </div>
+          </div>}
         </div>
 
         {/* Thanh 3 bước */}
-        <ol className="aic-steps" aria-label="Tiến trình">
+        {!companion && <ol className="aic-steps" aria-label="Tiến trình">
           <Step n={1} label="Bàn bạc" active={step === 1} done={step > 1} />
           <Step n={2} label="Kế hoạch" active={step === 2} done={step > 2} />
           <Step n={3} label="Xếp lịch" active={step === 3} done={false} />
-        </ol>
+        </ol>}
       </header>
 
       {/* ============ Tin nhắn ============ */}
@@ -203,11 +217,20 @@ export function ChatFrame(props: ChatFrameProps) {
         {messages.length === 0 && !waiting && (
           <div className="aic-mid__empty">
             <span className="material-symbols-outlined">forum</span>
-            <p>
+            {companion ? <>
+              <p>Bạn muốn mình giúp gì cho dự án này?</p>
+              <div className="pc-actions">
+                <button type="button" className="aic-btn aic-btn--ghost" disabled={planLocked} onClick={() => {
+                  onDraftTextChange("Giúp tui lên danh sách việc cần làm trước khi bàn giao.");
+                  inputRef.current?.focus();
+                }}>Giúp tui lên danh sách việc cần làm trước khi bàn giao.</button>
+                {companion.sampleTask && <button type="button" className="aic-btn aic-btn--ghost" onClick={companion.onSampleTask}>Giúp tui chia nhỏ việc {companion.sampleTask}.</button>}
+              </div>
+            </> : <p>
               Dán brief của khách vào đây, hoặc bấm{" "}
               <strong>Lên kế hoạch</strong> để AI tự chia dự án thành cột
               mốc, việc và việc con.
-            </p>
+            </p>}
           </div>
         )}
 
@@ -219,8 +242,16 @@ export function ChatFrame(props: ChatFrameProps) {
             onApplyAndSchedule={onApplyAndSchedule}
             onApplyOnly={onApplyOnly}
             onCreateFixedTask={onCreateFixedTask}
+            companion={!!companion}
+            activeDraft={companion?.latestDraftId === m.id}
           />
         ))}
+        {companion && canDraft && !planLocked && <div className="pc-actions">
+          <button type="button" className="aic-btn aic-btn--secondary" disabled={busy} onClick={onPlan}>
+            {hasDraft ? "Cập nhật bản nháp" : "Tạo bản nháp việc mới"}
+          </button>
+        </div>}
+        {companion?.panel}
 
         {/* AI đang trả lời */}
         {waiting && (
@@ -308,6 +339,7 @@ export function ChatFrame(props: ChatFrameProps) {
           </div>
         ) : (
           <>
+            {companion?.documentPicker}
             {files.length > 0 && (
               <div className="aic-files">
                 {files.map((f) => (
@@ -342,7 +374,7 @@ export function ChatFrame(props: ChatFrameProps) {
                 type="button"
                 className="aic-compose__attach"
                 onClick={() => fileRef.current?.click()}
-                disabled={busy || files.length >= MAX_FILES_PER_MESSAGE}
+                disabled={busy || files.length + (companion?.documentCount ?? 0) >= MAX_FILES_PER_MESSAGE}
                 aria-label="Đính kèm file"
                 title="Đính kèm file (pdf, docx, txt, md, xlsx, csv)"
               >
@@ -353,9 +385,10 @@ export function ChatFrame(props: ChatFrameProps) {
                 Nhập tin nhắn
               </label>
               <textarea
+                ref={inputRef}
                 id="aic-msg-input"
                 className="aic-compose__input"
-                placeholder="Hỏi, bàn bạc, nhờ viết email… (Enter để gửi)"
+                placeholder={companion ? "Nhắn về dự án…" : "Hỏi, bàn bạc, nhờ viết email… (Enter để gửi)"}
                 value={draftText}
                 onChange={(e) => onDraftTextChange(e.target.value)}
                 onKeyDown={handleKeyDown}
@@ -372,7 +405,7 @@ export function ChatFrame(props: ChatFrameProps) {
                 Gửi
               </button>
 
-              <button
+              {!companion && <button
                 type="button"
                 className="aic-btn aic-btn--primary aic-compose__plan"
                 onClick={onPlan}
@@ -383,13 +416,13 @@ export function ChatFrame(props: ChatFrameProps) {
                   : hasDraft
                     ? "Cập nhật kế hoạch"
                     : "Lên kế hoạch"}
-              </button>
+              </button>}
             </div>
 
-            <p className="aic-compose__hint">
+            {!companion && <p className="aic-compose__hint">
               Ô chat = trò chuyện · Nút xanh = lập kế hoạch từ cả cuộc trò
               chuyện · 1 lượt AI mỗi lần gửi
-            </p>
+            </p>}
           </>
         )}
       </div>
@@ -431,18 +464,23 @@ function MessageRow({
   onApplyAndSchedule,
   onApplyOnly,
   onCreateFixedTask,
+  companion,
+  activeDraft,
 }: {
   msg: ProjectChatMessageDto;
   applying: boolean;
   onApplyAndSchedule: (messageId: string) => void;
-  onApplyOnly: (messageId: string) => void;
+  onApplyOnly: (messageId: string, edits?: EditedProjectMilestone[]) => void;
   onCreateFixedTask: (reminder: string) => void;
+  companion: boolean;
+  activeDraft: boolean;
 }) {
   if (msg.role === "user") {
     return (
       <div className="aic-msg aic-msg--user">
         <div className="aic-bubble aic-bubble--user">
           {msg.content && <p className="aic-bubble__text">{msg.content}</p>}
+          {msg.attachments?.map((file) => <p key={file.id}>{file.name}</p>)}
         </div>
       </div>
     );
@@ -459,6 +497,8 @@ function MessageRow({
           onApplyAndSchedule={onApplyAndSchedule}
           onApplyOnly={onApplyOnly}
           onCreateFixedTask={onCreateFixedTask}
+          companion={companion}
+          activeDraft={activeDraft}
         />
       </div>
     );
@@ -472,9 +512,9 @@ function MessageRow({
       <div className="aic-bubble aic-bubble--ai">
         {msg.content && <p className="aic-bubble__text">{msg.content}</p>}
 
-        {notes && <NotesCard notes={notes} />}
+        {!companion && notes && <NotesCard notes={notes} />}
 
-        {msg.ready_to_plan && (
+        {!companion && msg.ready_to_plan && (
           <span className="aic-chip aic-chip--ready">
             <span className="material-symbols-outlined">check_circle</span>
             Sẵn sàng lên kế hoạch
@@ -500,7 +540,7 @@ function MessageRow({
 /* ===========================================================
  * Checklist notes của tin "bàn bạc"
  * =========================================================== */
-function NotesCard({
+export function NotesCard({
   notes,
 }: {
   notes: {
@@ -565,13 +605,17 @@ function DraftCard({
   onApplyAndSchedule,
   onApplyOnly,
   onCreateFixedTask,
+  companion,
+  activeDraft,
 }: {
   draft: ProjectDraftDto;
   messageId: string;
   applying: boolean;
   onApplyAndSchedule: (messageId: string) => void;
-  onApplyOnly: (messageId: string) => void;
+  onApplyOnly: (messageId: string, edits?: EditedProjectMilestone[]) => void;
   onCreateFixedTask: (reminder: string) => void;
+  companion: boolean;
+  activeDraft: boolean;
 }) {
   const [openTaskKey, setOpenTaskKey] = useState<string | null>(null);
 
@@ -584,6 +628,22 @@ function DraftCard({
     0,
   );
   const applied = draft.applied === true;
+  const [excluded, setExcluded] = useState<Set<string>>(() => new Set());
+  const selected = milestones.flatMap((milestone, index) => {
+    const tasks = milestone.tasks.filter((_, taskIndex) => !excluded.has(`${index}:${taskIndex}`));
+    return tasks.length ? [{
+      key: milestone.key,
+      title: milestone.title,
+      deadline: milestone.deadline,
+      tasks: tasks.map((task) => ({
+        key: task.key,
+        title: task.title,
+        domain_id: task.domain.id,
+        estimated_minutes: task.estimated_minutes,
+      })),
+    }] : [];
+  });
+  const selectedCount = selected.reduce((count, milestone) => count + milestone.tasks.length, 0);
 
   return (
     <div className={`aic-draft${applied ? " aic-draft--applied" : ""}`}>
@@ -606,7 +666,28 @@ function DraftCard({
 
       {/* Cột mốc */}
       <div className="aic-draft__body">
-        {milestones.map((m) => (
+        {companion ? milestones.map((milestone, index) => (
+          <div className="pc-draft-group" key={milestone.key ?? index}>
+            <strong>{milestone.title}</strong>
+            {milestone.tasks.map((task, taskIndex) => {
+              const key = `${index}:${taskIndex}`;
+              return <div className="pc-draft-item" key={key}>
+                {!applied && activeDraft && <input type="checkbox" checked={!excluded.has(key)}
+                  disabled={applying} aria-label={`Lưu ${task.title}`} onChange={() => setExcluded((previous) => {
+                    const next = new Set(previous);
+                    if (next.has(key)) next.delete(key);
+                    else next.add(key);
+                    return next;
+                  })} />}
+                <details>
+                  <summary>{task.title}</summary>
+                  <p>{fmtDurationWords(task.estimated_minutes)}{task.reason && ` · ${task.reason}`}</p>
+                  {!!task.subtasks?.length && <ul>{task.subtasks.map((subtask, i) => <li key={i}>{subtask.title} · {fmtDurationWords(subtask.estimated_minutes)}</li>)}</ul>}
+                </details>
+              </div>;
+            })}
+          </div>
+        )) : milestones.map((m) => (
           <DraftMilestone
             key={m.key ?? m.title}
             milestone={m}
@@ -669,6 +750,7 @@ function DraftCard({
               <button
                 type="button"
                 className="aic-btn aic-btn--tiny"
+                hidden={companion}
                 onClick={() => onCreateFixedTask(r)}
                 title="Tạo task cố định"
               >
@@ -680,7 +762,15 @@ function DraftCard({
       )}
 
       {/* Nút áp dụng */}
-      {!applied && (
+      {!applied && companion && activeDraft && (
+        <div className="aic-draft__actions">
+          <button type="button" className="aic-btn aic-btn--primary" disabled={applying || selectedCount === 0}
+            onClick={() => onApplyOnly(messageId, selected)}>
+            {applying ? "Đang lưu…" : `Lưu ${selectedCount} việc vào dự án`}
+          </button>
+        </div>
+      )}
+      {!applied && !companion && (
         <div className="aic-draft__actions">
           <button
             type="button"

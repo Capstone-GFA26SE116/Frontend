@@ -28,6 +28,76 @@
   background: var(--aic-canvas);
 }
 
+.pc-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pc-panel {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--aic-border);
+  border-radius: var(--aic-r-lg);
+  background: var(--aic-card);
+  overflow-wrap: anywhere;
+}
+
+.pc-panel p,
+.pc-draft-item p {
+  margin: 0;
+  white-space: pre-line;
+}
+
+.pc-panel-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.pc-panel textarea {
+  flex: 1;
+  min-width: 160px;
+}
+
+.pc-slot-list, .pc-draft-group {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.pc-draft-group + .pc-draft-group {
+  margin-top: 10px;
+}
+
+.pc-draft-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.pc-planning-summary, .pc-documents, .pc-task-actions {
+  padding: 7px;
+}
+
+.pc-documents label {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  overflow-wrap: anywhere;
+}
+
+.pc-task-actions {
+  padding-inline-start: 24px;
+}
+
+.pc-mobile-nav {
+  display: none;
+}
+
 /* ---- Ẩn nút "Dự án mới" / "Nhập từ Excel" (đã ẩn qua prop) ---- */
 
 /* ---- Trạng thái rỗng của lịch sử chat: dùng chữ nhỏ hơn ---- */
@@ -59,6 +129,18 @@
   .aic--embedded .aic-right {
     display: none;
   }
+  .aic--embedded .pc-mobile-nav {
+    display: flex;
+  }
+  .aic--embedded[data-pane="work"] {
+    grid-template-columns: minmax(0, 1fr) minmax(230px, 38%);
+  }
+  .aic--embedded[data-pane="work"] .aic-left {
+    display: none;
+  }
+  .aic--embedded[data-pane="work"] .aic-right {
+    display: flex;
+  }
 }
 
 @media (max-width: 900px) {
@@ -72,5 +154,12 @@
   }
   .aic--embedded .aic-mid {
     min-height: 70vh;
+  }
+  .aic--embedded[data-pane="work"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .aic--embedded[data-pane="history"] .aic-left {
+    display: flex;
+    grid-row: 2;
   }
 }

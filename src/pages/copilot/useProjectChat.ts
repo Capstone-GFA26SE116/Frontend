@@ -42,6 +42,7 @@ import {
   updateSubtask,
   updateTask,
   type AppliedScheduleDto,
+  type EditedProjectMilestone,
   type MilestoneDto,
   type ProjectChatDto,
   type ProjectChatMessageDto,
@@ -74,7 +75,7 @@ export interface ProjectChatHandlers {
   onSend: () => void;
   onPlan: () => void;
   onApplyAndSchedule: (messageId: string) => void;
-  onApplyOnly: (messageId: string) => void;
+  onApplyOnly: (messageId: string, milestones?: EditedProjectMilestone[]) => void;
   onCreateFixedTask: (reminder: string) => void;
   onRetry: () => void;
   onRetrySchedule: () => void;
@@ -104,6 +105,8 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
   const [messages, setMessages] = useState<ProjectChatMessageDto[]>([]);
   const [draftText, setDraftText] = useState("");
   const [files, setFiles] = useState<PendingFile[]>([]);
+  const [documentIds, setDocumentIds] = useState<string[]>([]);
+  const lastSendMode = useRef<"discuss" | "plan">("discuss");
   const [waiting, setWaiting] = useState(false);
   const [applying, setApplying] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
@@ -336,35 +339,36 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
     }
   }
 
-  /** Gửi tin nhắn (mode `discuss`). */
-  async function handleSend() {
-    if (!conversationId) return;
+  async function sendTurn(mode: "discuss" | "plan") {
+    if (!conversationId || waiting || applying) return;
     const text = draftText.trim();
-    if (!text && files.length === 0) return;
-
-    setDraftText("");
-    const sentFiles = files;
-    setFiles([]);
+    if (mode === "discuss" && !text && !files.length && !documentIds.length) return;
+    lastSendMode.current = mode;
     setWaiting(true);
     setAiError(null);
+    setAiErrorKind(null);
 
     const res =
-      sentFiles.length > 0
+      files.length > 0
         ? await sendProjectChatMessageWithFiles(
             conversationId,
             text,
-            sentFiles.map((f) => f.file),
+            files.map((f) => f.file),
+            mode,
+            documentIds,
           )
-        : await sendProjectChatMessage(conversationId, text, "discuss");
+        : await sendProjectChatMessage(conversationId, text, mode, documentIds);
 
     setWaiting(false);
 
     if (!res.ok) {
       handleChatError(res);
-      setDraftText(text);
       return;
     }
 
+    setDraftText("");
+    setFiles([]);
+    setDocumentIds([]);
     setMessages((prev) => [
       ...prev,
       res.data.user_message,
@@ -373,37 +377,14 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
     if (res.data.ai_message.draft) {
       setLatestDraft(res.data.ai_message.draft);
     }
-  }
-
-  /** Bấm nút xanh — lập kế hoạch từ cả cuộc trò chuyện. */
-  async function handlePlan() {
-    if (!conversationId) return;
-    setWaiting(true);
-    setAiError(null);
-
-    const res = await sendProjectChatMessage(conversationId, "", "plan");
-    setWaiting(false);
-
-    if (!res.ok) {
-      handleChatError(res);
-      return;
-    }
-    setMessages((prev) => [
-      ...prev,
-      res.data.user_message,
-      res.data.ai_message,
-    ]);
-    if (res.data.ai_message.draft) {
-      setLatestDraft(res.data.ai_message.draft);
-    }
+    setRefreshKey((k) => k + 1);
   }
 
   /** Thử lại sau lỗi AI. */
   function handleRetry() {
     setAiError(null);
     setAiErrorKind(null);
-    if (draftText.trim()) void handleSend();
-    else void handlePlan();
+    void sendTurn(lastSendMode.current);
   }
 
   /**
@@ -526,12 +507,12 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
     toast.success("Đã xếp lịch thành công.");
   }
 
-  async function handleApplyOnly(messageId: string) {
-    if (!conversationId) return;
+  async function handleApplyOnly(messageId: string, edits?: EditedProjectMilestone[]) {
+    if (!conversationId || waiting || applying) return;
     setApplying(true);
     setScheduleError(null);
 
-    const res = await applyProjectBreakdown(conversationId, messageId);
+    const res = await applyProjectBreakdown(conversationId, messageId, edits);
     setApplying(false);
 
     if (!res.ok) {
@@ -564,7 +545,8 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
     if (projectId) void loadTree(projectId);
     await openConversationById(conversationId);
     setRefreshKey((k) => k + 1);
-    toast.success("Đã áp dụng thành công.");
+    const count = res.data.milestones.flatMap((m) => m.tasks).length;
+    toast.success(count ? `Đã lưu ${count} việc vào dự án.` : "Không có việc mới để lưu.");
   }
 
   /* ===========================================================
@@ -793,10 +775,10 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
   }, [latestDraft]);
 
   const handlers: ProjectChatHandlers = {
-    onSend: () => void handleSend(),
-    onPlan: () => void handlePlan(),
+    onSend: () => void sendTurn("discuss"),
+    onPlan: () => void sendTurn("plan"),
     onApplyAndSchedule: (id) => void handleApplyAndSchedule(id),
-    onApplyOnly: (id) => void handleApplyOnly(id),
+    onApplyOnly: (id, edits) => void handleApplyOnly(id, edits),
     onCreateFixedTask: (reminder) => void handleCreateFixedTask(reminder),
     onRetry: handleRetry,
     onRetrySchedule: () => void handleRetrySchedule(),
@@ -821,6 +803,8 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
     setDraftText,
     files,
     setFiles,
+    documentIds,
+    setDocumentIds,
     waiting,
     applying,
     aiError,
@@ -863,5 +847,6 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
     handlers,
     openProject,
     openConversationById,
+    reloadProjectTree: () => projectId ? loadTree(projectId) : Promise.resolve(),
   };
 }

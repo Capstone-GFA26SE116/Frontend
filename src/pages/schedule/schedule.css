@@ -142,6 +142,17 @@
   border-color: var(--sch-primary);
   color: var(--sch-primary);
 }
+/* Nút "xóa" nhưng chưa xóa (mở pop-up xác nhận) */
+.sch-btn--danger-ghost {
+  border-color: rgba(255, 107, 107, 0.45);
+  color: var(--sch-error);
+  background: transparent;
+}
+.sch-btn--danger-ghost:hover {
+  border-color: var(--sch-error);
+  color: var(--sch-error);
+  background: var(--sch-error-soft);
+}
 
 .sch-icon-btn {
   display: inline-flex;
@@ -1818,11 +1829,14 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  /* Giới hạn theo chiều cao ribbon (28px) */
+  /* `border-box` để padding + border nằm trong 28px (không tràn dải ribbon). */
+  box-sizing: border-box;
   height: 28px;
   max-height: 100%;
-  /* `max-width: 100%` để KHÔNG tràn ra ngoài dải ribbon khi project
-     dài hơn số cột ngày nó chiếm. */
+  /*
+   * `max-width: 100%` để KHÔNG tràn ra ngoài dải ribbon khi project dài hơn
+   * số cột ngày nó chiếm.
+   */
   max-width: 100%;
   min-width: 0;
   width: fit-content;
@@ -2959,6 +2973,86 @@
   margin-top: 24px;
   padding-top: 16px;
   border-top: 1px solid var(--sch-line);
+}
+
+/* ===========================================================
+ * Confirm dialog — xác nhận trước khi xóa slot
+ * =========================================================== */
+.sch-modal--confirm {
+  z-index: 60;
+}
+.sch-modal__panel--confirm {
+  /* `border-box` để `max-width` tính cả padding → panel 420px thật. */
+  box-sizing: border-box;
+  max-width: 420px;
+  padding: 24px;
+}
+.sch-confirm__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.sch-confirm__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: var(--sch-r-sm);
+  border: 1px solid currentColor;
+}
+.sch-confirm__icon--danger {
+  color: var(--sch-error);
+  background: var(--sch-error-soft);
+}
+.sch-confirm__icon--warn {
+  color: var(--sch-primary);
+  background: var(--sch-primary-soft);
+}
+.sch-confirm__title {
+  margin: 0;
+  font-family: var(--sch-sans);
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+  color: var(--sch-text);
+}
+.sch-confirm__message {
+  margin: 0 0 20px;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--sch-text-2);
+}
+.sch-confirm__message strong {
+  color: var(--sch-text);
+  font-weight: 600;
+}
+.sch-confirm__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.sch-confirm__confirm {
+  border-color: var(--sch-bright);
+  background: var(--sch-high);
+  color: var(--sch-text);
+}
+.sch-confirm__confirm:hover:not(:disabled) {
+  border-color: var(--sch-text-2);
+  background: var(--sch-highest);
+}
+.sch-confirm__confirm--danger {
+  border-color: rgba(255, 107, 107, 0.5);
+  background: var(--sch-error-soft);
+  color: var(--sch-error);
+}
+.sch-confirm__confirm--danger:hover:not(:disabled) {
+  border-color: var(--sch-error);
+  background: rgba(255, 107, 107, 0.18);
 }
 
 /* ===========================================================

@@ -41,6 +41,7 @@ import {
   type TaskDto,
 } from "../../lib/api-client";
 import { describeSlotOverlapError } from "../../components/schedule/slot-overlap";
+import { ScheduleConfirmDialog } from "../../components/schedule/ScheduleConfirmDialog";
 import "./schedule.css";
 
 /* ===========================================================
@@ -1954,22 +1955,59 @@ export function SchedulePage() {
 
   /* ----- Schedule Slot handlers ----- */
 
-  /** Xóa 1 schedule slot từ modal detail */
-  const handleDeleteScheduleSlot = useCallback(
-    async (slotId: string) => {
-      const res = await deleteScheduleSlot(slotId);
-      if (res.ok) {
-        setScheduleSlots((prev) => prev.filter((s) => s.id !== slotId));
-        toast.success(
-          "Schedule deleted",
-          "The time block was removed from your calendar.",
-        );
-      } else {
-        toast.error("Couldn't delete the schedule", res.error);
-      }
+  /**
+   * Slot đang chờ xác nhận xóa.
+   *
+   * Yêu cầu: bấm xóa → hiện pop-up xác nhận (tiếng Anh) → CHỈ khi bấm
+   * "Delete slot" mới gọi API xóa.
+   */
+  const [slotPendingDelete, setSlotPendingDelete] = useState<{
+    slotId: string;
+    title: string;
+    isGroup: boolean;
+  } | null>(null);
+  /** Đang gọi API xóa → khoá nút xác nhận. */
+  const [deletingSlot, setDeletingSlot] = useState(false);
+
+  /** Mở pop-up xác nhận xóa (chưa xóa). */
+  const requestDeleteSlot = useCallback(
+    (slotId: string, title: string, isGroup = false) => {
+      setSlotPendingDelete({ slotId, title, isGroup });
     },
-    [toast]
+    []
   );
+
+  /** Bỏ qua xóa → đóng pop-up. */
+  const cancelDeleteSlot = useCallback(() => {
+    if (deletingSlot) return;
+    setSlotPendingDelete(null);
+  }, [deletingSlot]);
+
+  /** Xác nhận xóa → mới gọi API. */
+  const confirmDeleteSlot = useCallback(async () => {
+    if (!slotPendingDelete) return;
+    setDeletingSlot(true);
+    const res = await deleteScheduleSlot(slotPendingDelete.slotId);
+    setDeletingSlot(false);
+    setSlotPendingDelete(null);
+    if (res.ok) {
+      setScheduleSlots((prev) => prev.filter((s) => s.id !== slotPendingDelete.slotId));
+      toast.success(
+        "Slot deleted",
+        slotPendingDelete.isGroup
+          ? "The group work block was removed from your calendar."
+          : "The time block was removed from your calendar.",
+      );
+      /*
+       * ⚠️ Ở `/schedule`, lịch được dựng từ `GET /api/calendar`
+       * (`calendarItems`) chứ không phải từ `scheduleSlots` → phải refetch để
+       * slot vừa xóa biến mất khỏi lịch.
+       */
+      void loadData();
+    } else {
+      toast.error("Couldn't delete the slot", res.error);
+    }
+  }, [slotPendingDelete, toast, loadData]);
 
   /* Filtered events: simple status filter for now */
   const visibleWeek = useMemo(() => {
@@ -2261,7 +2299,7 @@ export function SchedulePage() {
           event={selected}
           subtasks={subtasks}
           onClose={() => setSelected(null)}
-          onDelete={handleDeleteScheduleSlot}
+          onDelete={requestDeleteSlot}
           onSlotChanged={() => void loadData()}
         />
       )}
@@ -2275,6 +2313,24 @@ export function SchedulePage() {
           onSelectEvent={(e) => setSelected(e)}
         />
       )}
+
+      {/*
+        Pop-up xác nhận XÓA slot — chỉ khi bấm "Delete slot" mới gọi API.
+        Song song với modal detail (modal cha vẫn mở) nên z-index cao hơn.
+      */}
+      <ScheduleConfirmDialog
+        open={slotPendingDelete !== null}
+        title="Delete this slot?"
+        message={
+          slotPendingDelete
+            ? `The time block for "${slotPendingDelete.title}" will be removed from your calendar. This action cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete slot"
+        busy={deletingSlot}
+        onConfirm={() => void confirmDeleteSlot()}
+        onCancel={cancelDeleteSlot}
+      />
 
       {proposalOpen && (
         <ProposalDialog
@@ -2981,6 +3037,9 @@ function TaskCard({
    * `SlotFocusActions` gọi `POST /api/focus/start` với `taskId` — mà slot
    * nhóm có `taskId = null` → không dùng được. Việc nhóm bấm giờ ở trang
    * `/my-group-tasks` và trang chi tiết nhóm.
+   *
+   * ⚠️ KHÔNG hiện nút xóa ở trên lịch — chỉ xóa được từ modal detail
+   * (nút "Remove Slot"). Lịch phải gọn, không rối mắt.
    */
   if (!isSlot) return card;
 
@@ -3078,6 +3137,10 @@ function EventChip({
     </button>
   );
 
+  /*
+   * ⚠️ KHÔNG hiện nút xóa ở trên lịch — chỉ xóa được từ modal detail
+   * (nút "Remove Slot"). Lịch phải gọn, không rối mắt.
+   */
   if (!isSlot) return chip;
 
   /*
@@ -3492,6 +3555,10 @@ function CellPopover({
                               }
                               compact
                             />
+                            {/*
+                              ⚠️ KHÔNG hiện nút xóa ở popover — chỉ xóa được
+                              từ modal detail (nút "Remove Slot").
+                            */}
                           </div>
                         </li>
                       ))}
@@ -3568,7 +3635,13 @@ function EventDetailModal({
   event: CalEvent;
   subtasks: SubtaskDto[];
   onClose: () => void;
-  onDelete?: (slotId: string) => void;
+  /**
+   * Mở pop-up xác nhận xóa slot.
+   *
+   * ⚠️ KHÔNG xóa trực tiếp ở đây — component cha sẽ mở dialog xác nhận
+   * (tiếng Anh) rồi mới gọi API.
+   */
+  onDelete?: (slotId: string, title: string, isGroup?: boolean) => void;
   /** Refetch lịch sau khi slot đổi trạng thái (Start/Stop). */
   onSlotChanged?: () => void;
 }) {
@@ -3600,7 +3673,20 @@ function EventDetailModal({
         : [],
     [event.taskId, subtasks],
   );
-  const showSubtaskColumn = event.taskId != null && (isAggregate || taskSubtasks.length > 0);
+  const showSubtaskColumn =
+    event.taskId != null
+      ? isAggregate || taskSubtasks.length > 0
+      : /* Slot việc nhóm: không có task cá nhân → dùng danh sách slot của nhóm. */
+        isAggregate && (event.aggregatedEvents?.length ?? 0) > 0;
+
+  /**
+   * Id của slot cần xóa.
+   *
+   * ⚠️ Ở `/schedule` dữ liệu đến từ `GET /api/calendar` (`calendarItems`) —
+   * path này KHÔNG set `event.scheduleSlot` (chỉ có `scheduleSlotId`).
+   * Nếu chỉ dựa vào `event.scheduleSlot` thì nút xóa không bao giờ hiện.
+   */
+  const slotId = slot?.id ?? event.scheduleSlotId ?? null;
 
   /** Danh sách "khối" hiển thị: chuẩn hoá cả slot lẫn subtask về shape giống nhau. */
   const detailBlocks = useMemo<
@@ -3611,6 +3697,14 @@ function EventDetailModal({
       start: Date;
       end: Date;
       slot?: ScheduleSlotDto;
+      /**
+       * Id của slot (dùng để xóa).
+       *
+       * ⚠️ Ở `/schedule`, dữ liệu đến từ `GET /api/calendar` → event không
+       * có `scheduleSlot` (chỉ có `scheduleSlotId`). Nếu chỉ dựa vào
+       * `slot` thì nút xóa không bao giờ hiện ở trang lịch tổng.
+       */
+      slotId?: string | null;
       subtaskId?: string;
     }>
   >(() => {
@@ -3628,6 +3722,7 @@ function EventDetailModal({
             start: e.start,
             end: e.end,
             slot: e.scheduleSlot,
+            slotId: e.scheduleSlot?.id ?? e.scheduleSlotId ?? null,
             subtaskId: e.subTaskId ?? undefined,
           };
         });
@@ -3897,16 +3992,22 @@ function EventDetailModal({
                               style={{ marginLeft: `${offsetPct}%`, width: `${pct}%` }}
                             />
                           </div>
-                          {b.slot && onDelete && (
+                          {/*
+                            Nút xóa slot của khối này.
+                            ⚠️ Chỉ mở pop-up xác nhận — KHÔNG xóa ngay.
+                            Modal cha vẫn mở để user đổi ý.
+                          */}
+                          {(b.slot || b.slotId) && onDelete && (
                             <button
                               type="button"
                               className="sch-aggregate__del"
-                              onClick={() => {
-                                onDelete(b.slot!.id);
-                                onClose();
-                              }}
+                              title="Delete this slot"
+                              aria-label={`Delete slot: ${b.title}`}
+                              onClick={() =>
+                                onDelete(b.slotId ?? b.slot!.id, b.title, isGroupSlot)
+                              }
                             >
-                              <span className="material-symbols-outlined sch-icon-16">close</span>
+                              <span className="material-symbols-outlined sch-icon-16">delete</span>
                             </button>
                           )}
                         </div>
@@ -3921,14 +4022,18 @@ function EventDetailModal({
 
         <div className="sch-modal__actions">
           <button type="button" className="sch-btn sch-btn--soft" onClick={onClose}>Close</button>
-          {isSlotEvent && !isAggregate && slot && onDelete && (
+          {/*
+            Nút "Remove Slot".
+            ⚠️ Chỉ hiện khi có `slotId` — ở `/schedule` dữ liệu đến từ
+            `GET /api/calendar` nên `event.scheduleSlot` có thể null nhưng
+            `event.scheduleSlotId` vẫn có.
+            ⚠️ Chỉ mở pop-up xác nhận — KHÔNG xóa ngay.
+          */}
+          {isSlotEvent && !isAggregate && slotId && onDelete && (
             <button
               type="button"
-              className="sch-btn sch-btn--error"
-              onClick={() => {
-                onDelete(slot.id);
-                onClose();
-              }}
+              className="sch-btn sch-btn--soft sch-btn--danger-ghost"
+              onClick={() => onDelete(slotId, event.title, isGroupSlot)}
             >
               <span className="material-symbols-outlined sch-icon-18">delete</span>
               Remove Slot

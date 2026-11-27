@@ -1,6 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { getProject, listMilestones, listSubtasks, listTasks, type MilestoneDto, type ProjectDto, type SubtaskDto, type TaskDto } from "../../lib/api-client";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { CenterToasts, useCenterToast } from "../../components/Toast";
+import {
+  deleteMilestone,
+  deleteSubtask,
+  deleteTask,
+  getProject,
+  listClients,
+  listMilestones,
+  listSubtasks,
+  listTasks,
+  updateProject,
+  type ClientDto,
+  type MilestoneDto,
+  type ProjectDto,
+  type SubtaskDto,
+  type TaskDto,
+} from "../../lib/api-client";
 import "./project-detail.css";
 
 /**
@@ -46,6 +63,29 @@ export function ProjectDetailPage() {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   /** Milestone đang mở rộng trong phần preview (chỉ 1 phase tại 1 thời điểm). */
   const [expandedMilestone, setExpandedMilestone] = useState<string | null>(null);
+
+  /* ---------- Xóa milestone / task (có hộp thoại xác nhận tiếng Anh) ---------- */
+  /**
+   * Đối tượng đang chờ xác nhận xóa.
+   *
+   * ⚠️ KHÔNG xóa ngay khi bấm nút thùng — chỉ mở hộp thoại xác nhận.
+   * Chỉ khi bấm "Delete" trong hộp thoại mới gọi API.
+   */
+  const [pendingDelete, setPendingDelete] = useState<
+    | { kind: "milestone"; id: string; title: string }
+    | { kind: "task"; id: string; title: string }
+    | { kind: "subtask"; id: string; title: string; taskId: string }
+    | null
+  >(null);
+  /** Đang gọi API xóa → khoá nút xác nhận. */
+  const [deleting, setDeleting] = useState(false);
+  const [toasts, toast] = useCenterToast();
+
+  /* ---------- Sửa project (PUT /api/projects/{projectId}) ---------- */
+  /** Mở/đóng modal sửa project. */
+  const [editOpen, setEditOpen] = useState(false);
+  /** Danh sách client để chọn trong modal sửa. */
+  const [clients, setClients] = useState<ClientDto[]>([]);
 
   // Lazy-load subtasks for a task (only first time)
   function loadSubtasks(taskId: string) {
@@ -147,6 +187,142 @@ export function ProjectDetailPage() {
     navigate("/projects");
   }
 
+  /**
+   * Mở modal sửa project.
+   *
+   * Load danh sách client (để chọn `clientId`) — lỗi load client không
+   * block, user vẫn sửa được các trường khác.
+   */
+  function openEditProject() {
+    setEditOpen(true);
+    void listClients().then((res) => {
+      if (res.ok) setClients(res.data);
+    });
+  }
+
+  /**
+   * Bấm nút thùng → CHỈ mở hộp thoại xác nhận (tiếng Anh), chưa xóa.
+   */
+  function requestDeleteMilestone(milestone: MilestoneDto) {
+    setPendingDelete({ kind: "milestone", id: milestone.id, title: milestone.name });
+  }
+
+  function requestDeleteTask(task: TaskDto) {
+    setPendingDelete({ kind: "task", id: task.id, title: task.title });
+  }
+
+  /**
+   * Bấm nút thùng ở 1 subtask → CHỈ mở hộp thoại xác nhận.
+   *
+   * `taskId` cần để biết subtask nằm trong task nào (để cập nhật list
+   * subtask đã load của task đó sau khi xóa).
+   */
+  function requestDeleteSubtask(subtask: SubtaskDto, taskId: string) {
+    setPendingDelete({
+      kind: "subtask",
+      id: subtask.id,
+      title: subtask.title,
+      taskId,
+    });
+  }
+
+  /**
+   * Xác nhận xóa → gọi API.
+   *
+   * Milestone: BE trả 409 `MILESTONE_HAS_OPEN_TASKS` nếu còn task dở →
+   * lúc đó ta báo lỗi bằng toast (người dùng có thể xóa task trước).
+   */
+  async function confirmDelete() {
+    if (!pendingDelete || deleting) return;
+    setDeleting(true);
+    const target = pendingDelete;
+
+    if (target.kind === "milestone") {
+      const res = await deleteMilestone(target.id);
+      setDeleting(false);
+      if (!res.ok) {
+        toast.error("Couldn't delete the milestone", res.error ?? undefined);
+        return;
+      }
+      setMilestones((prev) => prev.filter((m) => m.id !== target.id));
+      // Task thuộc milestone đã xóa → bỏ liên kết (milestoneId = null).
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.milestoneId === target.id ? { ...t, milestoneId: null } : t,
+        ),
+      );
+      toast.success("Milestone deleted", target.title);
+      setPendingDelete(null);
+      return;
+    }
+
+    if (target.kind === "subtask") {
+      const res = await deleteSubtask(target.id);
+      setDeleting(false);
+      if (!res.ok) {
+        toast.error("Couldn't delete the subtask", res.error ?? undefined);
+        return;
+      }
+      // Xoá khỏi list subtask đã load của task cha.
+      setSubtasksMap((prev) => {
+        const list = prev[target.taskId];
+        if (!list) return prev;
+        return {
+          ...prev,
+          [target.taskId]: list.filter((s) => s.id !== target.id),
+        };
+      });
+      toast.success("Subtask deleted", target.title);
+      setPendingDelete(null);
+      return;
+    }
+
+    const res = await deleteTask(target.id);
+    setDeleting(false);
+    if (!res.ok) {
+      toast.error("Couldn't delete the task", res.error ?? undefined);
+      return;
+    }
+    setTasks((prev) => prev.filter((t) => t.id !== target.id));
+    // Dọn subtask đã load của task vừa xóa.
+    setSubtasksMap((prev) => {
+      const next = { ...prev };
+      delete next[target.id];
+      return next;
+    });
+    setExpandedTasks((prev) => {
+      const next = new Set(prev);
+      next.delete(target.id);
+      return next;
+    });
+    toast.success("Task deleted", target.title);
+    setPendingDelete(null);
+  }
+
+  /**
+   * Lưu thông tin project đã sửa → `PUT /api/projects/{projectId}`.
+   *
+   * ⚠️ BE dùng **partial update**: chỉ gửi trường thực sự thay đổi.
+   * `clientId` rỗng → gửi `null` (dự án nội bộ, không thuộc client nào).
+   */
+  async function handleSaveProject(body: {
+    name: string;
+    description: string;
+    startDate: string;
+    deadline: string;
+    clientId: string | null;
+  }) {
+    if (!project) return;
+    const res = await updateProject(project.id, body);
+    if (!res.ok) {
+      toast.error("Couldn't update the project", res.error ?? undefined);
+      return;
+    }
+    setProject(res.data);
+    setEditOpen(false);
+    toast.success("Project updated", res.data.name);
+  }
+
   async function retry() {
     if (!projectId) return;
     setError(null);
@@ -193,7 +369,8 @@ export function ProjectDetailPage() {
               <button
                 type="button"
                 className="pd-btn pd-btn--ghost"
-                title="Edit project (coming soon)"
+                onClick={openEditProject}
+                title="Edit project"
               >
                 <span className="material-symbols-outlined pd-btn-icon">edit</span>
                 <span>Edit</span>
@@ -284,9 +461,53 @@ export function ProjectDetailPage() {
             onToggleTask={toggleTaskExpand}
             expandedMilestone={expandedMilestone}
             onToggleMilestone={toggleMilestoneExpand}
+            onDeleteMilestone={requestDeleteMilestone}
+            onDeleteTask={requestDeleteTask}
+            onDeleteSubtask={requestDeleteSubtask}
           />
         )}
+
+        {/* Modal sửa project — PUT /api/projects/{projectId} */}
+        {editOpen && project && (
+          <EditProjectModal
+            project={project}
+            clients={clients}
+            onClose={() => setEditOpen(false)}
+            onSave={handleSaveProject}
+          />
+        )}
+
+        {/* Hộp thoại xác nhận xóa (tiếng Anh) */}
+        <ConfirmDialog
+          open={pendingDelete !== null}
+          busy={deleting}
+          title={
+            pendingDelete?.kind === "milestone"
+              ? `Delete milestone "${pendingDelete.title}"?`
+              : pendingDelete?.kind === "task"
+                ? `Delete task "${pendingDelete.title}"?`
+                : pendingDelete?.kind === "subtask"
+                  ? `Delete subtask "${pendingDelete.title}"?`
+                  : ""
+          }
+          message={
+            pendingDelete?.kind === "milestone"
+              ? "Tasks in this milestone will become unassigned. This action cannot be undone."
+              : pendingDelete?.kind === "task"
+                ? "This will also delete all subtasks and scheduled slots inside. This action cannot be undone."
+                : pendingDelete?.kind === "subtask"
+                  ? "This will also remove its scheduled slot from the calendar. This action cannot be undone."
+                  : ""
+          }
+          confirmLabel="Delete"
+          onConfirm={() => void confirmDelete()}
+          onCancel={() => {
+            if (!deleting) setPendingDelete(null);
+          }}
+        />
       </div>
+
+      <CenterToasts toasts={toasts} onDismiss={toast.dismiss} />
     </section>
   );
 }
@@ -308,6 +529,9 @@ function ProjectDetailBody({
   onToggleTask,
   expandedMilestone,
   onToggleMilestone,
+  onDeleteMilestone,
+  onDeleteTask,
+  onDeleteSubtask,
 }: {
   project: ProjectDto;
   tasks: TaskDto[];
@@ -322,6 +546,12 @@ function ProjectDetailBody({
   onToggleTask: (taskId: string) => void;
   expandedMilestone: string | null;
   onToggleMilestone: (milestoneId: string) => void;
+  /** Mở hộp thoại xác nhận xóa milestone (tiếng Anh). */
+  onDeleteMilestone: (milestone: MilestoneDto) => void;
+  /** Mở hộp thoại xác nhận xóa task (tiếng Anh). */
+  onDeleteTask: (task: TaskDto) => void;
+  /** Mở hộp thoại xác nhận xóa subtask (tiếng Anh). */
+  onDeleteSubtask: (subtask: SubtaskDto, taskId: string) => void;
 }) {
   const timeline = useMemo(
     () => computeTimeline(project.startDate, project.deadline),
@@ -425,6 +655,8 @@ function ProjectDetailBody({
         tasksError={tasksError}
         expandedMilestone={expandedMilestone}
         onToggleMilestone={onToggleMilestone}
+        onDeleteMilestone={onDeleteMilestone}
+        onDeleteTask={onDeleteTask}
       />
 
       {/* Tasks preview */}
@@ -437,6 +669,8 @@ function ProjectDetailBody({
         subtasksLoading={subtasksLoading}
         expandedTasks={expandedTasks}
         onToggleTask={onToggleTask}
+        onDeleteTask={onDeleteTask}
+        onDeleteSubtask={onDeleteSubtask}
       />
 
       {/* Direction cards */}
@@ -606,6 +840,8 @@ function MilestonesPreview({
   tasksError,
   expandedMilestone,
   onToggleMilestone,
+  onDeleteMilestone,
+  onDeleteTask,
 }: {
   projectId: string;
   milestones: MilestoneDto[];
@@ -616,6 +852,10 @@ function MilestonesPreview({
   tasksError: string | null;
   expandedMilestone: string | null;
   onToggleMilestone: (milestoneId: string) => void;
+  /** Mở hộp thoại xác nhận xóa milestone (tiếng Anh). */
+  onDeleteMilestone: (milestone: MilestoneDto) => void;
+  /** Mở hộp thoại xác nhận xóa task (tiếng Anh). */
+  onDeleteTask: (task: TaskDto) => void;
 }) {
   const stats = useMemo(() => {
     const total = milestones.length;
@@ -771,6 +1011,22 @@ function MilestonesPreview({
                   <span className="material-symbols-outlined">account_tree</span>
                 </button>
 
+                {/*
+                  Nút xóa milestone.
+                  ⚠️ Chỉ MỞ hộp thoại xác nhận — không xóa ngay.
+                  Component cha (`ProjectDetailPage`) gọi API sau khi user
+                  bấm "Delete" trong hộp thoại.
+                */}
+                <button
+                  type="button"
+                  className="pd-del-btn"
+                  onClick={() => onDeleteMilestone(m)}
+                  title={`Delete milestone "${m.name}"`}
+                  aria-label={`Delete milestone ${m.name}`}
+                >
+                  <span className="material-symbols-outlined">delete</span>
+                </button>
+
                 {/* Task của phase */}
                 {isOpen && (
                   <div className="pd-ms-tasks">
@@ -797,7 +1053,11 @@ function MilestonesPreview({
                     ) : (
                       <ul className="pd-ms-task-list">
                         {msTasks.map((t) => (
-                          <MilestoneTaskLine key={t.id} task={t} />
+                          <MilestoneTaskLine
+                            key={t.id}
+                            task={t}
+                            onDelete={onDeleteTask}
+                          />
                         ))}
                       </ul>
                     )}
@@ -815,7 +1075,14 @@ function MilestonesPreview({
 /* ============================================================
  * MilestoneTaskLine — 1 dòng task gọn trong phase (không subtask)
  * ============================================================ */
-function MilestoneTaskLine({ task }: { task: TaskDto }) {
+function MilestoneTaskLine({
+  task,
+  onDelete,
+}: {
+  task: TaskDto;
+  /** Mở hộp thoại xác nhận xóa task (tiếng Anh). */
+  onDelete: (task: TaskDto) => void;
+}) {
   const status = (task.status ?? "").toLowerCase();
   const isDone = status === "done" || status === "completed";
   const isActive = status === "inprogress" || status === "in_progress";
@@ -875,6 +1142,19 @@ function MilestoneTaskLine({ task }: { task: TaskDto }) {
       <span className={`pd-ms-task-status pd-ms-task-status--${tone}`}>
         {prettyTaskStatusLocal(task.status)}
       </span>
+      {/*
+        Nút xóa task.
+        ⚠️ Chỉ MỞ hộp thoại xác nhận — không xóa ngay.
+      */}
+      <button
+        type="button"
+        className="pd-del-btn pd-del-btn--sm"
+        onClick={() => onDelete(task)}
+        title={`Delete task "${task.title}"`}
+        aria-label={`Delete task ${task.title}`}
+      >
+        <span className="material-symbols-outlined">delete</span>
+      </button>
     </li>
   );
 }
@@ -893,6 +1173,8 @@ function TasksPreview({
   subtasksLoading,
   expandedTasks,
   onToggleTask,
+  onDeleteTask,
+  onDeleteSubtask,
 }: {
   projectId: string;
   tasks: TaskDto[];
@@ -902,6 +1184,10 @@ function TasksPreview({
   subtasksLoading: Record<string, boolean>;
   expandedTasks: Set<string>;
   onToggleTask: (taskId: string) => void;
+  /** Mở hộp thoại xác nhận xóa task (tiếng Anh). */
+  onDeleteTask: (task: TaskDto) => void;
+  /** Mở hộp thoại xác nhận xóa subtask (tiếng Anh). */
+  onDeleteSubtask: (subtask: SubtaskDto, taskId: string) => void;
 }) {
   // Compute stats
   const stats = useMemo(() => {
@@ -1012,6 +1298,8 @@ function TasksPreview({
               onToggle={() => onToggleTask(t.id)}
               subtasks={subtasksMap[t.id] ?? (subtasksLoading[t.id] ? undefined : [])}
               subtasksLoading={subtasksLoading[t.id] ?? false}
+              onDelete={onDeleteTask}
+              onDeleteSubtask={onDeleteSubtask}
             />
           ))}
         </div>
@@ -1026,12 +1314,18 @@ function TaskPreviewRow({
   onToggle,
   subtasks,
   subtasksLoading,
+  onDelete,
+  onDeleteSubtask,
 }: {
   task: TaskDto;
   isExpanded: boolean;
   onToggle: () => void;
   subtasks?: SubtaskDto[];
   subtasksLoading: boolean;
+  /** Mở hộp thoại xác nhận xóa task (tiếng Anh). */
+  onDelete: (task: TaskDto) => void;
+  /** Mở hộp thoại xác nhận xóa subtask (tiếng Anh). */
+  onDeleteSubtask: (subtask: SubtaskDto, taskId: string) => void;
 }) {
   const status = (task.status ?? "").toLowerCase();
   const isDone = status === "done" || status === "completed";
@@ -1060,46 +1354,66 @@ function TaskPreviewRow({
 
   return (
     <div className={`pd-task-wrap ${isExpanded ? "pd-task-wrap--open" : ""}`}>
-      <button
-        type="button"
-        className={`pd-task ${isDone ? "pd-task--done" : ""}`}
-        onClick={onToggle}
-        aria-expanded={isExpanded}
-        aria-label={isExpanded ? "Collapse subtasks" : "Expand subtasks"}
-      >
-        <span className={dotClass} aria-hidden="true" />
-        <div className="pd-task-body">
-          <span className={`pd-task-title ${isDone ? "pd-task-title--done" : ""}`}>
-            {task.title}
-          </span>
-          <div className="pd-task-meta">
-            {task.taskType && (
-              <span className="pd-task-meta-item">{task.taskType}</span>
-            )}
-            {deadlineInfo && (
-              <span
-                className={`pd-task-meta-item pd-task-meta-item--${deadlineInfo.kind}`}
-              >
-                <span className="material-symbols-outlined">event</span>
-                {deadlineInfo.label}
-              </span>
-            )}
-            {task.estimatedMinutes > 0 && (
-              <span className="pd-task-meta-item">
-                <span className="material-symbols-outlined">schedule</span>
-                {formatMinutesCompact(task.estimatedMinutes)}
-              </span>
-            )}
-          </div>
-        </div>
-        <span className={pillClass}>{prettyTaskStatusLocal(task.status)}</span>
-        <span
-          className={`pd-task-chevron material-symbols-outlined ${isExpanded ? "pd-task-chevron--open" : ""}`}
-          aria-hidden="true"
+      {/*
+        ⚠️ Nút xóa phải là ANH em của nút expand (không lồng trong `<button>`)
+        — HTML không cho `<button>` chứa `<button>`.
+      */}
+      <div className="pd-task-row">
+        <button
+          type="button"
+          className={`pd-task ${isDone ? "pd-task--done" : ""}`}
+          onClick={onToggle}
+          aria-expanded={isExpanded}
+          aria-label={isExpanded ? "Collapse subtasks" : "Expand subtasks"}
         >
-          expand_more
-        </span>
-      </button>
+          <span className={dotClass} aria-hidden="true" />
+          <div className="pd-task-body">
+            <span className={`pd-task-title ${isDone ? "pd-task-title--done" : ""}`}>
+              {task.title}
+            </span>
+            <div className="pd-task-meta">
+              {task.taskType && (
+                <span className="pd-task-meta-item">{task.taskType}</span>
+              )}
+              {deadlineInfo && (
+                <span
+                  className={`pd-task-meta-item pd-task-meta-item--${deadlineInfo.kind}`}
+                >
+                  <span className="material-symbols-outlined">event</span>
+                  {deadlineInfo.label}
+                </span>
+              )}
+              {task.estimatedMinutes > 0 && (
+                <span className="pd-task-meta-item">
+                  <span className="material-symbols-outlined">schedule</span>
+                  {formatMinutesCompact(task.estimatedMinutes)}
+                </span>
+              )}
+            </div>
+          </div>
+          <span className={pillClass}>{prettyTaskStatusLocal(task.status)}</span>
+          <span
+            className={`pd-task-chevron material-symbols-outlined ${isExpanded ? "pd-task-chevron--open" : ""}`}
+            aria-hidden="true"
+          >
+            expand_more
+          </span>
+        </button>
+
+        {/*
+          Nút xóa task.
+          ⚠️ Chỉ MỞ hộp thoại xác nhận — không xóa ngay.
+        */}
+        <button
+          type="button"
+          className="pd-del-btn pd-del-btn--sm"
+          onClick={() => onDelete(task)}
+          title={`Delete task "${task.title}"`}
+          aria-label={`Delete task ${task.title}`}
+        >
+          <span className="material-symbols-outlined">delete</span>
+        </button>
+      </div>
 
       {isExpanded && (
         <div className="pd-subtasks" role="region" aria-label="Subtasks">
@@ -1111,7 +1425,12 @@ function TaskPreviewRow({
           ) : subtasks && subtasks.length > 0 ? (
             <ul className="pd-subtask-list">
               {subtasks.map((s) => (
-                <SubtaskPreviewRow key={s.id} subtask={s} />
+                <SubtaskPreviewRow
+                  key={s.id}
+                  subtask={s}
+                  taskId={task.id}
+                  onDelete={onDeleteSubtask}
+                />
               ))}
             </ul>
           ) : (
@@ -1126,7 +1445,17 @@ function TaskPreviewRow({
   );
 }
 
-function SubtaskPreviewRow({ subtask }: { subtask: SubtaskDto }) {
+function SubtaskPreviewRow({
+  subtask,
+  taskId,
+  onDelete,
+}: {
+  subtask: SubtaskDto;
+  /** Id của task cha (để cập nhật list sau khi xóa). */
+  taskId: string;
+  /** Mở hộp thoại xác nhận xóa subtask (tiếng Anh). */
+  onDelete: (subtask: SubtaskDto, taskId: string) => void;
+}) {
   const status = (subtask.status ?? "").toLowerCase();
   const isDone = status === "done" || status === "completed";
   return (
@@ -1161,6 +1490,19 @@ function SubtaskPreviewRow({ subtask }: { subtask: SubtaskDto }) {
       <span className={`pd-subtask-status pd-subtask-status--${status || "todo"}`}>
         {prettyTaskStatusLocal(subtask.status)}
       </span>
+      {/*
+        Nút xóa subtask.
+        ⚠️ Chỉ MỞ hộp thoại xác nhận — không xóa ngay.
+      */}
+      <button
+        type="button"
+        className="pd-del-btn pd-del-btn--sm"
+        onClick={() => onDelete(subtask, taskId)}
+        title={`Delete subtask "${subtask.title}"`}
+        aria-label={`Delete subtask ${subtask.title}`}
+      >
+        <span className="material-symbols-outlined">delete</span>
+      </button>
     </li>
   );
 }
@@ -1435,4 +1777,230 @@ function computeTimeline(startIso: string, deadlineIso: string) {
     progressPct,
     todayPct,
   };
+}
+
+/* ============================================================
+ * EditProjectModal — sửa thông tin project
+ * ------------------------------------------------------------
+ * API: PUT /api/projects/{projectId}
+ * Body: { name, description, startDate, deadline, clientId }
+ * ============================================================ */
+function EditProjectModal({
+  project,
+  clients,
+  onClose,
+  onSave,
+}: {
+  project: ProjectDto;
+  clients: ClientDto[];
+  onClose: () => void;
+  onSave: (body: {
+    name: string;
+    description: string;
+    startDate: string;
+    deadline: string;
+    clientId: string | null;
+  }) => Promise<void>;
+}) {
+  const [name, setName] = useState(project.name ?? "");
+  const [description, setDescription] = useState(project.description ?? "");
+  const [startDate, setStartDate] = useState(toDateInput(project.startDate));
+  const [deadline, setDeadline] = useState(toDateInput(project.deadline));
+  const [clientId, setClientId] = useState(project.clientId ?? "");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Đóng bằng Escape (trừ khi đang submit).
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !submitting) onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [submitting, onClose]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (submitting) return;
+    setError(null);
+
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setError("Project name is required.");
+      return;
+    }
+    if (!startDate) {
+      setError("Start date is required.");
+      return;
+    }
+    if (!deadline) {
+      setError("Deadline is required.");
+      return;
+    }
+    if (new Date(deadline) < new Date(startDate)) {
+      setError("The deadline must be on or after the start date.");
+      return;
+    }
+
+    setSubmitting(true);
+    await onSave({
+      name: trimmedName,
+      description: description.trim(),
+      startDate,
+      deadline,
+      // Client rỗng → dự án nội bộ → gửi `null`.
+      clientId: clientId ? clientId : null,
+    });
+    setSubmitting(false);
+  }
+
+  return (
+    <div
+      className="pd-modal-backdrop"
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !submitting) onClose();
+      }}
+    >
+      <div
+        className="pd-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Edit project"
+      >
+        <div className="pd-modal-head">
+          <div>
+            <span className="pd-section-eyebrow">Edit project</span>
+            <h2 className="pd-modal-title">Update project details</h2>
+          </div>
+          <button
+            type="button"
+            className="pd-icon-btn pd-icon-btn--sm"
+            onClick={onClose}
+            disabled={submitting}
+            aria-label="Close"
+          >
+            <span className="material-symbols-outlined">close</span>
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div className="pd-modal-body">
+            <label className="pd-field">
+              <span className="pd-label">Name</span>
+              <input
+                className="pd-input"
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Project name"
+                disabled={submitting}
+                autoFocus
+              />
+            </label>
+
+            <label className="pd-field">
+              <span className="pd-label">Description</span>
+              <textarea
+                className="pd-input pd-input--textarea"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Short description of the project"
+                rows={4}
+                disabled={submitting}
+              />
+            </label>
+
+            <div className="pd-field-row">
+              <label className="pd-field">
+                <span className="pd-label">Start date</span>
+                <input
+                  className="pd-input"
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  disabled={submitting}
+                />
+              </label>
+
+              <label className="pd-field">
+                <span className="pd-label">Deadline</span>
+                <input
+                  className="pd-input"
+                  type="date"
+                  value={deadline}
+                  onChange={(e) => setDeadline(e.target.value)}
+                  disabled={submitting}
+                />
+              </label>
+            </div>
+
+            <label className="pd-field">
+              <span className="pd-label">Client</span>
+              <select
+                className="pd-input"
+                value={clientId}
+                onChange={(e) => setClientId(e.target.value)}
+                disabled={submitting}
+              >
+                <option value="">— None / Internal —</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {error && (
+              <p className="pd-field-error" role="alert">
+                <span className="material-symbols-outlined">error</span>
+                {error}
+              </p>
+            )}
+          </div>
+
+          <div className="pd-modal-actions">
+            <button
+              type="button"
+              className="pd-btn pd-btn--ghost"
+              onClick={onClose}
+              disabled={submitting}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="pd-btn pd-btn--primary"
+              disabled={submitting}
+            >
+              {submitting ? (
+                <>
+                  <span className="material-symbols-outlined pd-btn-icon pd-spin">
+                    progress_activity
+                  </span>
+                  <span>Saving…</span>
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined pd-btn-icon">check</span>
+                  <span>Save changes</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Chuyển ISO date (`2026-11-27` hoặc full ISO) → format `<input type="date">`
+ * cần (`YYYY-MM-DD`).
+ */
+function toDateInput(value: string | null | undefined): string {
+  if (!value) return "";
+  const s = value.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
 }

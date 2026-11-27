@@ -1,0 +1,138 @@
+/* ===========================================================
+ * ConfirmDialog — hộp thoại xác nhận xóa (tiếng Anh)
+ * Dùng chung cho mọi màn hình (project detail, milestones, planning…).
+ * =========================================================== */
+
+.cf-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(5, 5, 5, 0.72);
+  backdrop-filter: blur(4px);
+  animation: cf-fade-in 160ms ease both;
+}
+
+.cf-dialog {
+  width: 100%;
+  max-width: 420px;
+  box-sizing: border-box;
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px solid #3d3a39;
+  background: #141414;
+  color: #f2f2f2;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  animation: cf-pop-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.cf-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.cf-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 107, 107, 0.5);
+  background: rgba(255, 107, 107, 0.12);
+  color: #ff6b6b;
+}
+.cf-icon .material-symbols-outlined {
+  font-size: 22px;
+}
+
+.cf-title {
+  margin: 0;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+  color: #fff;
+  overflow-wrap: anywhere;
+}
+
+.cf-message {
+  margin: 0 0 20px;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 21px;
+  color: #bdbdbd;
+}
+
+.cf-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.cf-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease,
+    color 160ms ease, opacity 160ms ease;
+}
+.cf-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.cf-btn--ghost {
+  background: #1a1a1a;
+  color: #f2f2f2;
+  border-color: #3d3a39;
+}
+.cf-btn--ghost:hover:not(:disabled) {
+  border-color: #00d992;
+  color: #00d992;
+}
+
+.cf-btn--danger {
+  background: #ff6b6b;
+  color: #101010;
+  border-color: #ff6b6b;
+  font-weight: 600;
+}
+.cf-btn--danger:hover:not(:disabled) {
+  background: #ff8a8a;
+  border-color: #ff8a8a;
+}
+
+@keyframes cf-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes cf-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}

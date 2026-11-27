@@ -222,13 +222,32 @@ function toEditableSubTask(st: GroupDraftSubTaskDto): EditableSubTask {
 export function findLatestDraft(
   messages: GroupChatMessageDto[],
 ): { message: GroupChatMessageDto; draft: GroupDraftDto } | null {
+  /*
+   * Ưu tiên tin mang bản nháp ĐẦY ĐỦ (có milestone) — đó là bản nháp mà
+   * Leader có thể sửa / áp dụng.
+   *
+   * ⚠️ Nếu không có tin nào có milestone (AI trả `draft` rỗng), ta vẫn trả
+   * về tin mang bản nháp cuối cùng. Lý do: `DraftCard` tự hiện thông báo
+   * "The plan came back empty." + nút "Generate plan again" — hữu ích hơn
+   * việc im lặng. Nhưng KHÔNG được dùng bản nháp rỗng làm "bản nháp mới
+   * nhất" khi vẫn còn bản nháp đầy đủ ở tin trước đó — nếu không thì bản
+   * nháp đầy đủ bị đẩy xuống dạng preview chỉ đọc và mất nút Áp dụng.
+   */
+  let emptyFallback: {
+    message: GroupChatMessageDto;
+    draft: GroupDraftDto;
+  } | null = null;
+
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
-    if (m.draft && (m.draft.milestones?.length ?? 0) > 0) {
+    if (!m.draft) continue;
+    if ((m.draft.milestones?.length ?? 0) > 0) {
       return { message: m, draft: m.draft };
     }
+    /* Bản nháp rỗng — nhớ lại để dùng làm fallback nếu không có bản đầy đủ. */
+    if (!emptyFallback) emptyFallback = { message: m, draft: m.draft };
   }
-  return null;
+  return emptyFallback;
 }
 
 /**

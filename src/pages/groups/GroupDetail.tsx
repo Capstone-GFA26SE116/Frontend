@@ -2,6 +2,7 @@
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
 } from "react";
@@ -14,7 +15,6 @@ import type { ApiErr } from "../../lib/api-client";
 import { listDomains } from "../../lib/api-client";
 import { GroupErrorDialog } from "./GroupErrorDialog";
 import { GroupInviteModal } from "./GroupInviteModal";
-import { GroupAiChatTab } from "./GroupAiChatTab";
 import { GroupScheduleSlots } from "./GroupScheduleSlots";
 import { GroupScheduleBoard } from "./GroupScheduleBoard";
 import {
@@ -130,14 +130,19 @@ import "./group-detail.css";
  * Class prefix `.gdt-*`. Tuân thủ DESIGN.md.
  * =========================================================== */
 
-/** Tab của trang. */
+/**
+ * Tab của trang.
+ *
+ * ⚠️ Không có `"ai"` — Chat AI của nhóm đã tách sang trang riêng
+ * `/groups/:groupId/ai` (layout 3 cột). Leader vào bằng nút "Chat AI"
+ * ở header của trang này.
+ */
 type TabKey =
   | "tasks"
   | "schedule"
   | "milestones"
   | "members"
-  | "activity"
-  | "ai";
+  | "activity";
 
 export function GroupDetailPage() {
   const { groupId = "" } = useParams();
@@ -279,28 +284,36 @@ export function GroupDetailPage() {
   /**
    * Thao tác thử lại cho lỗi AI tạm thời (502/503/429).
    *
-   * Được `GroupAiChatTab` đăng ký khi một request AI thất bại → hộp thoại
-   * lỗi hiện nút "Try again" thay vì bắt user tự làm lại từ đầu.
+   * Hộp thoại lỗi AI hiện nút "Try again" thay vì bắt user tự làm lại từ
+   * đầu. Được set kèm khi báo lỗi cho 1 request AI cụ thể.
    */
   const [aiRetry, setAiRetry] = useState<(() => void) | null>(null);
 
-  /** Hiện lỗi AI trong hộp thoại dùng chung (tiêu đề + message đã dịch). */
+  /**
+   * Ref tới các hàm "thử lại" để hộp thoại lỗi AI gọi lại được mà không
+   * tạo phụ thuộc vòng tròn trong `useCallback` (linter chặn self-reference).
+   */
+  const retryHandlers = useRef<{
+    openSuggestions?: (task: GroupTaskDto) => void;
+    retrySuggestions?: () => void;
+    suggestDomainChange?: (domainId: string) => void;
+    assignSuggestion?: (userId: string) => void;
+    openTimeSuggestions?: (task: GroupTaskDto) => void;
+    retryTimeSuggestions?: () => void;
+  }>({});
+
+  /**
+   * Hiện lỗi AI trong hộp thoại dùng chung (tiêu đề + message đã dịch).
+   *
+   * @param retry Thao tác thử lại (nếu lỗi tạm thời) → hiện nút "Try again".
+   */
   const showAiError = useCallback(
-    (view: GroupAiErrorView, raw?: string) => {
+    (view: GroupAiErrorView, raw?: string, retry?: () => void) => {
       setAiErrorDialog({ view, raw: raw ?? "" });
+      setAiRetry(retry ?? null);
     },
     [],
   );
-
-  /**
-   * Nhận thao tác thử lại từ `GroupAiChatTab`.
-   *
-   * Chỉ giữ khi lỗi **tạm thời** (`showRetry`) — lỗi cấu hình/gói thì
-   * không có gì để thử lại.
-   */
-  const registerAiRetry = useCallback((retry: () => void) => {
-    setAiRetry(() => retry);
-  }, []);
 
   /**
    * Đổi lỗi API thành hộp thoại dễ hiểu.
@@ -591,7 +604,9 @@ export function GroupDetailPage() {
       setSuggestLoading(false);
 
       if (!res.ok) {
-        showAiError(toGroupAiErrorView(res), res.error);
+        showAiError(toGroupAiErrorView(res), res.error, () =>
+          retryHandlers.current.openSuggestions?.(task),
+        );
         return;
       }
       setSuggestions(res.data);
@@ -609,7 +624,9 @@ export function GroupDetailPage() {
     });
     setSuggestLoading(false);
     if (!res.ok) {
-      showAiError(toGroupAiErrorView(res), res.error);
+      showAiError(toGroupAiErrorView(res), res.error, () =>
+        retryHandlers.current.retrySuggestions?.(),
+      );
       return;
     }
     setSuggestions(res.data);
@@ -634,7 +651,9 @@ export function GroupDetailPage() {
       });
       setSuggestLoading(false);
       if (!res.ok) {
-        showAiError(toGroupAiErrorView(res), res.error);
+        showAiError(toGroupAiErrorView(res), res.error, () =>
+          retryHandlers.current.suggestDomainChange?.(domainId),
+        );
         return;
       }
       setSuggestions(res.data);
@@ -670,7 +689,9 @@ export function GroupDetailPage() {
             return;
           }
         }
-        showAiError(toGroupAiErrorView(res), res.error);
+        showAiError(toGroupAiErrorView(res), res.error, () =>
+          retryHandlers.current.assignSuggestion?.(userId),
+        );
         return;
       }
 
@@ -683,6 +704,31 @@ export function GroupDetailPage() {
     },
     [suggestForTask, showAiError, toast],
   );
+
+  /*
+   * Đăng ký các hàm "thử lại" vào ref → hộp thoại lỗi AI gọi lại được mà
+   * không tạo phụ thuộc vòng tròn trong `useCallback` (linter chặn
+   * self-reference).
+   */
+  useEffect(() => {
+    retryHandlers.current.openSuggestions = (task) => {
+      void handleOpenSuggestions(task);
+    };
+    retryHandlers.current.retrySuggestions = () => {
+      void handleRetrySuggestions();
+    };
+    retryHandlers.current.suggestDomainChange = (domainId) => {
+      void handleSuggestDomainChange(domainId);
+    };
+    retryHandlers.current.assignSuggestion = (userId) => {
+      void handleAssignSuggestion(userId);
+    };
+  }, [
+    handleOpenSuggestions,
+    handleRetrySuggestions,
+    handleSuggestDomainChange,
+    handleAssignSuggestion,
+  ]);
 
   /* ---------- AI: gợi ý giờ làm việc (FR-25, spec mục 3) ---------- */
 
@@ -706,7 +752,9 @@ export function GroupDetailPage() {
       setTimeSuggestLoading(false);
 
       if (!res.ok) {
-        showAiError(toGroupAiErrorView(res), res.error);
+        showAiError(toGroupAiErrorView(res), res.error, () =>
+          retryHandlers.current.openTimeSuggestions?.(task),
+        );
         return;
       }
       setTimeSuggestions(res.data);
@@ -723,11 +771,23 @@ export function GroupDetailPage() {
     });
     setTimeSuggestLoading(false);
     if (!res.ok) {
-      showAiError(toGroupAiErrorView(res), res.error);
+      showAiError(toGroupAiErrorView(res), res.error, () =>
+        retryHandlers.current.retryTimeSuggestions?.(),
+      );
       return;
     }
     setTimeSuggestions(res.data);
   }, [timesForTask, showAiError]);
+
+  /* Đăng ký hàm thử lại cho gợi ý khung giờ vào ref (xem `retryHandlers`). */
+  useEffect(() => {
+    retryHandlers.current.openTimeSuggestions = (task) => {
+      void handleOpenTimeSuggestions(task);
+    };
+    retryHandlers.current.retryTimeSuggestions = () => {
+      void handleRetryTimeSuggestions();
+    };
+  }, [handleOpenTimeSuggestions, handleRetryTimeSuggestions]);
 
   /**
    * Lưu các khung giờ đã chọn vào lịch (Backend).
@@ -1139,6 +1199,23 @@ export function GroupDetailPage() {
           </div>
 
           <div className="gdt-header-actions">
+            {/*
+             * Chat AI của nhóm → TRANG RIÊNG (layout 3 cột: lịch sử chat ·
+             * khung chat · bản nháp plan). Bản nháp nằm cột phải nên luôn
+             * hiện ngay, không phải cuộn trong khung chat.
+             */}
+            {leader && !archived && (
+              <Link
+                to={`/groups/${groupId}/ai`}
+                className="gdt-btn gdt-btn--ghost"
+                title="Open the group AI planner"
+              >
+                <span className="material-symbols-outlined gdt-btn-icon">
+                  auto_awesome
+                </span>
+                <span>Chat AI</span>
+              </Link>
+            )}
             {leader && !archived && (
               <button
                 type="button"
@@ -1316,19 +1393,12 @@ export function GroupDetailPage() {
                 count: activity.length,
               },
               /*
-               * Tab "Chat AI" — CHỈ Leader mới thấy (spec GROUP_AI_FE.md mục 0).
-               * Member/Viewer: ẩn hẳn, gọi API vẫn bị 403.
+               * ⚠️ KHÔNG có tab "Chat AI" ở đây nữa.
+               *
+               * Chat AI của nhóm đã tách ra TRANG RIÊNG `/groups/:groupId/ai`
+               * (layout 3 cột: lịch sử chat · khung chat · bản nháp plan).
+               * Leader vào bằng nút "Chat AI" ở header.
                */
-              ...(leader
-                ? [
-                    {
-                      key: "ai" as const,
-                      label: "Chat AI",
-                      icon: "auto_awesome",
-                      count: 0,
-                    },
-                  ]
-                : []),
             ] as const
           ).map((t) => (
             <button
@@ -2279,27 +2349,12 @@ export function GroupDetailPage() {
             )}
           </section>
         )}
-
-        {/* ================= TAB: CHAT AI (Leader) ================= */}
-        {tab === "ai" && leader && (
-          <section className="gdt-panel">
-            <div className="gdt-section-head">
-              <div className="gdt-section-head-text">
-                <span className="gdt-section-eyebrow">AI planning</span>
-                <h2 className="gdt-section-title">Chat AI</h2>
-              </div>
-            </div>
-            <GroupAiChatTab
-              groupId={groupId}
-              members={members}
-              enabled={leader}
-              archived={archived}
-              onError={showAiError}
-              onRetryRequest={registerAiRetry}
-              onGroupChanged={() => void loadAll()}
-            />
-          </section>
-        )}
+        {/*
+         * ⚠️ KHÔNG render tab "Chat AI" cũ ở đây nữa.
+         *
+         * Chat AI của nhóm nằm ở trang riêng `/groups/:groupId/ai`
+         * (layout 3 cột) → Leader vào bằng nút "Chat AI" ở header.
+         */}
       </div>
 
       {/* ================= Modal tạo việc ================= */}

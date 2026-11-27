@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gantt layout check</title>
+    <link rel="stylesheet" href="/src/pages/schedule/schedule.css" />
+    <style>
+      body { margin: 0; background: #0b0b0b; padding: 24px; font-family: Inter, system-ui, sans-serif; }
+    </style>
+  </head>
+  <body>
+    <div class="sch">
+      <div class="sch-gantt">
+        <div class="sch-gantt__canvas" style="--sch-gantt-cols: 7">
+          <div class="sch-gantt__ribbons">
+            <div class="sch-gantt__ribbons-name"></div>
+            <div class="sch-gantt__ribbons-track">
+              <div class="sch-gantt__ribbon" style="grid-column: 1 / span 3; grid-row: 1">
+                <div class="sch-gantt__ribbon-fill" style="background: linear-gradient(90deg,#00d99266,#00d99222,#00d99266); border-color:#00d992"></div>
+                <div class="sch-gantt__ribbon-label" style="background:#00d9921F;border-color:#00d992;color:#00d992">
+                  <span class="material-symbols-outlined sch-icon-14">date_range</span>
+                  <span class="sch-gantt__ribbon-name">Alpha Project</span>
+                  <span class="sch-gantt__ribbon-dates"><span>Nov 24</span><span>→</span><span>Nov 26</span></span>
+                </div>
+              </div>
+              <div class="sch-gantt__ribbon" style="grid-column: 4 / span 4; grid-row: 1">
+                <div class="sch-gantt__ribbon-fill" style="background: linear-gradient(90deg,#2fd6a166,#2fd6a122,#2fd6a166); border-color:#2fd6a1"></div>
+                <div class="sch-gantt__ribbon-label" style="background:#2fd6a11F;border-color:#2fd6a1;color:#2fd6a1">
+                  <span class="material-symbols-outlined sch-icon-14">date_range</span>
+                  <span class="sch-gantt__ribbon-name">Beta Project</span>
+                  <span class="sch-gantt__ribbon-dates"><span>Nov 27</span><span>→</span><span>Nov 30</span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="sch-gantt__head">
+            <div class="sch-gantt__col sch-gantt__col--name">Item</div>
+            <div class="sch-gantt__days">
+              <div class="sch-gantt__col"><div class="sch-gantt__dow">Mon</div><div class="sch-gantt__num">24</div></div>
+              <div class="sch-gantt__col"><div class="sch-gantt__dow">Tue</div><div class="sch-gantt__num">25</div></div>
+              <div class="sch-gantt__col"><div class="sch-gantt__dow">Wed</div><div class="sch-gantt__num">26</div></div>
+              <div class="sch-gantt__col"><div class="sch-gantt__dow">Thu</div><div class="sch-gantt__num">27</div></div>
+              <div class="sch-gantt__col"><div class="sch-gantt__dow">Fri</div><div class="sch-gantt__num">28</div></div>
+              <div class="sch-gantt__col"><div class="sch-gantt__dow">Sat</div><div class="sch-gantt__num">29</div></div>
+              <div class="sch-gantt__col"><div class="sch-gantt__dow">Sun</div><div class="sch-gantt__num">30</div></div>
+            </div>
+          </div>
+          <div class="sch-gantt__rows">
+            <div class="sch-gantt__row">
+              <div class="sch-gantt__col sch-gantt__col--name">
+                <span class="sch-gantt__dot sch-tone--primary"></span>
+                <span class="sch-gantt__title">Design system audit</span>
+                <span class="sch-gantt__meta">Project</span>
+              </div>
+              <div class="sch-gantt__bar-wrap">
+                <button class="sch-gantt__bar sch-tone--primary" style="grid-column: 1 / span 2">
+                  <span class="material-symbols-outlined sch-icon-14">schedule</span>
+                  <span class="sch-gantt__bar-text">Design system audit</span>
+                </button>
+                <div class="sch-gantt__marker sch-gantt__marker--start" style="grid-column: 1 / span 1">
+                  <div class="sch-gantt__marker-line"></div>
+                  <div class="sch-gantt__marker-tag"><span class="material-symbols-outlined sch-icon-14">play_arrow</span>Start</div>
+                </div>
+                <div class="sch-gantt__marker sch-gantt__marker--end" style="grid-column: 3 / span 1">
+                  <div class="sch-gantt__marker-line"></div>
+                  <div class="sch-gantt__marker-tag"><span class="material-symbols-outlined sch-icon-14">stop</span>End</div>
+                </div>
+              </div>
+            </div>
+            <div class="sch-gantt__row">
+              <div class="sch-gantt__col sch-gantt__col--name">
+                <span class="sch-gantt__dot sch-tone--secondary"></span>
+                <span class="sch-gantt__title">Group slot — Sprint planning</span>
+                <span class="sch-gantt__meta">Design Team</span>
+              </div>
+              <div class="sch-gantt__bar-wrap">
+                <button class="sch-gantt__bar sch-tone--secondary" style="grid-column: 4 / span 1">
+                  <span class="material-symbols-outlined sch-icon-14">event</span>
+                  <span class="sch-gantt__bar-text">Group slot — Sprint planning</span>
+                </button>
+              </div>
+            </div>
+            <div class="sch-gantt__row">
+              <div class="sch-gantt__col sch-gantt__col--name">
+                <span class="sch-gantt__dot sch-tone--error"></span>
+                <span class="sch-gantt__title">Milestone release</span>
+                <span class="sch-gantt__meta">Milestone</span>
+              </div>
+              <div class="sch-gantt__bar-wrap">
+                <button class="sch-gantt__bar sch-tone--error" style="grid-column: 6 / span 1">
+                  <span class="material-symbols-outlined sch-icon-14">flag</span>
+                  <span class="sch-gantt__bar-text">Milestone release</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,576 @@
+/* ===========================================================
+ * Group AI Planner — trang riêng /groups/:groupId/ai
+ * ===========================================================
+ *
+ * Layout 3 cột (giống Project AI Chat):
+ *   trái = lịch sử chat · giữa = khung chat · phải = bản nháp plan
+ *
+ * Scope prefix: `.gai-planner-*` (bổ sung cho `.gai-*` của group-ai.css).
+ * =========================================================== */
+
+.gai-planner {
+  --gai-p-canvas: #101010;
+  --gai-p-soft: #1a1a1a;
+  --gai-p-hairline: #3d3a39;
+  --gai-p-ink: #f2f2f2;
+  --gai-p-body: #bdbdbd;
+  --gai-p-mute: #8b949e;
+  --gai-p-primary: #00d992;
+  --gai-p-primary-wash: rgba(0, 217, 146, 0.1);
+  --gai-p-error: #ff6b6b;
+
+  position: relative;
+  isolation: isolate;
+  color: var(--gai-p-body);
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--gai-p-canvas);
+  min-height: calc(100vh - 4rem);
+  padding-bottom: 64px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ====== Sub-header ====== */
+.gai-planner-subbar {
+  border-bottom: 1px solid var(--gai-p-hairline);
+  background: var(--gai-p-canvas);
+}
+.gai-planner-subbar-inner {
+  max-width: 92rem;
+  margin: 0 auto;
+  padding: 12px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.gai-planner-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 20px;
+  min-width: 0;
+}
+.gai-planner-crumb {
+  color: var(--gai-p-mute);
+  text-decoration: none;
+  transition: color 160ms ease;
+}
+.gai-planner-crumb:hover {
+  color: var(--gai-p-ink);
+}
+.gai-planner-crumb-current {
+  color: var(--gai-p-ink);
+  font-weight: 600;
+}
+.gai-planner-crumb-sep {
+  font-size: 16px;
+  color: var(--gai-p-hairline);
+}
+.gai-planner-subbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ====== Container + grid ====== */
+.gai-planner-container {
+  position: relative;
+  z-index: 1;
+  max-width: 92rem;
+  margin: 0 auto;
+  padding: 24px 32px 0;
+}
+.gai-planner-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  align-items: start;
+}
+@media (min-width: 1100px) {
+  .gai-planner-grid {
+    grid-template-columns: 240px minmax(0, 1fr) 400px;
+  }
+}
+@media (min-width: 1500px) {
+  .gai-planner-grid {
+    grid-template-columns: 280px minmax(0, 1fr) 460px;
+  }
+}
+
+/* ====== TRÁI: lịch sử chat ====== */
+.gai-planner-history {
+  display: flex;
+  flex-direction: column;
+  background: var(--gai-p-canvas);
+  border: 1px solid var(--gai-p-hairline);
+  border-radius: 8px;
+  overflow: hidden;
+  min-width: 0;
+  /* Cao bằng khung chat → không bị "thắt eo". */
+  position: sticky;
+  top: 16px;
+}
+.gai-planner-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--gai-p-hairline);
+}
+.gai-planner-history-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--gai-p-mute);
+}
+.gai-planner-history-items {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+  padding: 8px;
+  gap: 4px;
+}
+.gai-planner-history-empty {
+  margin: 0;
+  padding: 16px 10px;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--gai-p-mute);
+}
+.gai-planner-history-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+  color: var(--gai-p-body);
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+.gai-planner-history-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.gai-planner-history-item--on {
+  background: var(--gai-p-primary-wash);
+}
+.gai-planner-history-item-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 19px;
+  color: var(--gai-p-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gai-planner-history-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--gai-p-mute);
+}
+.gai-planner-history-item-status {
+  padding: 1px 6px;
+  border-radius: 9999px;
+  background: var(--gai-p-primary-wash);
+  color: var(--gai-p-primary);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+/* ====== GIỮA: khung chat ====== */
+.gai-planner-stream {
+  display: flex;
+  flex-direction: column;
+  background: var(--gai-p-canvas);
+  border: 1px solid var(--gai-p-hairline);
+  border-radius: 8px;
+  overflow: hidden;
+  min-width: 0;
+  /* Chiều cao cố định → khung chat luôn cuộn bên trong, không đẩy trang. */
+  height: calc(100vh - 150px);
+  min-height: 560px;
+}
+.gai-planner-stream-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--gai-p-hairline);
+}
+.gai-planner-stream-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.gai-planner-stream-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  border: 1px solid rgba(0, 217, 146, 0.35);
+  background: var(--gai-p-primary-wash);
+  color: var(--gai-p-primary);
+}
+.gai-planner-stream-avatar::before {
+  font-size: 20px;
+}
+.gai-planner-stream-h1 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--gai-p-ink);
+}
+.gai-planner-stream-sub {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--gai-p-mute);
+}
+.gai-planner-stream-tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.gai-planner-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  border: 1px solid var(--gai-p-hairline);
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 16px;
+  color: var(--gai-p-body);
+}
+.gai-planner-tag .material-symbols-outlined {
+  font-size: 14px;
+}
+
+/* Transcript (phần cuộn) */
+.gai-planner-transcript {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.gai-planner-transcript::-webkit-scrollbar {
+  width: 8px;
+}
+.gai-planner-transcript::-webkit-scrollbar-track {
+  background: transparent;
+}
+.gai-planner-transcript::-webkit-scrollbar-thumb {
+  background: #2f2f2f;
+  border-radius: 9999px;
+}
+.gai-planner-transcript::-webkit-scrollbar-thumb:hover {
+  background: #3d3a39;
+}
+.gai-planner-draft-hint {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px dashed rgba(0, 217, 146, 0.35);
+  border-radius: 6px;
+  background: var(--gai-p-primary-wash);
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--gai-p-primary);
+}
+.gai-planner-draft-hint .material-symbols-outlined {
+  font-size: 16px;
+}
+
+/* Banner lỗi */
+.gai-planner-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 20px;
+  padding: 12px 16px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 107, 107, 0.35);
+  background: rgba(255, 107, 107, 0.08);
+  font-size: 13px;
+  line-height: 19px;
+}
+.gai-planner-banner--error > .material-symbols-outlined {
+  color: var(--gai-p-error);
+}
+.gai-planner-banner-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+.gai-planner-banner-body strong {
+  color: var(--gai-p-ink);
+}
+.gai-planner-banner-raw {
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  color: var(--gai-p-mute);
+  word-break: break-word;
+}
+
+/* Ô nhập */
+.gai-planner-composer {
+  border-top: 1px solid var(--gai-p-hairline);
+  padding: 14px 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gai-planner-input {
+  width: 100%;
+  min-height: 76px;
+  max-height: 220px;
+  padding: 12px 14px;
+  border: 1px solid var(--gai-p-hairline);
+  border-radius: 6px;
+  background: var(--gai-p-soft);
+  color: var(--gai-p-ink);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  resize: vertical;
+  outline: none;
+  transition: border-color 160ms ease;
+}
+.gai-planner-input:focus {
+  border-color: rgba(0, 217, 146, 0.5);
+}
+.gai-planner-input::placeholder {
+  color: var(--gai-p-mute);
+}
+.gai-planner-input:disabled {
+  opacity: 0.6;
+}
+.gai-planner-composer-foot {
+  display: flex;
+  justify-content: space-between;
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--gai-p-mute);
+}
+.gai-planner-composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ====== PHẢI: bản nháp ====== */.gai-planner-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  position: sticky;
+  top: 16px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.gai-planner-side::-webkit-scrollbar {
+  width: 8px;
+}
+.gai-planner-side::-webkit-scrollbar-track {
+  background: transparent;
+}
+.gai-planner-side::-webkit-scrollbar-thumb {
+  background: #2f2f2f;
+  border-radius: 9999px;
+}
+
+.gai-planner-card {
+  background: var(--gai-p-canvas);
+  border: 1px solid var(--gai-p-hairline);
+  border-radius: 8px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.gai-planner-card--draft {
+  border-color: rgba(0, 217, 146, 0.35);
+}
+.gai-planner-card-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--gai-p-hairline);
+}
+.gai-planner-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  border: 1px solid var(--gai-p-hairline);
+  color: var(--gai-p-mute);
+}
+.gai-planner-card-icon::before {
+  font-size: 16px;
+}
+.gai-planner-card-icon--primary {
+  border-color: rgba(0, 217, 146, 0.35);
+  background: var(--gai-p-primary-wash);
+  color: var(--gai-p-primary);
+}
+.gai-planner-card-title {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--gai-p-ink);
+  flex: 1;
+}
+.gai-planner-card-meta {
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 16px;
+  color: var(--gai-p-mute);
+}
+.gai-planner-card-sub {
+  margin: 0;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--gai-p-mute);
+}
+.gai-planner-card-sub strong {
+  color: var(--gai-p-body);
+}
+.gai-planner-applied-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  background: var(--gai-p-primary-wash);
+  color: var(--gai-p-primary);
+  font-size: 12px;
+  line-height: 17px;
+}
+.gai-planner-applied-chip .material-symbols-outlined {
+  font-size: 15px;
+}
+.gai-planner-context-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--gai-p-mute);
+}
+.gai-planner-context-list strong {
+  color: var(--gai-p-body);
+}
+.gai-planner-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: rgba(255, 107, 107, 0.08);
+  border: 1px solid rgba(255, 107, 107, 0.3);
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--gai-p-error);
+}
+.gai-planner-error .material-symbols-outlined {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.gai-planner-conflict {
+  padding: 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(227, 179, 65, 0.35);
+  background: rgba(227, 179, 65, 0.07);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.gai-planner-conflict p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: #e3b341;
+}
+.gai-planner-conflict-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Trạng thái trang (loading / lỗi / không phải leader) */
+.gai-page-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 60vh;
+  padding: 40px 24px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--gai-p-mute, #8b949e);
+  text-align: center;
+}
+.gai-page-state--error {
+  color: #ff6b6b;
+}
+
+/* ====== Responsive ====== */
+@media (max-width: 1099px) {
+  .gai-planner-side {
+    position: static;
+    max-height: none;
+  }
+  .gai-planner-history {
+    position: static;
+  }
+  .gai-planner-history-items {
+    max-height: 220px;
+  }
+  .gai-planner-stream {
+    height: auto;
+    min-height: 480px;
+  }
+}

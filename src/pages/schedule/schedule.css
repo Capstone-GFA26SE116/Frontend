@@ -828,11 +828,11 @@
  */
 
 /* ===========================================================
- * Week board — 5 ngày làm việc (T2–T6) hoặc 7 ngày
+ * Week board — 5 cột ở view Tuần (cửa sổ 5 ngày trượt), 7 cột ở Gantt
  *
- * Số cột do `--sch-week-cols` điều khiển (set inline từ React theo
- * trạng thái `showWeekend`). 5 cột → mỗi task card rộng gấp đôi so với
- * 7 cột, tên subtask hiện đủ, không bị cắt.
+ * Số cột do `--sch-week-cols` điều khiển (set inline từ React theo số
+ * ngày của view). 5 cột → mỗi task card rộng gấp đôi so với 7 cột,
+ * tên subtask hiện đủ, không bị cắt.
  * =========================================================== */
 .sch-week {
   display: grid;
@@ -1280,6 +1280,8 @@
   color: var(--sch-text-2);
   font-weight: 500;
   white-space: nowrap;
+  /* Giờ ngắn → không nên co, để tên nhóm là thứ được cắt trước. */
+  flex-shrink: 0;
 }
 .sch-tcard__time .sch-icon-12 {
   font-size: 13px !important;
@@ -1300,6 +1302,8 @@
   white-space: nowrap;
   flex-shrink: 0;
   align-self: center;
+  max-width: 100%;
+  min-width: 0;
 }
 .sch-tcard__tag--muted {
   color: var(--sch-text-3);
@@ -1308,16 +1312,33 @@
 /*
  * Chip nhóm — slot việc nhóm (mục 10 của cập nhật BE).
  * Tên nhóm dùng primary-soft để phân biệt với việc cá nhân ngay trên lịch.
+ *
+ * ⚠️ Tên nhóm có thể rất dài → PHẢI co lại được, không tràn ra ngoài card.
+ * `.sch-tcard__tag` mặc định có `flex-shrink: 0` + `white-space: nowrap`
+ * (để chip "loại công việc" / nguồn không bị bóp méo). Riêng chip nhóm ta
+ * cho phép co + cắt bằng ellipsis.
  */
 .sch-tcard__tag--group {
   gap: 3px;
   color: var(--sch-secondary);
   border-color: var(--sch-primary-glow);
   background: var(--sch-primary-soft);
+  /* Cho phép co lại khi tên nhóm dài. */
+  min-width: 0;
+  flex-shrink: 1;
+  overflow: hidden;
 }
-.sch-tcard__tag--group .sch-icon-12 {
+.sch-tcard__tag--group > .sch-icon-12 {
   font-size: 12px !important;
   color: var(--sch-secondary);
+  flex-shrink: 0;
+}
+/* Tên nhóm bị cắt bằng ellipsis thay vì tràn ra ngoài card. */
+.sch-tcard__tag--group > .sch-tcard__tag-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---------- Subtask: timeline dọc ---------- */
@@ -1729,13 +1750,57 @@
   border: 1px solid var(--sch-line);
   border-radius: var(--sch-r-md);
   padding: 16px;
-  padding-top: 44px;
   overflow-x: auto;
+  /*
+   * Layout dùng chung giữa header, các row và ribbon overlay.
+   *
+   * - `--sch-gantt-name-w`: bề rộng cột "Item"
+   * - `--sch-gantt-gap`: khe giữa 2 cột ngày
+   * - `--sch-gantt-col-gap`: khe giữa cột "Item" và vùng 7 cột ngày
+   *
+   * Cả 3 vùng (head / rows / ribbons) phải dùng CÙNG giá trị này, và
+   * phần ngày luôn là grid 7 cột riêng — nếu không, cột ngày lệch nhau và
+   * bar/ribbon chồng lên nhau.
+   */
+  --sch-gantt-name-w: 200px;
+  --sch-gantt-gap: 4px;
+  --sch-gantt-col-gap: 8px;
+}
+/*
+ * Canvas bọc ribbons + head + rows.
+ */
+.sch-gantt__canvas {
+  position: relative;
+  /* Chiều rộng tối thiểu để các cột ngày không bị bóp khi màn hình hẹp
+     (`.sch-gantt` có overflow-x: auto nên sẽ cuộn ngang). */
+  min-width: calc(
+    var(--sch-gantt-name-w, 200px) + var(--sch-gantt-col-gap, 8px) +
+    var(--sch-gantt-cols, 7) * 80px + (var(--sch-gantt-cols, 7) - 1) * var(--sch-gantt-gap, 4px)
+  );
+}
+/*
+ * Ribbon overlay — grid RIÊNG 2 cột: cột "Item" + vùng 7 cột ngày.
+ * Cùng cấu trúc với `.sch-gantt__head` & `.sch-gantt__row` → ribbon
+ * luôn nằm đúng cột ngày (trước đây dùng `gridColumn` trong 1 container
+ * không phải grid → bị bỏ qua → tất cả ribbon chồng lên nhau).
+ */
+.sch-gantt__ribbons {
+  display: grid;
+  grid-template-columns: var(--sch-gantt-name-w, 200px) 1fr;
+  gap: var(--sch-gantt-col-gap, 8px);
+  margin-bottom: 8px;
+}
+.sch-gantt__ribbons-name { min-width: 0; }
+.sch-gantt__ribbons-track {
+  display: grid;
+  grid-template-columns: repeat(var(--sch-gantt-cols, 7), minmax(0, 1fr));
+  gap: var(--sch-gantt-gap, 4px);
+  align-items: center;
 }
 .sch-gantt__ribbon {
-  position: absolute;
-  top: 8px;
+  position: relative;
   height: 28px;
+  min-width: 0;
   pointer-events: none;
   z-index: 1;
 }
@@ -1753,7 +1818,13 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 100%;
+  /* Giới hạn theo chiều cao ribbon (28px) */
+  height: 28px;
+  max-height: 100%;
+  /* `max-width: 100%` để KHÔNG tràn ra ngoài dải ribbon khi project
+     dài hơn số cột ngày nó chiếm. */
+  max-width: 100%;
+  min-width: 0;
   width: fit-content;
   margin: 0 auto;
   padding: 4px 10px;
@@ -1766,8 +1837,14 @@
   letter-spacing: 0.5px;
   text-transform: uppercase;
   white-space: nowrap;
+  overflow: hidden;
+}
+/* Tên project / ngày bị cắt → ellipsis thay vì tràn ra ngoài. */
+.sch-gantt__ribbon-label > .material-symbols-outlined {
+  flex-shrink: 0;
 }
 .sch-gantt__ribbon-dates {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1782,14 +1859,31 @@
   color: var(--sch-text-3);
   font-variant-numeric: tabular-nums;
 }
+/* Tên project dài → cắt bằng ellipsis, không đẩy label tràn ra dải ribbon. */
+.sch-gantt__ribbon-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .sch-gantt__head {
   display: grid;
-  grid-template-columns: 200px repeat(7, minmax(80px, 1fr));
-  gap: 4px;
+  /* Cột "Item" + vùng 7 cột ngày — phải khớp `.sch-gantt__row`. */
+  grid-template-columns: var(--sch-gantt-name-w, 200px) 1fr;
+  gap: var(--sch-gantt-col-gap, 8px);
   padding-bottom: 8px;
   border-bottom: 1px solid var(--sch-line);
   margin-bottom: 12px;
+}
+/*
+ * 7 cột ngày — grid RIÊNG, gap khớp `.sch-gantt__bar-wrap` để header
+ * và bar nằm đúng cùng cột ngày.
+ */
+.sch-gantt__days {
+  display: grid;
+  grid-template-columns: repeat(var(--sch-gantt-cols, 7), minmax(0, 1fr));
+  gap: var(--sch-gantt-gap, 4px);
 }
 .sch-gantt__col {
   font-size: 12px;
@@ -1820,9 +1914,10 @@
 .sch-gantt__rows { display: flex; flex-direction: column; }
 .sch-gantt__row {
   display: grid;
-  grid-template-columns: 200px 1fr;
+  /* Cột tên + vùng track — phải khớp `.sch-gantt__head`. */
+  grid-template-columns: var(--sch-gantt-name-w, 200px) 1fr;
   align-items: center;
-  gap: 8px;
+  gap: var(--sch-gantt-col-gap, 8px);
   padding: 8px 0;
   border-bottom: 1px solid var(--sch-line-soft);
 }
@@ -1862,15 +1957,21 @@
   font-size: 12px;
   line-height: 16px;
   color: var(--sch-text-3);
-  flex-shrink: 0;
+  /* Tên nhóm có thể dài → cho co lại + cắt bằng ellipsis, không tràn ra
+     ngoài cột tên. */
+  min-width: 0;
+  flex-shrink: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .sch-gantt__bar-wrap {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 4px;
+  /* 7 cột ngày — gap & track width phải khớp `.sch-gantt__days`. */
+  grid-template-columns: repeat(var(--sch-gantt-cols, 7), minmax(0, 1fr));
+  gap: var(--sch-gantt-gap, 4px);
   min-height: 32px;
 }
 .sch-gantt__bar {
@@ -2726,9 +2827,15 @@
   line-height: 15px;
   color: var(--sch-text-3);
   white-space: nowrap;
+  /* Tên nhóm có thể dài → co lại + ellipsis thay vì tràn ra ngoài popover. */
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .sch-cell-popover__tag--status {
   text-transform: capitalize;
+  flex-shrink: 1;
 }
 
 /* Item clickable → có pointer + hover */
@@ -2906,12 +3013,12 @@
 /* ===========================================================
  * Task card — lưới tuần co lại ở màn hình nhỏ
  *
- * Mặc định lịch tuần chỉ hiện 5 ngày làm việc (T2–T6) → 5 cột. Ở màn
+ * Mặc định lịch tuần hiện 5 ngày (cửa sổ trượt) → 5 cột. Ở màn
  * hình nhỏ ta co còn 3 cột (rồi 2 cột) để task card vẫn đủ rộng đọc dễ.
  *
  * Lưu ý: `grid-template-columns` ở đây sẽ GHI ĐÈ giá trị inline
- * `--sch-week-cols`; khi bật "Cuối tuần" (7 ngày) ở màn hình nhỏ thì vẫn
- * dùng số cột theo breakpoint — chấp nhận hẹp hơn.
+ * `--sch-week-cols`; ở view Gantt (7 ngày) màn hình nhỏ thì vẫn dùng
+ * số cột theo breakpoint — chấp nhận hẹp hơn.
  * =========================================================== */
 @media (max-width: 1100px) {
   .sch-week {

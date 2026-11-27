@@ -412,12 +412,20 @@ export function SchedulePage() {
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const [filter, setFilter] = useState<FilterId>("all");
   /**
-   * Hiện cuối tuần (T7 + CN) trong lịch tuần hay không.
+   * Ngày đầu tiên của cửa sổ hiển thị ở view Tuần.
    *
-   * Mặc định TẮT → chỉ hiện 5 ngày làm việc (T2–T6). Lý do: 7 cột làm
-   * mỗi task card quá hẹp, tên subtask bị cắt. 5 cột cho card rộng gấp đôi.
+   * ⚠️ View Tuần KHÔNG phải 1 tuần lịch (Thứ Hai → Chủ Nhật) mà là **cửa
+   * sổ 5 ngày trượt**:
+   *   - Mặc định: Thứ Hai → Thứ Sáu của tuần hiện tại (T2 → T6).
+   *   - Bấm "Today": HÔM NAY nằm ở cột ĐẦU TIÊN
+   *     (hôm nay → hôm nay + 1 → ... → hôm nay + 4).
+   *   - Bấm "Next" → trượt thêm 5 ngày, "Prev" → lùi 5 ngày.
+   *
+   * Nhờ vậy luôn đủ 5 cột (task card rộng, tên subtask không bị cắt) mà
+   * vẫn không bỏ sót T7/CN — chúng nằm ở cửa sổ kế tiếp. Cùng cơ chế với
+   * view Tháng (lưới 42 ngày có đủ cuối tuần).
    */
-  const [showWeekend, setShowWeekend] = useState(false);
+  const [weekStart, setWeekStart] = useState<Date>(() => startOfWeek(new Date()));
   /** Lưu anchor ban đầu của project span, để "Jump to span" quay lại. */
   const [spanAnchor, setSpanAnchor] = useState<Date | null>(null);
 
@@ -546,12 +554,24 @@ export function SchedulePage() {
       end.setHours(23, 59, 59, 999);
       return { start, end };
     }
-    // week & gantt: 7 days from startOfWeek(anchor)
-    const start = startOfWeek(anchor);
-    const end = addDays(start, 6);
+    /*
+     * View Tuần: cửa sổ **5 ngày trượt** (T2 → T6 mặc định, bấm Next →
+     * T7, CN, T2, T3, T4 → ...). Xem `weekStart`.
+     *
+     * View Gantt: vẫn dùng tuần lịch 7 ngày (Thứ Hai → Chủ Nhật).
+     */
+    if (viewMode === "gantt") {
+      const start = startOfWeek(anchor);
+      const end = addDays(start, 6);
+      end.setHours(23, 59, 59, 999);
+      return { start, end };
+    }
+    // week: 5 ngày từ `weekStart`
+    const start = weekStart;
+    const end = addDays(start, 4);
     end.setHours(23, 59, 59, 999);
     return { start, end };
-  }, [viewMode, anchor]);
+  }, [viewMode, anchor, weekStart]);
 
   /**
    * Tải toàn bộ tasks (của 1 project hoặc tất cả) + subtasks của chúng,
@@ -1707,9 +1727,11 @@ export function SchedulePage() {
     setAnchor(spanAnchor);
   }
 
-  /* Week board */
+  /* Week board — 5 ngày ở view Tuần, 7 ngày ở view Gantt */
   const week = useMemo<DayPlan[]>(() => {
-    return Array.from({ length: 7 }).map((_, i) => {
+    // View Tuần: cửa sổ 5 ngày trượt. View Gantt: tuần lịch 7 ngày.
+    const dayCount = viewMode === "week" ? 5 : 7;
+    return Array.from({ length: dayCount }).map((_, i) => {
       const date = addDays(range.start, i);
       const dayEvents = events.filter((ev) => {
         if (ev.isAllDay) return isSameDay(ev.start, date);
@@ -1755,7 +1777,7 @@ export function SchedulePage() {
         rest: isRest && dayEvents.length === 0,
       };
     });
-  }, [events, range]);
+  }, [events, range, viewMode]);
 
   /* Month grid: 6 weeks */
   const monthGrid = useMemo<DayPlan[]>(() => {
@@ -1858,14 +1880,34 @@ export function SchedulePage() {
 
   /* Navigation */
   function goPrev() {
-    if (viewMode === "month") setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1));
-    else setAnchor(addDays(anchor, -7));
+    if (viewMode === "month") {
+      setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1));
+      return;
+    }
+    if (viewMode === "week") {
+      // Cửa sổ 5 ngày trượt → lùi 5 ngày.
+      setWeekStart(addDays(weekStart, -5));
+      return;
+    }
+    setAnchor(addDays(anchor, -7));
   }
   function goNext() {
-    if (viewMode === "month") setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1));
-    else setAnchor(addDays(anchor, 7));
+    if (viewMode === "month") {
+      setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1));
+      return;
+    }
+    if (viewMode === "week") {
+      // Cửa sổ 5 ngày trượt → tiến 5 ngày (T2→T6 rồi T7,CN,T2,T3,T4).
+      setWeekStart(addDays(weekStart, 5));
+      return;
+    }
+    setAnchor(addDays(anchor, 7));
   }
-  function goToday() { setAnchor(new Date()); }
+  function goToday() {
+    setAnchor(new Date());
+    // Hôm nay ở cột ĐẦU TIÊN của cửa sổ 5 ngày.
+    setWeekStart(startOfDay(new Date()));
+  }
 
   /* Period label */
   const periodLabel = useMemo(() => {
@@ -1873,37 +1915,16 @@ export function SchedulePage() {
       return `${MONTH_LABELS[anchor.getMonth()]} ${anchor.getFullYear()}`;
     }
     const s = range.start;
-    /*
-     * Ở view Tuần: khi chỉ hiện 5 ngày làm việc (T2–T6) thì label phải
-     * phản ánh đúng khoảng đang hiện (T2 → T6), không phải cả tuần T2 → CN.
-     */
-    const e = showWeekend || viewMode !== "week"
-      ? range.end
-      : addDays(range.start, 4);
+    const e = range.end;
     const sameMonth = s.getMonth() === e.getMonth();
     if (sameMonth) {
       return `${s.getDate()} – ${e.getDate()} ${MONTH_LABELS[s.getMonth()]} ${s.getFullYear()}`;
     }
     return `${s.getDate()} ${MONTH_LABELS[s.getMonth()]} – ${e.getDate()} ${MONTH_LABELS[e.getMonth()]} ${e.getFullYear()}`;
-  }, [viewMode, anchor, range, showWeekend]);
+  }, [viewMode, anchor, range]);
 
   /* Selected event for detail */
   const [selected, setSelected] = useState<CalEvent | null>(null);
-
-  /**
-   * Số việc đang bị ẩn ở T7 + CN (khi lịch chỉ hiện 5 ngày làm việc).
-   *
-   * Dùng để hiện nhắc nhở "còn N việc cuối tuần" — tránh user tưởng
-   * lịch trống trong khi thực tế có việc.
-   */
-  const hiddenWeekendCount = useMemo(() => {
-    if (viewMode !== "week" || showWeekend) return 0;
-    return week.reduce((acc, d) => {
-      const wd = d.date.getDay();
-      if (wd === 0 || wd === 6) return acc + d.events.length;
-      return acc;
-    }, 0);
-  }, [viewMode, showWeekend, week]);
 
   /** Cell popover: hiện khi click 1 cell — liệt kê TẤT CẢ task trong ngày. */
   const [popover, setPopover] = useState<{ day: Date; items: DayItem[] } | null>(null);
@@ -2109,25 +2130,9 @@ export function SchedulePage() {
             ))}
 
             {/*
-              Toggle cuối tuần (chỉ ở view Tuần).
-              Mặc định TẮT → lịch chỉ hiện 5 ngày làm việc (T2–T6) để mỗi
-              task card rộng rãi, đọc dễ. Bật lên → hiện đủ 7 ngày.
+              View Tuần là **cửa sổ 5 ngày trượt**: T2 → T6, bấm "Next" →
+              T7, CN, T2, T3, T4 → ... Nên không cần toggle cuối tuần nữa.
             */}
-            {viewMode === "week" && (
-              <button
-                type="button"
-                className={`sch-chip sch-chip--toggle${showWeekend ? " sch-chip--active" : ""}`}
-                onClick={() => setShowWeekend((v) => !v)}
-                aria-pressed={showWeekend}
-                title={showWeekend ? "Showing Mon → Sun" : "Showing Mon → Fri"}
-              >
-                <span className="material-symbols-outlined sch-icon-14">calendar_view_week</span>
-                Cuối tuần
-                {hiddenWeekendCount > 0 && (
-                  <span className="sch-chip__badge">{hiddenWeekendCount}</span>
-                )}
-              </button>
-            )}
           </div>
         </div>
 
@@ -2237,7 +2242,7 @@ export function SchedulePage() {
 
             <div className="sch-board__main">
               {viewMode === "week" && (
-                <WeekBoard days={visibleWeek} onSelectEvent={setSelected} tasksById={tasksById} spans={projectSpans} onCellClick={openCellPopover} accentByKey={cellAccentByKey} subtasksByTaskId={subtasksByTaskId} showWeekend={showWeekend} blockedReasonFor={blockedReasonFor} />
+                <WeekBoard days={visibleWeek} onSelectEvent={setSelected} tasksById={tasksById} spans={projectSpans} onCellClick={openCellPopover} accentByKey={cellAccentByKey} subtasksByTaskId={subtasksByTaskId} blockedReasonFor={blockedReasonFor} />
               )}
               {viewMode === "month" && (
                 <MonthGrid days={monthGrid} onSelectEvent={setSelected} spans={projectSpans} onCellClick={openCellPopover} accentByKey={cellAccentByKey} gridRef={monthGridRef} blockedReasonFor={blockedReasonFor} />
@@ -2330,11 +2335,11 @@ function KpiCard({
 }
 
 /* ===========================================================
- * Week board — 7 day columns
+ * Week board — 5 cột ở view Tuần (cửa sổ trượt), 7 cột ở view Gantt
  * =========================================================== */
 function WeekBoard({
   days, onSelectEvent, tasksById, spans, onCellClick, accentByKey, subtasksByTaskId,
-  showWeekend, blockedReasonFor,
+  blockedReasonFor,
 }: {
   days: DayPlan[];
   onSelectEvent: (e: CalEvent) => void;
@@ -2344,34 +2349,23 @@ function WeekBoard({
   accentByKey: Map<string, CellAccent | null>;
   /** Subtask theo taskId — TaskCard dùng để hiện danh sách con. */
   subtasksByTaskId?: Map<string, SubtaskDto[]>;
-  /** Hiện cả T7 + CN hay chỉ 5 ngày làm việc (T2–T6). */
-  showWeekend?: boolean;
   /** Lý do bị chặn theo luật "làm trước - làm sau". */
   blockedReasonFor?: (ev: CalEvent, day?: Date) => string | null;
 }) {
-  /**
-   * 5 ngày làm việc (T2–T6) — bỏ T7 + CN.
+  /*
+   * Ở view Tuần: cửa sổ 5 ngày trượt (T2→T6, rồi T7,CN,T2,T3,T4, ...).
+   * Ở view Gantt: tuần lịch 7 ngày.
    *
-   * Lý do: 7 cột làm mỗi task card quá hẹp, tên subtask bị cắt. 5 cột
-   * cho mỗi card ~2 lần bề rộng → đọc thoải mái.
-   *
-   * Nếu tuần hiện tại không có ngày làm việc nào (VD: anchor rơi vào
-   * cuối tuần và ta chỉ show 5 ngày) → tự dời sang tuần kế tiếp.
+   * `days` đã đúng số ngày cần hiện → không lọc thêm ở đây.
    */
-  const visibleDays = useMemo(() => {
-    if (showWeekend) return days;
-    return days.filter((d) => {
-      const wd = d.date.getDay(); // 0 = CN, 6 = T7
-      return wd !== 0 && wd !== 6;
-    });
-  }, [days, showWeekend]);
+  const visibleDays = days;
 
   return (
     <div
       className="sch-week"
       style={
         {
-          // 5 ngày làm việc (T2–T6) mặc định; 7 ngày khi bật cuối tuần.
+          // 5 ngày ở view Tuần, 7 ngày ở view Gantt.
           "--sch-week-cols": visibleDays.length,
         } as CSSProperties
       }
@@ -2636,18 +2630,40 @@ function GanttView({
   }
   return (
     <div className="sch-gantt">
-      {/* Mỗi project 1 ribbon overlay (track between start & end col) */}
-      {spanCols.map((m) => {
-        // Clip start/end vào range hiển thị
-        const a = Math.max(0, m.startIdx < 0 ? 0 : m.startIdx);
-        const b = Math.min(days.length - 1, m.endIdx < 0 ? days.length - 1 : m.endIdx);
-        if (b < a) return null;
-        return (
+     <div
+      className="sch-gantt__canvas"
+      style={{ ["--sch-gantt-cols" as string]: days.length }}
+    >
+      {/*
+        * Ribbon overlay: 1 grid RIÊNG có cùng cấu trúc cột với
+        * `.sch-gantt__head` (cột "Item" + vùng 7 cột ngày).
+        *
+        * Trước đây ribbon dùng `gridColumn` bên trong `.sch-gantt` — mà
+        * `.sch-gantt` KHÔNG phải grid → `gridColumn` bị bỏ qua hoàn toàn →
+        * mọi ribbon dồn về góc trái và CHỒNG LÊN NHAU.
+        */}
+      <div className="sch-gantt__ribbons">
+        <div className="sch-gantt__ribbons-name" />
+        <div className="sch-gantt__ribbons-track">
+          {spanCols.map((m) => {
+            // Clip start/end vào range hiển thị
+            const a = Math.max(0, m.startIdx < 0 ? 0 : m.startIdx);
+            const b = Math.min(days.length - 1, m.endIdx < 0 ? days.length - 1 : m.endIdx);
+            if (b < a) return null;
+            return (
           <div
             key={m.sp.project.id}
             className="sch-gantt__ribbon"
             style={{
-              gridColumn: `${a + 2} / span ${b - a + 1}`,
+              /*
+               * 7 cột ngày → chỉ số bắt đầu từ 1.
+               *
+               * `gridRow: 1` ghim tất cả ribbon vào CÙNG 1 hàng để chúng
+               * overlap nhau (dải project). Nếu không, auto-placement sẽ đẩy
+               * ribbon thứ 2 xuống hàng 2 khi 2 project cùng cột.
+               */
+              gridColumn: `${a + 1} / span ${b - a + 1}`,
+              gridRow: 1,
             }}
           >
             <div
@@ -2666,7 +2682,7 @@ function GanttView({
               }}
             >
               <span className="material-symbols-outlined sch-icon-14">date_range</span>
-              {m.sp.project.name}
+              <span className="sch-gantt__ribbon-name">{m.sp.project.name}</span>
               <span className="sch-gantt__ribbon-dates">
                 {m.sp.start.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                 <span>→</span>
@@ -2674,16 +2690,26 @@ function GanttView({
               </span>
             </div>
           </div>
-        );
-      })}
+            );
+          })}
+        </div>
+      </div>
       <div className="sch-gantt__head">
         <div className="sch-gantt__col sch-gantt__col--name">Item</div>
-        {days.map((d, i) => (
-          <div key={d.key} className="sch-gantt__col">
-            <div className="sch-gantt__dow">{WEEKDAY_LABELS[i]}</div>
-            <div className="sch-gantt__num">{d.date.getDate()}</div>
-          </div>
-        ))}
+        {/*
+          7 cột ngày nằm trong 1 grid RIÊNG (7 cột, gap 4px) → khớp đúng
+          `.sch-gantt__bar-wrap`. Trước đây head là grid 8 cột (7 gaps) còn
+          bar-wrap là grid 7 cột (6 gaps) → cột ngày lệch nhau, bar rơi
+          lệch sang cột bên cạnh và chồng lên nhau.
+        */}
+        <div className="sch-gantt__days">
+          {days.map((d, i) => (
+            <div key={d.key} className="sch-gantt__col">
+              <div className="sch-gantt__dow">{WEEKDAY_LABELS[i]}</div>
+              <div className="sch-gantt__num">{d.date.getDate()}</div>
+            </div>
+          ))}
+        </div>
       </div>
       <div className="sch-gantt__rows">
         {allEvents.map((ev) => {
@@ -2714,7 +2740,7 @@ function GanttView({
                   type="button"
                   className={`sch-gantt__bar sch-tone--${dotFor(ev)}`}
                   style={{
-                    gridColumn: `${colStart + 2} / span ${Math.min(span, days.length - colStart)}`,
+                    gridColumn: `${colStart + 1} / span ${Math.min(span, days.length - colStart)}`,
                   }}
                   onClick={() => onSelectEvent(ev)}
                   title={ev.title}
@@ -2728,7 +2754,7 @@ function GanttView({
                 {startCol >= 0 && startCol < days.length && (
                   <div
                     className="sch-gantt__marker sch-gantt__marker--start"
-                    style={{ gridColumn: `${startCol + 2} / span 1` }}
+                    style={{ gridColumn: `${startCol + 1} / span 1` }}
                     aria-label="Project start"
                     title="Project start"
                   >
@@ -2743,7 +2769,7 @@ function GanttView({
                 {endCol >= 0 && endCol < days.length && (
                   <div
                     className="sch-gantt__marker sch-gantt__marker--end"
-                    style={{ gridColumn: `${endCol + 2} / span 1` }}
+                    style={{ gridColumn: `${endCol + 1} / span 1` }}
                     aria-label="Project end"
                     title="Project end"
                   >
@@ -2759,6 +2785,7 @@ function GanttView({
           );
         })}
       </div>
+     </div>
     </div>
   );
 }
@@ -2897,7 +2924,7 @@ function TaskCard({
               <span className="material-symbols-outlined sch-icon-12">
                 groups
               </span>
-              {ev.groupName}
+              <span className="sch-tcard__tag-text">{ev.groupName}</span>
             </span>
           ) : (
             taskType && <span className="sch-tcard__tag">{taskType}</span>

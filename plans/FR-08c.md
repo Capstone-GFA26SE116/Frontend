@@ -39,3 +39,6 @@ Tên cột, giới hạn và xử lý thời hạn theo plan FR-08c của AI.
 - Kiểm tra cây bằng Node xác nhận mã cột mốc có thể lặp ở hai dự án, task mồ côi được nhận diện và bỏ dự án sẽ bỏ các dòng con đã liên kết.
 - Parser AI đọc được file mẫu trong `public/`.
 - Luồng brief gửi lại nội dung và nguồn đã xem trước. API client nhận được cả phản hồi dạng danh sách và phản hồi có trường `projects`.
+
+- Workbook tiếng Việt thực tế có thể thiếu loại việc. Bản xem trước cho phép chọn
+  loại việc một lần và gán cho các task đang chọn còn thiếu trường này.

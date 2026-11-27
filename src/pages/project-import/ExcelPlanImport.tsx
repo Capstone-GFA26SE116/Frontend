@@ -243,6 +243,21 @@ export function ExcelPlanImport({ onSwitch }: { onSwitch: () => void }) {
     });
   }
 
+  const tasksMissingDomain = selected?.tasks.filter((row) => !row.domain.trim()) ?? [];
+
+  function fillMissingDomains(domain: string) {
+    if (!preview || !domain) return;
+    const sources = new Set(tasksMissingDomain.map((row) => row.source));
+    setPreview({
+      ...preview,
+      rows: {
+        ...preview.rows,
+        tasks: preview.rows.tasks.map((row) => sources.has(row.source) ? { ...row, domain } : row),
+      },
+      issues: preview.issues.filter((issue) => issue.field !== "domain" || !sources.has(issue.source)),
+    });
+  }
+
   function renderRow(kind: RowKind, row: PlanRow, children?: ReactNode, counts?: string) {
     return (
       <RowEditor key={row.source} kind={kind} row={row} counts={counts}
@@ -340,6 +355,16 @@ export function ExcelPlanImport({ onSwitch }: { onSwitch: () => void }) {
                 </p>
                 {overLimit && <p role="alert" className="pim-plan-issue">Bạn có thể nhập tối đa {limit} dự án trong lần này.</p>}
                 {preview.rows.projects.length === 0 && <p>Sheet Projects chưa có dữ liệu.</p>}
+                {tasksMissingDomain.length > 0 && (
+                  <label className="pim-plan-bulk-domain">
+                    Chọn loại việc cho {tasksMissingDomain.length} công việc còn thiếu
+                    <select className="pim-input" value="" disabled={busy}
+                      onChange={(event) => fillMissingDomains(event.target.value)}>
+                      <option value="">Chọn loại việc</option>
+                      {preview.domains.map((domain) => <option key={domain}>{domain}</option>)}
+                    </select>
+                  </label>
+                )}
                 <fieldset disabled={busy} className="pim-plan-tree">
                   {preview.rows.projects.map((project) => {
                     const milestones = tree.milestonesFor(project);

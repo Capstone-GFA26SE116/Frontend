@@ -478,3 +478,95 @@
   .pim-actions { justify-content: stretch; }
   .pim-actions .pim-btn { flex: 1 1 auto; }
 }
+
+.pim-plan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin-top: .75rem;
+}
+
+.pim-plan-drop {
+  cursor: default;
+}
+
+.pim-plan-drop label {
+  cursor: pointer;
+}
+
+.pim-plan-drop input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+}
+
+.pim-plan-drop:focus-within {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.pim-plan-tree {
+  min-width: 0;
+  padding: 0;
+  margin: .75rem 0 0;
+  border: 0;
+}
+
+.pim-plan-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: .625rem;
+  margin: .4rem 0;
+  padding: .55rem;
+  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  border-radius: .4rem;
+}
+
+.pim-plan-row > input {
+  margin: .25rem 0 0;
+  accent-color: #65dc99;
+}
+
+.pim-plan-row summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.pim-plan-row summary > span {
+  margin-inline-start: .5rem;
+}
+
+.pim-plan-meta {
+  font-size: .8rem;
+  opacity: .75;
+}
+
+.pim-plan-issue {
+  font-size: .8rem;
+  color: #efae59;
+}
+
+.pim-plan-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  gap: .45rem .65rem;
+  margin: .5rem 0;
+}
+
+.pim-plan-fields label {
+  display: grid;
+  gap: .2rem;
+  min-width: 0;
+  font-size: .8rem;
+}
+
+.pim-plan-review {
+  padding-top: .5rem;
+}
+
+.pim-plan-results {
+  padding-left: 1.25rem;
+  margin-block: .75rem;
+}

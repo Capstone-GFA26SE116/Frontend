@@ -2504,7 +2504,10 @@ async function aiFetchRaw<T>(
           if (snippet) msg = `Lỗi máy chủ (HTTP ${res.status}): ${snippet}`;
         }
       }
-      return { ok: false, error: msg, status: res.status, errorCode: code ?? undefined };
+      const details = parsed && typeof parsed === "object" && "detail" in parsed
+        ? parsed.detail
+        : undefined;
+      return { ok: false, error: msg, status: res.status, errorCode: code ?? undefined, details };
     }
 
     // ok → parse JSON từ text đã đọc
@@ -3264,6 +3267,8 @@ export interface ImportProjectsRequest {
   language: ImportLanguage;
   projects: Array<{
     name: string;
+    brief: string;
+    source?: string | null;
     description?: string | null;
     deadline?: string | null;
   }>;
@@ -3302,10 +3307,12 @@ export async function importProjects(
   if (body.projects.length === 0) {
     return { ok: false, error: "Cần ít nhất 1 dự án để tạo." };
   }
-  return aiFetch<ImportedProjectDto[]>("/projects/import", {
+  const result = await aiFetch<{ projects: ImportedProjectDto[] } | ImportedProjectDto[]>("/projects/import", {
     method: "POST",
     body: JSON.stringify(body),
   });
+  if (!result.ok) return result;
+  return { ok: true, data: Array.isArray(result.data) ? result.data : result.data.projects };
 }
 
 /* ---------- Lịch sử chat ---------- */

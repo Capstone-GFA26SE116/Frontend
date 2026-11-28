@@ -677,3 +677,95 @@
     overflow-y: auto;
   }
 }
+
+.gai-group-work :is(strong, dd, p) {
+  overflow-wrap: anywhere;
+}
+.gai-group-work .gai-planner-card-title {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.gai-group-work-description {
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: 13px;
+}
+.gai-group-work-info {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--gai-p-soft);
+  font-size: 13px;
+}
+.gai-group-work-info dt,
+.gai-group-work-meta {
+  color: var(--gai-p-mute);
+  font-size: 12px;
+}
+.gai-group-work-info dd {
+  margin: 3px 0 0;
+  color: var(--gai-p-ink);
+}
+.gai-group-work-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 12px;
+}
+.gai-group-work-heading h3 {
+  margin: 0;
+  color: var(--gai-p-ink);
+  font-size: 14px;
+}
+.gai-group-work-milestone {
+  padding: 9px 10px;
+  border: 1px solid var(--gai-p-hairline);
+  border-radius: 8px;
+}
+.gai-group-work summary {
+  padding-block: 3px;
+  cursor: pointer;
+  color: var(--gai-p-ink);
+  font-size: 13px;
+}
+.gai-group-work summary::marker {
+  color: var(--gai-p-primary);
+}
+.gai-group-work-meta {
+  display: block;
+}
+.gai-group-work summary .gai-group-work-meta {
+  padding-left: 13px;
+  margin-top: 2px;
+}
+.gai-group-work-list {
+  display: grid;
+  list-style: none;
+  gap: 5px;
+  padding: 0 0 0 8px;
+  margin: 6px 0 0;
+}
+.gai-group-work-item + .gai-group-work-item {
+  border-top: 1px solid var(--gai-p-hairline);
+  padding-top: 4px;
+}
+.gai-group-work-detail,
+.gai-group-work-error {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+.gai-group-work-detail {
+  margin: 4px 0 4px 13px;
+}
+.gai-group-work-subtask {
+  padding: 4px 8px;
+  border-left: 2px solid var(--gai-p-hairline);
+  font-size: 12px;
+}

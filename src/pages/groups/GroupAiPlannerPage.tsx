@@ -1,6 +1,6 @@
 /**
  * ===========================================================
- * Group Lập kế hoạch với AIner — trang riêng cho Chat AI của nhóm
+ * Lập kế hoạch với AI — trang riêng cho Chat AI của nhóm
  * ===========================================================
  * Route: /groups/:groupId/ai
  *
@@ -54,7 +54,9 @@ import {
   type GroupDto,
   type GroupMemberDto,
   type GroupMilestoneDto,
+  type GroupTaskDto,
 } from "../../lib/group-api";
+import { GroupWorkPanel } from "./GroupWorkPanel";
 import { toGroupAiErrorView, type GroupAiErrorView } from "./group-ai-errors";
 import {
   buildApplyPlans,
@@ -95,7 +97,10 @@ export function GroupAiPlannerPage() {
   const [groupError, setGroupError] = useState<string | null>(null);
   const [loadingGroup, setLoadingGroup] = useState(true);
   const [groupMilestones, setGroupMilestones] = useState<GroupMilestoneDto[]>([]);
-  const [groupTaskCount, setGroupTaskCount] = useState<number | null>(null);
+  const [groupTasks, setGroupTasks] = useState<GroupTaskDto[]>([]);
+  const [workError, setWorkError] = useState(false);
+  const [loadingWork, setLoadingWork] = useState(true);
+  const [workVersion, setWorkVersion] = useState(0);
 
   /* ---------- Chat ---------- */
   const [chats, setChats] = useState<GroupConversationDto[]>([]);
@@ -161,6 +166,7 @@ export function GroupAiPlannerPage() {
 
   const loadGroup = useCallback(async () => {
     if (!groupId) return;
+    setLoadingWork(true);
     const [gRes, mRes, milestoneRes, taskRes] = await Promise.all([
       getGroup(groupId),
       listGroupMembers(groupId),
@@ -168,6 +174,7 @@ export function GroupAiPlannerPage() {
       listGroupTasks(groupId),
     ]);
     setLoadingGroup(false);
+    setLoadingWork(false);
     if (!gRes.ok) {
       setGroupError(gRes.error);
       return;
@@ -175,7 +182,9 @@ export function GroupAiPlannerPage() {
     setGroupError(null);
     setGroup(gRes.data);
     if (milestoneRes.ok) setGroupMilestones(milestoneRes.data);
-    if (taskRes.ok) setGroupTaskCount(taskRes.data.length);
+    if (taskRes.ok) setGroupTasks(taskRes.data);
+    setWorkError(!milestoneRes.ok || !taskRes.ok);
+    if (taskRes.ok && milestoneRes.ok) setWorkVersion((version) => version + 1);
     setMembers(mRes.ok ? (mRes.data ?? []) : []);
   }, [groupId]);
 
@@ -803,7 +812,7 @@ Trưởng nhóm có thể mở cuộc trò chuyện lập kế hoạch với AI.
                 </span>
                 <div>
                   <h1 className="gai-planner-stream-h1">
-                    Group Lập kế hoạch với AIner
+                    Lập kế hoạch với AI
                     {activeChat?.title && (
                       <span className="gai-planner-stream-chat-title">
                         {activeChat.title}
@@ -939,34 +948,16 @@ Trưởng nhóm có thể mở cuộc trò chuyện lập kế hoạch với AI.
               onConfirmConflicts={() => void handleApply(true)}
             />
 
-            {/* Ngữ cảnh nhóm */}
-            <div className="gai-planner-card">
-              <div className="gai-planner-card-head">
-                <span
-                  className="material-symbols-outlined gai-planner-card-icon"
-                  aria-hidden="true"
-                >
-                  info
-                </span>
-                <h2 className="gai-planner-card-title">Nhóm đang có gì?</h2>
-              </div>
-              <p className="gai-planner-card-sub">
-                {group.name} · {group.memberCount} thành viên
-                {groupTaskCount !== null && ` · ${groupTaskCount} công việc`}
-                {group.deadline && ` · Hạn ${new Date(group.deadline).toLocaleDateString("vi-VN")}`}
-              </p>
-              {groupMilestones.length > 0 && (
-                <details className="gai-group-existing">
-                  <summary>{groupMilestones.length} cột mốc hiện có</summary>
-                  <ul className="gai-planner-context-list">
-                    {groupMilestones.map((milestone) => <li key={milestone.id}>{milestone.name}</li>)}
-                  </ul>
-                </details>
-              )}
-              <Link to={`/groups/${groupId}`} className="gai-btn gai-btn--ghost gai-btn--sm">
-                Xem công việc và gợi ý người làm
-              </Link>
-            </div>
+            <GroupWorkPanel
+              group={group}
+              members={members}
+              milestones={groupMilestones}
+              tasks={groupTasks}
+              loading={loadingWork}
+              error={workError}
+              version={workVersion}
+              onRetry={() => void loadGroup()}
+            />
           </aside>
         </div>
       </div>

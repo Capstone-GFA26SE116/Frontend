@@ -76,7 +76,7 @@ export function OverrunDialog({
     const res = await reportOverrun({
       slot_id: slotId!,
       extra_minutes: extraMinutes,
-      language: "vi",
+      language: "en",
     });
     setLoading(false);
     if (!res.ok) {
@@ -92,7 +92,10 @@ export function OverrunDialog({
     const moves = result.moves ?? [];
     if (moves.length === 0) {
       // Không có slot nào bị dời (chỉ kéo dài chính slot này) → coi như xong.
-      toast.success("Đã ghi nhận", result.summary ?? "Đã cập nhật thời lượng slot.");
+      toast.success(
+        "Recorded",
+        result.summary ?? "Slot duration updated.",
+      );
       onApplied?.();
       onClose();
       return;
@@ -107,7 +110,7 @@ export function OverrunDialog({
         startTime: mv.new_start,
         endTime: mv.new_end,
         isManualOverride: true,
-        explanation: mv.explanation ?? "Kéo dài do overrun",
+        explanation: mv.explanation ?? "Extended due to overrun",
       });
       if (!res.ok) {
         failed += 1;
@@ -123,13 +126,14 @@ export function OverrunDialog({
     setApplying(false);
     if (failed > 0) {
       toast.error(
-        firstOverlapMsg ? "Time slot overlaps" : "Cập nhật chưa xong",
-        firstOverlapMsg ?? `${failed}/${moves.length} khung giờ chưa được cập nhật.`,
+        firstOverlapMsg ? "Time slot overlaps" : "Update incomplete",
+        firstOverlapMsg ??
+          `${failed}/${moves.length} time slots couldn't be updated.`,
       );
     } else {
       toast.success(
-        "Đã cập nhật lịch",
-        `${moves.length} khung giờ đã được dời.`,
+        "Schedule updated",
+        `${moves.length} time slots were moved.`,
       );
     }
     onApplied?.();
@@ -147,22 +151,22 @@ export function OverrunDialog({
         className="ov-panel"
         role="dialog"
         aria-modal="true"
-        aria-label="Cần thêm thời gian"
+        aria-label="Need more time"
       >
         <div className="ov-head">
           <div className="ov-head-icon">
             <span className="material-symbols-outlined">more_time</span>
           </div>
           <div className="ov-head-text">
-            <p className="ov-eyebrow">Chưa xong</p>
-            <h2 className="ov-title">Cần thêm bao nhiêu phút?</h2>
+            <p className="ov-eyebrow">Not finished</p>
+            <h2 className="ov-title">How many more minutes?</h2>
           </div>
           <button
             type="button"
             className="ov-close"
             onClick={onClose}
             disabled={loading || applying}
-            aria-label="Đóng"
+            aria-label="Close"
           >
             <span className="material-symbols-outlined">close</span>
           </button>
@@ -173,7 +177,7 @@ export function OverrunDialog({
             <p className="ov-task">
               <span className="material-symbols-outlined ov-icon-16">task_alt</span>
               {taskTitle}
-              {plannedMinutes ? ` · dự kiến ${plannedMinutes} phút` : ""}
+              {plannedMinutes ? ` · planned ${plannedMinutes} min` : ""}
             </p>
           )}
 
@@ -187,8 +191,8 @@ export function OverrunDialog({
           {!result && (
             <>
               <label className="ov-label" htmlFor="ov-minutes">
-                Số phút cần thêm
-                <span className="ov-value">{extraMinutes} phút</span>
+                Extra minutes needed
+                <span className="ov-value">{extraMinutes} min</span>
               </label>
               <input
                 id="ov-minutes"
@@ -224,7 +228,7 @@ export function OverrunDialog({
                   <span className="material-symbols-outlined ov-icon-16">
                     info
                   </span>
-                  AI không tìm được cách xử lý. Hãy thử số phút khác.
+                  AI couldn't find a way to resolve this. Try a different number of minutes.
                 </p>
               )}
 
@@ -233,13 +237,13 @@ export function OverrunDialog({
                   <span className="material-symbols-outlined ov-icon-16">
                     warning
                   </span>
-                  Việc này sẽ kéo dài quá cuối ngày làm việc.
+                  This will extend past the end of your working day.
                 </p>
               )}
 
               {result.moves.length > 0 && (
                 <>
-                  <p className="ov-sub">Các khung giờ sẽ được dời:</p>
+                  <p className="ov-sub">The following time slots will be moved:</p>
                   <ul className="ov-moves">
                     {result.moves.map((mv) => (
                       <li key={mv.slot_id} className="ov-move">
@@ -257,11 +261,11 @@ export function OverrunDialog({
 
               {result.not_placed.length > 0 && (
                 <>
-                  <p className="ov-sub">Không xếp lại được:</p>
+                  <p className="ov-sub">Couldn't be rescheduled:</p>
                   <ul className="ov-notplaced">
                     {result.not_placed.map((np) => (
                       <li key={np.slot_id} className="ov-move">
-                        {np.reason ?? "Không tìm được khung giờ trống."}
+                        {np.reason ?? "No free time slot found."}
                       </li>
                     ))}
                   </ul>
@@ -280,7 +284,7 @@ export function OverrunDialog({
                 onClick={() => setResult(null)}
                 disabled={applying}
               >
-                Đổi số phút
+                Change minutes
               </button>
               <button
                 type="button"
@@ -291,7 +295,7 @@ export function OverrunDialog({
                 <span className="material-symbols-outlined ov-icon-20">
                   {applying ? "progress_activity" : "check"}
                 </span>
-                {applying ? "Đang cập nhật…" : "Đồng ý"}
+                {applying ? "Updating…" : "Apply"}
               </button>
             </>
           ) : (
@@ -302,7 +306,7 @@ export function OverrunDialog({
                 onClick={onClose}
                 disabled={loading}
               >
-                Huỷ
+                Cancel
               </button>
               <button
                 type="button"
@@ -313,7 +317,7 @@ export function OverrunDialog({
                 <span className="material-symbols-outlined ov-icon-20">
                   {loading ? "progress_activity" : "auto_awesome"}
                 </span>
-                {loading ? "Đang tính…" : "Tính cách kéo dài"}
+                {loading ? "Calculating…" : "Calculate extension"}
               </button>
             </>
           )}
@@ -328,7 +332,7 @@ export function OverrunDialog({
 function fmtTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleTimeString("vi-VN", {
+  return d.toLocaleTimeString("en-US", {
     hour: "2-digit",
     minute: "2-digit",
   });

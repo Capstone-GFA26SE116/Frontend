@@ -91,7 +91,7 @@ function Dialog({
             <button
               type="button"
               className="fc-dialog__close"
-              aria-label="Đóng"
+              aria-label="Close"
               onClick={onClose}
             >
               <span className="material-symbols-outlined">close</span>
@@ -129,8 +129,8 @@ export function EarlyWarningDialog({
 }) {
   return (
     <Dialog
-      eyebrow="Bắt đầu sớm"
-      title="Bạn đang bắt đầu sớm hơn lịch"
+      eyebrow="Started early"
+      title="You're starting earlier than scheduled"
       icon="schedule"
       tone="warn"
       dismissible={false}
@@ -143,7 +143,7 @@ export function EarlyWarningDialog({
             onClick={onDiscard}
             disabled={busy}
           >
-            Bỏ phiên này
+            Discard this session
           </button>
           <button
             type="button"
@@ -151,18 +151,19 @@ export function EarlyWarningDialog({
             onClick={onKeep}
             disabled={busy}
           >
-            Vâng, bắt đầu
+            Yes, start
           </button>
         </>
       }
     >
       <p className="fc-dialog__text">
-        <strong>{taskTitle || "Task này"}</strong> được lên lịch bắt đầu muộn hơn{" "}
-        <strong>{formatMinutes(startedEarlyMinutes)}</strong> so với bây giờ.
+        <strong>{taskTitle || "This task"}</strong> is scheduled to start{" "}
+        <strong>{formatMinutes(startedEarlyMinutes)}</strong> later than now.
       </p>
       <p className="fc-dialog__hint">
-        Phiên làm việc đã được tạo. Nếu bạn bấm nhầm, hãy chọn{" "}
-        <strong>Bỏ phiên này</strong> — phiên sẽ được dừng ngay.
+        The focus session has already been created. If you clicked by mistake,
+        choose <strong>Discard this session</strong> — it will be stopped
+        immediately.
       </p>
     </Dialog>
   );
@@ -213,8 +214,8 @@ export function StopReasonDialog({
 
   return (
     <Dialog
-      eyebrow="Kết thúc phiên"
-      title="Dừng phiên làm việc"
+      eyebrow="End session"
+      title="Stop the focus session"
       icon="stop_circle"
       onClose={onClose}
       footer={
@@ -225,7 +226,7 @@ export function StopReasonDialog({
             onClick={onClose}
             disabled={busy}
           >
-            Huỷ
+            Cancel
           </button>
           <button
             type="button"
@@ -237,22 +238,22 @@ export function StopReasonDialog({
             }}
             disabled={busy || (noteRequired && !note.trim())}
           >
-            {busy ? "Đang lưu…" : "Dừng phiên"}
+            {busy ? "Saving…" : "Stop session"}
           </button>
         </>
       }
     >
       <div className="fc-dialog__session">
         <span className="fc-dialog__session-title">
-          {taskTitle || "Không rõ task"}
+          {taskTitle || "Unknown task"}
         </span>
         <span className="fc-dialog__session-time">
           {formatClock(elapsedSeconds)}
         </span>
       </div>
 
-      <p className="fc-dialog__label">Lý do dừng</p>
-      <div className="fc-reasons" role="radiogroup" aria-label="Lý do dừng">
+      <p className="fc-dialog__label">Reason for stopping</p>
+      <div className="fc-reasons" role="radiogroup" aria-label="Reason for stopping">
         {reasons.map((r) => (
           <button
             key={r}
@@ -276,11 +277,11 @@ export function StopReasonDialog({
       </div>
 
       <label className="fc-dialog__label" htmlFor="fc-stop-note">
-        Ghi chú{" "}
+        Note{" "}
         {noteRequired ? (
-          <span className="fc-dialog__required">(bắt buộc)</span>
+          <span className="fc-dialog__required">(required)</span>
         ) : (
-          <span className="fc-dialog__optional">(tuỳ chọn)</span>
+          <span className="fc-dialog__optional">(optional)</span>
         )}
       </label>
       <input
@@ -291,8 +292,8 @@ export function StopReasonDialog({
         }
         placeholder={
           noteRequired
-            ? "VD: Chờ khách gửi tài liệu"
-            : "VD: Đã gửi file cho khách"
+            ? "e.g. Waiting for the client to send the document"
+            : "e.g. Sent the file to the client"
         }
         value={note}
         onChange={(e) => {
@@ -306,7 +307,7 @@ export function StopReasonDialog({
       {showNoteError && (
         <p className="fc-dialog__field-error" role="alert">
           <span className="material-symbols-outlined">error</span>
-          Hãy ghi rõ lý do — lý do này bắt buộc phải có ghi chú.
+          Please describe the reason — this reason requires a note.
         </p>
       )}
 
@@ -351,8 +352,8 @@ export function ConfirmTimeoutDialog({
 
   return (
     <Dialog
-      eyebrow="Hệ thống đã tự ngắt"
-      title="Bạn thực sự làm bao lâu?"
+      eyebrow="Auto-ended by the system"
+      title="How long did you actually work?"
       icon="timer_off"
       tone="warn"
       onClose={onClose}
@@ -364,7 +365,7 @@ export function ConfirmTimeoutDialog({
             onClick={onDiscard}
             disabled={busy}
           >
-            Bỏ phiên này
+            Discard this session
           </button>
           <button
             type="button"
@@ -372,23 +373,22 @@ export function ConfirmTimeoutDialog({
             onClick={() => onConfirm(edited && valid ? parsed : null)}
             disabled={busy}
           >
-            {busy ? "Đang lưu…" : "Xác nhận"}
+            {busy ? "Saving…" : "Confirm"}
           </button>
         </>
       }
     >
       <p className="fc-dialog__text">
-        Phiên làm việc cho <strong>{item.taskTitle || "task"}</strong> đã bị hệ
-        thống tự ngắt vì kéo dài quá lâu.
+        The focus session for <strong>{item.taskTitle || "this task"}</strong>{" "}
+        was ended automatically because it ran too long.
       </p>
       <p className="fc-dialog__hint">
-        Hệ thống ghi nhận <strong>{formatMinutes(item.systemMinutes)}</strong>. Số
-        này <em>chưa</em> được tính vào thời gian làm việc thực tế cho tới khi
-        bạn xác nhận.
+        The system recorded <strong>{formatMinutes(item.systemMinutes)}</strong>.
+        This time is <em>not</em> counted as actual work time until you confirm.
       </p>
 
       <label className="fc-dialog__label" htmlFor="fc-confirm-minutes">
-        Thời gian thực tế (phút)
+        Actual time (minutes)
       </label>
       <input
         id="fc-confirm-minutes"
@@ -406,7 +406,7 @@ export function ConfirmTimeoutDialog({
       />
       {edited && !valid && (
         <p className="fc-dialog__error">
-          Số phút phải là số nguyên từ 1 đến 1440.
+          Minutes must be a whole number from 1 to 1440.
         </p>
       )}
     </Dialog>
@@ -450,8 +450,8 @@ export function SelfReportDialog({
 
   return (
     <Dialog
-      eyebrow="Bổ sung thủ công"
-      title="Thêm giờ đã làm việc"
+      eyebrow="Manual entry"
+      title="Add time already worked"
       icon="edit_calendar"
       onClose={onClose}
       footer={
@@ -462,7 +462,7 @@ export function SelfReportDialog({
             onClick={onClose}
             disabled={busy}
           >
-            Huỷ
+            Cancel
           </button>
           <button
             type="button"
@@ -472,21 +472,21 @@ export function SelfReportDialog({
             }
             disabled={busy || !valid || !selectedTaskId}
           >
-            {busy ? "Đang lưu…" : "Ghi nhận"}
+            {busy ? "Saving…" : "Record"}
           </button>
         </>
       }
     >
       <p className="fc-dialog__text">
-        Bạn quên bấm Start? Ghi nhận thời gian đã làm cho{" "}
-        <strong>{taskTitle || "task"}</strong> để thống kê chính xác.
+        Forgot to press Start? Record the time you worked on{" "}
+        <strong>{taskTitle || "this task"}</strong> so your stats stay accurate.
       </p>
 
       <label className="fc-dialog__label" htmlFor="fc-self-task">
         Task
       </label>
       {tasks.length === 0 ? (
-        <p className="fc-dialog__hint">Chưa có task nào để ghi nhận.</p>
+        <p className="fc-dialog__hint">There are no tasks to record yet.</p>
       ) : (
         <select
           id="fc-self-task"
@@ -495,7 +495,7 @@ export function SelfReportDialog({
           onChange={(e) => onSelectTask(e.target.value)}
           disabled={busy}
         >
-          <option value="">— Chọn task —</option>
+          <option value="">— Select a task —</option>
           {tasks.map((t) => (
             <option key={t.id} value={t.id}>
               {t.title}
@@ -505,7 +505,7 @@ export function SelfReportDialog({
       )}
 
       <label className="fc-dialog__label" htmlFor="fc-self-minutes">
-        Thời gian đã làm (phút)
+        Time worked (minutes)
       </label>
       <input
         id="fc-self-minutes"
@@ -520,18 +520,18 @@ export function SelfReportDialog({
       />
       {(!Number.isFinite(parsed) || parsed < 1 || parsed > 1440) && (
         <p className="fc-dialog__error">
-          Số phút phải là số nguyên từ 1 đến 1440.
+          Minutes must be a whole number from 1 to 1440.
         </p>
       )}
 
       <label className="fc-dialog__label" htmlFor="fc-self-note">
-        Ghi chú <span className="fc-dialog__optional">(tuỳ chọn)</span>
+        Note <span className="fc-dialog__optional">(optional)</span>
       </label>
       <input
         id="fc-self-note"
         type="text"
         className="fc-input"
-        placeholder="VD: Hoàn thành phần thiết kế"
+        placeholder="e.g. Finished the design draft"
         value={note}
         onChange={(e) => setNote(e.target.value)}
         disabled={busy}
@@ -558,7 +558,7 @@ export function CheckInDialog({
 
   return (
     <Dialog
-      eyebrow="Kiểm tra nhanh"
+      eyebrow="Quick check-in"
       title={CHECK_IN_QUESTIONS[0]}
       icon="sentiment_satisfied"
       onClose={onClose}
@@ -568,18 +568,18 @@ export function CheckInDialog({
           className="fc-btn fc-btn--primary"
           onClick={onClose}
         >
-          {picked ? "Xong" : "Bỏ qua"}
+          {picked ? "Done" : "Skip"}
         </button>
       }
     >
       <p className="fc-dialog__text">
-        Bạn vừa làm <strong>{formatMinutes(sessionMinutes)}</strong> cho{" "}
-        <strong>{taskTitle || "task"}</strong>.
+        You just worked for <strong>{formatMinutes(sessionMinutes)}</strong> on{" "}
+        <strong>{taskTitle || "this task"}</strong>.
       </p>
       <p className="fc-dialog__hint">
         {CHECK_IN_QUESTIONS[1]}
       </p>
-      <div className="fc-chips" role="group" aria-label="Đánh giá nhanh">
+      <div className="fc-chips" role="group" aria-label="Quick rating">
         {CHECK_IN_OPTIONS.map((opt) => (
           <button
             key={opt}
@@ -636,11 +636,11 @@ export function MarkDoneDialog({
   const isSubtask = kind === "subtask";
   return (
     <Dialog
-      eyebrow="Đánh dấu hoàn thành"
+      eyebrow="Mark as complete"
       title={
         isSubtask
-          ? "Đánh dấu subtask này là xong?"
-          : "Đánh dấu cả task là xong?"
+          ? "Mark this subtask as done?"
+          : "Mark the whole task as done?"
       }
       icon="task_alt"
       onClose={onSkip}
@@ -652,7 +652,7 @@ export function MarkDoneDialog({
             onClick={onSkip}
             disabled={busy}
           >
-            Không, để sau
+            No, later
           </button>
           <button
             type="button"
@@ -660,34 +660,34 @@ export function MarkDoneDialog({
             onClick={onConfirm}
             disabled={busy}
           >
-            {busy ? "Đang lưu…" : "Đánh dấu xong"}
+            {busy ? "Saving…" : "Mark as done"}
           </button>
         </>
       }
     >
       <p className="fc-dialog__text">
-        <strong>{title || (isSubtask ? "Subtask" : "Task")}</strong> — bạn vừa
-        dừng phiên làm việc với lý do <em>Đã xong</em>.
+        <strong>{title || (isSubtask ? "Subtask" : "Task")}</strong> — you just
+        stopped the focus session with the reason <em>Completed</em>.
       </p>
       <p className="fc-dialog__hint">
         {isSubtask ? (
           <>
-            Slot trên lịch đã chuyển sang <em>Hoàn thành</em>. Việc đánh dấu
-            subtask này là xong vẫn cần bạn xác nhận.
+            The slot on your schedule has moved to <em>Completed</em>. Marking
+            this subtask as done still needs your confirmation.
           </>
         ) : (
           <>
-            Slot trên lịch đã chuyển sang <em>Hoàn thành</em>. Việc đánh dấu
-            task là xong vẫn cần bạn xác nhận.
+            The slot on your schedule has moved to <em>Completed</em>. Marking
+            the task as done still needs your confirmation.
           </>
         )}
       </p>
       {!isSubtask && progress && progress.total > 0 && (
         <p className="fc-dialog__hint">
-          Các subtask đã xong: <strong>{progress.done}/{progress.total}</strong>
+          Subtasks done: <strong>{progress.done}/{progress.total}</strong>
           {progress.done === progress.total
-            ? " — tất cả đã xong."
-            : " — vẫn còn subtask chưa hoàn thành."}
+            ? " — all of them are done."
+            : " — some subtasks are still incomplete."}
         </p>
       )}
     </Dialog>

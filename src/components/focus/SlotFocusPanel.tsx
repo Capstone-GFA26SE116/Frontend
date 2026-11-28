@@ -33,6 +33,19 @@ export interface SlotFocusPanelProps {
   onChanged?: () => void;
   /** Tên task — hiện trong dialog "Cần thêm phút". */
   taskTitle?: string | null;
+  /**
+   * Ẩn nút Start/Stop (chỉ giữ phần tổng kết).
+   *
+   * Dùng khi modal đã hiện nút riêng TRONG khối giờ cụ thể → tránh 2 bộ
+   * nút trùng nhau trong cùng 1 modal.
+   */
+  showActions?: boolean;
+  /**
+   * Lý do bị chặn theo luật "làm trước - làm sau" (tiếng Anh).
+   *
+   * Khi có giá trị → nút Start hiện nhưng bị disable + tooltip giải thích.
+   */
+  blockedReason?: string | null;
 }
 
 export function SlotFocusPanel({
@@ -43,6 +56,8 @@ export function SlotFocusPanel({
   plannedMinutes,
   onChanged,
   taskTitle,
+  showActions = true,
+  blockedReason,
 }: SlotFocusPanelProps) {
   const { currentSlotId, hasActiveSession } = useFocusActions();
   const [summary, setSummary] = useState<FocusTimeSummaryResponse | null>(null);
@@ -74,39 +89,42 @@ export function SlotFocusPanel({
     <section className="fc-panel">
       <header className="fc-panel__head">
         <span className="material-symbols-outlined">timer</span>
-        <span className="fc-panel__title">Phiên làm việc</span>
+        <span className="fc-panel__title">Focus session</span>
       </header>
 
-      <SlotFocusActions
-        slotId={slotId}
-        taskId={taskId}
-        subTaskId={subTaskId}
-        status={status}
-        plannedMinutes={plannedMinutes}
-        blockedByOtherSession={blockedByOtherSession}
-        onChanged={onChanged}
-        taskTitle={taskTitle}
-      />
+      {showActions && (
+        <SlotFocusActions
+          slotId={slotId}
+          taskId={taskId}
+          subTaskId={subTaskId}
+          status={status}
+          plannedMinutes={plannedMinutes}
+          blockedByOtherSession={blockedByOtherSession}
+          blockedReason={blockedReason}
+          onChanged={onChanged}
+          taskTitle={taskTitle}
+        />
+      )}
 
       {loading && !hasData ? (
-        <p className="fc-panel__hint">Đang tải tổng kết…</p>
+        <p className="fc-panel__hint">Loading summary…</p>
       ) : hasData && summary ? (
         <>
           <div className="fc-panel__stats">
             <div className="fc-panel__stat">
-              <span className="fc-panel__stat-label">Kế hoạch</span>
+              <span className="fc-panel__stat-label">Planned</span>
               <span className="fc-panel__stat-value">
                 {formatMinutes(summary.plannedMinutes)}
               </span>
             </div>
             <div className="fc-panel__stat">
-              <span className="fc-panel__stat-label">Thực tế</span>
+              <span className="fc-panel__stat-label">Actual</span>
               <span className="fc-panel__stat-value fc-panel__stat-value--accent">
                 {formatMinutes(summary.actualMinutes)}
               </span>
             </div>
             <div className="fc-panel__stat">
-              <span className="fc-panel__stat-label">Số phiên</span>
+              <span className="fc-panel__stat-label">Sessions</span>
               <span className="fc-panel__stat-value">{summary.sessionCount}</span>
             </div>
           </div>

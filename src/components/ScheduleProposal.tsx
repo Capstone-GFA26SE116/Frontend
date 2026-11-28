@@ -35,18 +35,18 @@ import "./schedule-proposal.css";
 
 /* ---------- Warning group ---------- */
 
-/** Nhãn tiếng Việt cho `warning.type` do AI trả về. */
+/** Nhãn tiếng Anh cho `warning.type` do AI trả về. */
 const WARNING_LABELS: Record<string, string> = {
-  not_enough_time: "Không đủ thời gian trống",
-  overdue: "Đã quá hạn",
-  past_deadline: "Đã quá hạn",
-  no_free_slot: "Hết khung giờ trống",
-  insufficient_time: "Không đủ thời gian trống",
+  not_enough_time: "Not enough free time",
+  overdue: "Overdue",
+  past_deadline: "Past its deadline",
+  no_free_slot: "No free slots left",
+  insufficient_time: "Not enough free time",
   // ⚠️ Thêm theo spec BE (Nov 2026) — chỉ cần hiện `message`, label chỉ để
   // phân loại khi `message` rỗng.
-  day_overloaded: "Ngày này quá tải",
-  beyond_window: "Việc hạn xa hơn 7 ngày chưa xếp hết",
-  calendar_not_synced: "Google Calendar chưa đồng bộ",
+  day_overloaded: "This day is overloaded",
+  beyond_window: "Tasks due beyond 7 days aren't scheduled yet",
+  calendar_not_synced: "Google Calendar isn't synced",
 };
 
 /**
@@ -121,7 +121,7 @@ function SummaryChips({
   return (
     <div className="sp-summary">
       <div className="sp-summary-chips">
-        {chip("all", "Tất cả", "apps", summary.totalItems, "sp-chip--all")}
+        {chip("all", "All", "apps", summary.totalItems, "sp-chip--all")}
         {chip(
           "overdue",
           PROPOSAL_GROUP_LABELS.overdue,
@@ -146,8 +146,8 @@ function SummaryChips({
       </div>
       <p className="sp-summary-meta">
         {summary.totalSubtasks > 0 && `${summary.totalSubtasks} subtask · `}
-        {summary.totalSlots} khung giờ · {fmtMinutes(summary.totalMinutes)}
-        {selectedCount > 0 && ` · đã chọn ${selectedCount}`}
+        {summary.totalSlots} time slots · {fmtMinutes(summary.totalMinutes)}
+        {selectedCount > 0 && ` · ${selectedCount} selected`}
       </p>
     </div>
   );
@@ -210,7 +210,7 @@ function TaskGroup({
             }}
             onChange={() => onToggleTask(group)}
             disabled={total === 0 || approving}
-            aria-label={`Chọn tất cả khung giờ của ${heading}`}
+            aria-label={`Select all time slots for ${heading}`}
           />
           <span className="sp-task-title">{heading}</span>
         </label>
@@ -239,7 +239,7 @@ function TaskGroup({
             <span
               className={`sp-task-parent-deadline${group.isOverdue ? " sp-task-parent-deadline--late" : ""}`}
             >
-              {deadline?.toLocaleDateString("vi-VN", {
+              {deadline?.toLocaleDateString("en-GB", {
                 day: "2-digit",
                 month: "2-digit",
               })}
@@ -256,8 +256,8 @@ function TaskGroup({
       {hasDeadline && !isSubtaskGroup && (
         <div className={`sp-task-deadline${group.isOverdue ? " sp-task-deadline--late" : ""}`}>
           <span className="material-symbols-outlined sp-icon-14">event</span>
-          Deadline: {deadline.toLocaleString("vi-VN")}
-          {group.isOverdue && " (đã qua)"}
+          Deadline: {deadline.toLocaleString("en-GB")}
+          {group.isOverdue && " (past)"}
         </div>
       )}
 
@@ -266,7 +266,7 @@ function TaskGroup({
       ))}
 
       {total === 0 ? (
-        <p className="sp-task-empty">AI không tìm được khung giờ trống.</p>
+        <p className="sp-task-empty">AI couldn't find a free time slot.</p>
       ) : (
         <ul className="sp-task-slots">
           {group.slots.map((s) => {
@@ -352,7 +352,7 @@ export function ProposalBody({
         <span className="material-symbols-outlined sp-state-icon sp-state-icon--spin">
           progress_activity
         </span>
-        <p>AI đang tính lịch…</p>
+        <p>AI is calculating the schedule…</p>
       </div>
     );
   }
@@ -371,7 +371,7 @@ export function ProposalBody({
     return (
       <div className="sp-state">
         <span className="material-symbols-outlined sp-state-icon">event_busy</span>
-        <p>Không tìm được khung giờ trống phù hợp.</p>
+        <p>No matching free time slot found.</p>
       </div>
     );
   }
@@ -409,7 +409,7 @@ export function ProposalBody({
       {shownGroups.length === 0 ? (
         <div className="sp-state">
           <span className="material-symbols-outlined sp-state-icon">filter_alt_off</span>
-          <p>Không có việc nào trong nhóm này.</p>
+          <p>There are no tasks in this group.</p>
         </div>
       ) : (
         <div className="sp-groups">
@@ -433,20 +433,20 @@ export function ProposalBody({
           className="sp-more"
           onClick={() => setShowAll(true)}
         >
-          Xem thêm {visibleGroups.length - shownGroups.length} việc
+          Show {visibleGroups.length - shownGroups.length} more tasks
         </button>
       )}
 
       {showAll && visibleGroups.length > GROUP_PAGE && (
         <button type="button" className="sp-more" onClick={() => setShowAll(false)}>
-          Thu gọn
+          Collapse
         </button>
       )}
 
       {unscheduledTaskIds.length > 0 && (
         <div className="sp-note">
           <span className="material-symbols-outlined sp-icon-16">info</span>
-          {unscheduledTaskIds.length} việc chưa có khung giờ phù hợp.
+          {unscheduledTaskIds.length} tasks don't have a suitable time slot yet.
         </div>
       )}
     </>
@@ -475,10 +475,10 @@ export function ProposalActions({
     <div className="sp-actions">
       <span className="sp-actions-hint">
         {count === 0 ? (
-          "Chọn ít nhất 1 khung giờ"
+          "Select at least 1 time slot"
         ) : (
           <>
-            <strong>{count}</strong> khung giờ
+            <strong>{count}</strong> time slots
             {subtaskCount > 0 && ` · ${subtaskCount} subtask`}
           </>
         )}
@@ -495,7 +495,7 @@ export function ProposalActions({
         <span className="material-symbols-outlined sp-icon-20">
           {approving ? "progress_activity" : "check"}
         </span>
-        {approving ? "Đang apply…" : "Apply"}
+        {approving ? "Applying…" : "Apply"}
       </button>
     </div>
   );
@@ -550,7 +550,7 @@ export function ProposalDialog({
           </div>
           <div className="sp-head-text">
             <p className="sp-eyebrow">AI Schedule</p>
-            <h2 className="sp-title">Đề xuất lịch</h2>
+            <h2 className="sp-title">Schedule proposal</h2>
           </div>
           <button
             type="button"
@@ -560,7 +560,7 @@ export function ProposalDialog({
               onClose();
             }}
             disabled={approving}
-            aria-label="Đóng"
+            aria-label="Close"
           >
             <span className="material-symbols-outlined">close</span>
           </button>

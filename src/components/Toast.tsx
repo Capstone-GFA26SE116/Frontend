@@ -94,7 +94,7 @@ export function CenterToasts({
           <button
             type="button"
             className="mtoast__close"
-            aria-label="Đóng"
+            aria-label="Close"
             onClick={(e) => {
               e.stopPropagation();
               onDismiss(t.id);

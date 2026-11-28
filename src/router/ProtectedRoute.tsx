@@ -51,13 +51,31 @@ export function ProtectedRoute({ children }: { children?: ReactNode }) {
   /*
    * Nguồn cờ onboarding:
    *   1. `GET /api/me` → `onboardingCompleted` (nguồn chính, xuyên session).
-   *   2. Fallback localStorage (`readOnboarding()`) cho mock local.
+   *   2. Fallback localStorage (`readOnboarding()`) — CHỈ dùng khi BE **chưa
+   *      cho biết** trạng thái (`onboardingCompleted === undefined`).
+   *
+   * ⚠️ Vì sao KHÔNG dùng `||` (điều kiện OR):
+   *
+   *   const needsOnboarding =
+   *     onboardingCompleted === false || readOnboarding() === null;   // ← SAI
+   *
+   * Màn onboarding hiện tại lưu bằng `POST /api/me/onboarding` (BE), KHÔNG
+   * ghi localStorage cũ (`metanoia:onboarding` của màn mock role/sectors/goals
+   * đã bị thay thế). Vì vậy `readOnboarding()` **luôn trả null** → điều kiện
+   * OR luôn `true` → sau khi user bấm "Finish setup" thành công, `navigate()`
+   * tới `/dashboard` lại bị đẩy về `/onboarding` → **kẹt vĩnh viễn**, kể cả
+   * khi F5 (vì `GET /api/me` trả `onboardingCompleted: true` nhưng nhánh OR
+   * vẫn bị `readOnboarding() === null` kéo về `true`).
+   *
+   * Cách sửa: fallback localStorage chỉ áp dụng khi **chưa biết** trạng thái
+   * từ BE. Khi BE đã trả `true`/`false` thì BE là nguồn sự thật duy nhất.
    *
    * BE **không** chặn API khi chưa onboarding → FE phải tự gate.
    * Spec: `FE_CHANGES.md` mục 1.3.
    */
   const needsOnboarding =
-    onboardingCompleted === false || readOnboarding() === null;
+    onboardingCompleted === false ||
+    (onboardingCompleted === undefined && readOnboarding() === null);
 
   if (
     !location.pathname.startsWith("/onboarding") &&

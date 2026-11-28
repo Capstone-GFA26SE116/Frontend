@@ -185,10 +185,10 @@ export function SlotFocusActions({
           className={`fc-slot-btn fc-slot-btn--stop${compact ? " fc-slot-btn--compact" : ""}`}
           onClick={handleStop}
           disabled={busy}
-          title={phase === "Overrun" ? "Đã quá giờ — bấm để dừng" : "Dừng phiên làm việc"}
+          title={phase === "Overrun" ? "You're over time — click to stop" : "Stop the focus session"}
         >
           <span className="material-symbols-outlined">stop_circle</span>
-          <span>{phase === "Overrun" ? "Quá giờ — Dừng" : "Dừng"}</span>
+          <span>{phase === "Overrun" ? "Overrun — Stop" : "Stop"}</span>
         </button>
 
         {/* Spec BE bước 8: "Đang làm mà trễ giờ → Cần thêm X phút". */}
@@ -197,10 +197,10 @@ export function SlotFocusActions({
           className={`fc-slot-btn fc-slot-btn--overrun${compact ? " fc-slot-btn--compact" : ""}`}
           onClick={() => setOverrunOpen(true)}
           disabled={busy}
-          title="Chưa xong — cần thêm thời gian"
+          title="Not finished — need more time"
         >
           <span className="material-symbols-outlined">more_time</span>
-          <span>Thêm phút</span>
+          <span>Add minutes</span>
         </button>
 
         <OverrunDialog
@@ -222,22 +222,22 @@ export function SlotFocusActions({
     return (
       <span
         className={`fc-slot-note${compact ? " fc-slot-note--compact" : ""}`}
-        title="Bạn đang có phiên làm việc khác đang chạy"
+        title="Another focus session is already running"
       >
         <span className="material-symbols-outlined">info</span>
-        <span>Đang có phiên khác</span>
+        <span>Another session running</span>
       </span>
     );
   }
 
   const label =
     phase === "Missed"
-      ? "Làm bù"
+      ? "Make up"
       : phase === "Approved"
-        ? "Bắt đầu sớm"
+        ? "Start early"
         : phase === "Postponed"
-          ? "Làm lại"
-          : "Bắt đầu";
+          ? "Redo"
+          : "Start";
 
   const faded = isSlotFaded(phase);
 
@@ -270,8 +270,8 @@ export function SlotFocusActions({
       disabled={busy}
       title={
         plannedMinutes
-          ? `Bắt đầu phiên làm việc (${plannedMinutes} phút)`
-          : "Bắt đầu phiên làm việc"
+          ? `Start the focus session (${plannedMinutes} min)`
+          : "Start the focus session"
       }
     >
       <span className="material-symbols-outlined">play_circle</span>

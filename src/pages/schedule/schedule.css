@@ -142,6 +142,17 @@
   border-color: var(--sch-primary);
   color: var(--sch-primary);
 }
+/* Nút "xóa" nhưng chưa xóa (mở pop-up xác nhận) */
+.sch-btn--danger-ghost {
+  border-color: rgba(255, 107, 107, 0.45);
+  color: var(--sch-error);
+  background: transparent;
+}
+.sch-btn--danger-ghost:hover {
+  border-color: var(--sch-error);
+  color: var(--sch-error);
+  background: var(--sch-error-soft);
+}
 
 .sch-icon-btn {
   display: inline-flex;
@@ -408,10 +419,17 @@
   border-radius: var(--sch-r-md);
 }
 @media (min-width: 1024px) {
+  /*
+   * Grid 3 cột: điều hướng | tabs view | (ô trống).
+   *
+   * ⚠️ Bộ lọc nhanh (All items / Priority / ...) đã ẩn → nếu dùng
+   * `space-between` thì tabs "Week / Month / Sprint & Gantt" bị đẩy sang
+   * hết bên phải. Grid cố định giữ tabs luôn ở GIỮA.
+   */
   .sch-timeline {
-    flex-direction: row;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    justify-content: space-between;
     gap: 16px;
   }
 }
@@ -420,6 +438,7 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  justify-self: start;
 }
 .sch-timeline__today {
   padding: 8px 14px;
@@ -459,6 +478,7 @@
   background: var(--sch-bg);
   border: 1px solid var(--sch-line);
   gap: 2px;
+  justify-self: center;
 }
 .sch-tab {
   padding: 6px 14px;
@@ -749,408 +769,387 @@
 }
 .sch-board__main { min-width: 0; }
 
-/*
- * Dải công cụ ngang phía trên lịch (Google Calendar connect/sync).
- * Trước đây nằm ở sidebar 320px → nay trải ngang để lịch rộng hết.
- */
-.sch-board__toolbar {
-  display: flex;
-  align-items: stretch;
-  gap: 12px;
-  min-width: 0;
-}
-.sch-board__toolbar > .sch-gcal {
-  flex: 1 1 auto;
-  min-width: 0;
+/* ===========================================================
+ * NUT "SYNC GOOGLE CALENDAR" (header) + menu phu
+ * =========================================================== */
+.sch-gcal-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
-/*
- * Dải ngang: card Google Calendar được bố trí 1 hàng — tiêu đề + trạng
- * thái ở trái, nút hành động ở phải.
- */
-.sch-board__toolbar .sch-gcal {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    "head  actions"
-    "title actions"
-    "body  actions";
-  align-items: center;
-  column-gap: 16px;
-  row-gap: 4px;
-  padding: 12px 14px;
+/* Nut phu (menu ...) */
+.sch-gcal-btn__more {
+  padding-left: 6px;
+  padding-right: 6px;
 }
-.sch-board__toolbar .sch-gcal .sch-card__head {
-  grid-area: head;
-  margin-bottom: 0;
+
+/* Lop nen de bam ra ngoai thi menu dong lai */
+.sch-gcal-btn__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
 }
-/*
- * ⚠️ Tiêu đề ("Google Calendar") phải ở ô riêng `title` — nếu để chung
- * `body` với nội dung thì 2 phần tử chồng lên nhau (grid-area trùng nhau
- * → cùng 1 ô).
- */
-.sch-board__toolbar .sch-gcal .sch-card__title {
-  grid-area: title;
-  margin: 0;
+
+/* Menu dropdown */
+.sch-gcal-btn__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 41;
+  min-width: 240px;
+  padding: 6px;
+  border: 1px solid var(--sch-line);
+  border-radius: var(--sch-r-sm);
+  background: var(--sch-low);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
-/*
- * Nội dung (hint + note + error) bọc trong 1 div `.sch-gcal__body`
- * → xếp dọc, không chồng lên nhau.
- */
-.sch-board__toolbar .sch-gcal .sch-gcal__body {
-  grid-area: body;
+
+.sch-gcal-btn__status {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  min-width: 0;
-}
-.sch-board__toolbar .sch-gcal .sch-card__hint,
-.sch-board__toolbar .sch-gcal .sch-gcal__note,
-.sch-board__toolbar .sch-gcal .sch-gcal__error {
-  margin: 0;
-}
-.sch-board__toolbar .sch-gcal .sch-gcal__actions {
-  grid-area: actions;
-  flex-direction: row;
-  margin-top: 0;
   align-items: center;
+  gap: 6px;
+  padding: 6px 8px 8px;
+  border-bottom: 1px solid var(--sch-line);
+  margin-bottom: 4px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--sch-text-2);
 }
-.sch-board__toolbar .sch-gcal .sch-gcal__btn {
-  width: auto;
+.sch-gcal-btn__status .sch-icon-14 {
+  font-size: 14px !important;
+  color: var(--sch-primary);
 }
-.sch-board__toolbar .sch-gcal .sch-gcal__btn--full {
-  margin-top: 0;
+
+.sch-gcal-btn__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px;
+  border: none;
+  border-radius: var(--sch-r-xs);
+  background: transparent;
+  color: var(--sch-text);
+  font-family: var(--sch-sans);
+  font-size: 13px;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 140ms ease;
 }
-/*
- * Nội dung đã bọc trong `.sch-gcal__body` (một grid item duy nhất ở vùng
- * `body`) → không còn rule `grid-area: body` cho note/error ở đây nữa.
- */
+.sch-gcal-btn__item:hover:not(:disabled) {
+  background: var(--sch-high);
+}
+.sch-gcal-btn__item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.sch-gcal-btn__item .sch-icon-14 {
+  font-size: 15px !important;
+  color: var(--sch-text-3);
+}
+
+/* Loi ket noi (icon do) */
+.sch-gcal-btn__error {
+  display: inline-flex;
+  align-items: center;
+  color: var(--sch-error);
+}
+.sch-gcal-btn__error .sch-icon-14 {
+  font-size: 15px !important;
+}
 
 /* ===========================================================
- * Week board — 5 ngày làm việc (T2–T6) hoặc 7 ngày
+ * WEEK TIME GRID — lưới giờ (cột giờ bên trái)
  *
- * Số cột do `--sch-week-cols` điều khiển (set inline từ React theo
- * trạng thái `showWeekend`). 5 cột → mỗi task card rộng gấp đôi so với
- * 7 cột, tên subtask hiện đủ, không bị cắt.
+ * Wrapper cuộn ngang: 7 cột ngày giữ min-width để block giờ không bị bóp.
  * =========================================================== */
-.sch-week {
+.sch-tg-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  scrollbar-width: thin;
+  scrollbar-color: var(--sch-line) transparent;
+}
+.sch-tg-scroll::-webkit-scrollbar { height: 8px; }
+.sch-tg-scroll::-webkit-scrollbar-track { background: transparent; }
+.sch-tg-scroll::-webkit-scrollbar-thumb {
+  background: var(--sch-line);
+  border-radius: var(--sch-r-pill);
+}
+
+/*
+ * Cấu trúc:
+ *   [corner] [head T2] [head T3] ... [head CN]
+ *   [gutter] [col T2]  [col T3]  ... [col CN]
+ *
+ * Mỗi `.sch-tg__col` là 1 ngày, chiều cao chia đều theo giờ
+ * (`--sch-tg-hours` giờ). Các block task được đặt tuyệt đối theo
+ * `top` / `height` (%).
+ * =========================================================== */
+.sch-tg {
   display: grid;
-  grid-template-columns: repeat(var(--sch-week-cols, 5), minmax(0, 1fr));
+  grid-template-columns: 56px repeat(var(--sch-tg-cols, 7), minmax(0, 1fr));
   gap: 1px;
   background: var(--sch-line);
   border: 1px solid var(--sch-line);
   border-radius: var(--sch-r-md);
   overflow: hidden;
+  /* Chiều cao mỗi giờ = 48px */
+  --sch-tg-hour-h: 48px;
+  /* 7 cột → mỗi cột tối thiểu 200px để block giờ đọc được */
+  min-width: calc(56px + var(--sch-tg-cols, 7) * 200px);
 }
-.sch-week__day {
-  position: relative;
+
+/* ---------- Góc trên trái ---------- */
+.sch-tg__corner {
   display: flex;
   flex-direction: column;
-  min-width: 0;
-  min-height: 380px;
-  /* Padding rộng hơn → mỗi task card có "không gian thở" riêng, không dính
-     vào mép cột hay nhau. */
-  padding: 14px 14px 16px;
-  background: var(--sch-bg);
-  cursor: pointer;
-  transition: background-color 160ms ease;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px 4px;
+  background: var(--sch-low);
+  color: var(--sch-text-3);
 }
-.sch-week__day:hover { background: var(--sch-low); }
-.sch-week__day--rest { opacity: 0.55; }
-.sch-week__day--rest:hover { opacity: 0.85; }
-.sch-week__day--today {
-  background: rgba(0, 217, 146, 0.04);
-  box-shadow: inset 0 0 0 1px var(--sch-primary);
+.sch-tg__corner .sch-icon-14 { font-size: 15px !important; }
+.sch-tg__corner-text {
+  font-family: var(--sch-mono);
+  font-size: 9px;
+  line-height: 12px;
+  letter-spacing: -0.2px;
+  text-align: center;
+  white-space: nowrap;
 }
 
-/* Dotted texture đánh dấu project span — kỹ thuật, không trang trí */
-.sch-week__day--in-span,
-.sch-month__cell--in-span {
-  position: relative;
-  overflow: hidden;
-  background-color: color-mix(in srgb, var(--accent-color, #00d992) 5%, #101010);
-  background-image: radial-gradient(
-    circle at 1px 1px,
-    color-mix(in srgb, var(--accent-color, #00d992) 22%, transparent) 1px,
-    transparent 0
-  );
-  background-size: 14px 14px;
-  box-shadow: inset 0 0 0 1px
-    color-mix(in srgb, var(--accent-color, #00d992) 45%, transparent);
-}
-.sch-week__day--in-span:hover,
-.sch-month__cell--in-span:hover {
-  background-color: color-mix(in srgb, var(--accent-color, #00d992) 9%, #101010);
-}
-.sch-month__cell--in-span { background-size: 12px 12px; }
-
-.sch-week__head {
+/* ---------- Header ngày ---------- */
+.sch-tg__head {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 4px;
-  margin-bottom: 8px;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 6px;
+  background: var(--sch-low);
+  min-width: 0;
 }
-.sch-week__dow {
-  font-size: 12px;
+.sch-tg__head--rest { opacity: 0.55; }
+.sch-tg__head--today {
+  background: rgba(0, 217, 146, 0.06);
+  box-shadow: inset 0 -2px 0 0 var(--sch-primary);
+}
+.sch-tg__dow {
+  font-size: 11px;
   font-weight: 600;
-  line-height: 16px;
-  letter-spacing: 0.9px;
+  line-height: 14px;
+  letter-spacing: 1.1px;
   text-transform: uppercase;
   color: var(--sch-text-3);
 }
-.sch-week__num {
+.sch-tg__head--today .sch-tg__dow { color: var(--sch-primary); }
+.sch-tg__num {
   font-family: var(--sch-mono);
-  font-size: 20px;
-  line-height: 24px;
+  font-size: 18px;
+  line-height: 22px;
   font-weight: 500;
   letter-spacing: -0.02em;
   color: var(--sch-text);
   font-variant-numeric: tabular-nums;
 }
-.sch-week__day--in-span .sch-week__dow,
-.sch-week__day--in-span .sch-week__num {
-  color: var(--accent-color, var(--sch-primary));
-}
-.sch-week__day--today .sch-week__num { color: var(--sch-primary); }
-
-/* status pill */
-.sch-week__badge {
+.sch-tg__head--today .sch-tg__num { color: var(--sch-primary); }
+.sch-tg__badge {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
+  padding: 1px 6px;
   border-radius: var(--sch-r-pill);
   border: 1px solid var(--sch-line);
-  background: transparent;
   font-family: var(--sch-mono);
-  font-size: 12px;
+  font-size: 10px;
+  line-height: 14px;
   font-weight: 500;
-  line-height: 16px;
   color: var(--sch-text-3);
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.sch-week__badge.sch-tone--primary {
+.sch-tg__badge.sch-tone--primary {
   border-color: var(--sch-primary-glow);
   color: var(--sch-primary);
 }
-.sch-week__badge.sch-tone--secondary {
+.sch-tg__badge.sch-tone--secondary {
   border-color: var(--sch-primary-glow);
   color: var(--sch-secondary);
 }
-.sch-week__badge.sch-tone--error {
+.sch-tg__badge.sch-tone--error {
   border-color: rgba(255, 107, 107, 0.35);
   color: var(--sch-error);
 }
-.sch-week__badge.sch-tone--muted { color: var(--sch-text-3); }
 
-.sch-week__head-right {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-/* multi-project badge */
-.sch-multi-badge {
+/* Nhãn boundary của project (start / end) */
+.sch-tg__boundary {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  padding: 2px 8px;
-  border-radius: var(--sch-r-pill);
-  background: transparent;
-  border: 1px solid color-mix(in srgb, var(--accent-color, #00d992) 50%, transparent);
-  color: var(--accent-color, var(--sch-primary));
-  font-family: var(--sch-mono);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 16px;
-  cursor: pointer;
-  transition: background-color 150ms ease;
-}
-.sch-multi-badge:hover {
-  background: color-mix(in srgb, var(--accent-color, #00d992) 18%, transparent);
-}
-.sch-multi-badge--mini {
-  padding: 0 6px;
-  font-size: 11px;
-}
-
-/* project boundary chip */
-.sch-boundary {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  margin-bottom: 6px;
+  max-width: 100%;
+  padding: 1px 5px;
   border-radius: var(--sch-r-xs);
-  border: 1px solid transparent;
-  background: transparent;
-  font-size: 11px;
+  border: 1px solid var(--sch-line);
+  font-size: 9px;
+  line-height: 13px;
   font-weight: 600;
-  line-height: 14px;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.4px;
   text-transform: uppercase;
-  overflow: hidden;
-}
-.sch-boundary__label {
-  line-height: 1;
+  color: var(--sch-text-3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sch-boundary--start {
-  background: var(--boundary-bg, var(--sch-secondary-soft));
-  border-color: var(--boundary-color, var(--sch-secondary));
-  color: var(--boundary-color, var(--sch-secondary));
+.sch-tg__boundary--start {
+  border-color: var(--sch-primary-glow);
+  color: var(--sch-primary);
 }
-.sch-boundary--end {
-  background: var(--sch-error-soft);
-  border-color: var(--sch-error);
+.sch-tg__boundary--end {
+  border-color: rgba(255, 107, 107, 0.35);
   color: var(--sch-error);
 }
-.sch-boundary--both {
+.sch-tg__boundary--both {
+  border-color: var(--sch-primary-glow);
+  color: var(--sch-primary);
+}
+.sch-tg__boundary .sch-icon-12 { font-size: 11px !important; }
+
+/* ---------- Hàng all-day ---------- */
+.sch-tg__allday-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 4px;
+  background: var(--sch-bg);
+  border-top: 1px solid var(--sch-line);
+  font-family: var(--sch-mono);
+  font-size: 9px;
+  line-height: 12px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--sch-text-3);
+}
+.sch-tg__allday-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 5px 6px;
+  background: var(--sch-bg);
+  border-top: 1px solid var(--sch-line);
+  min-width: 0;
+}
+.sch-tg__allday-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 3px 6px;
+  border: 1px solid var(--sch-line);
+  border-radius: var(--sch-r-xs);
   background: var(--sch-low);
-  border-color: var(--boundary-color, var(--sch-bright));
-  color: var(--sch-text);
+  color: var(--sch-text-2);
+  font-size: 11px;
+  line-height: 15px;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+.sch-tg__allday-chip:hover { border-color: var(--sch-bright); color: var(--sch-text); }
+.sch-tg__allday-chip .sch-icon-12 {
+  font-size: 12px !important;
+  color: var(--sch-primary);
+  flex-shrink: 0;
+}
+.sch-tg__allday-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* load bar */
-.sch-week__load {
+/* ---------- Trục giờ ---------- */
+.sch-tg__gutter {
   position: relative;
-  height: 3px;
-  background: var(--sch-line);
-  border-radius: var(--sch-r-xs);
-  margin-bottom: 8px;
-  overflow: hidden;
+  background: var(--sch-bg);
+  /* Cùng chiều cao với cột ngày */
+  height: calc(var(--sch-tg-hours, 17) * var(--sch-tg-hour-h));
 }
-.sch-week__load-fill {
+.sch-tg__hour {
   position: absolute;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  background: var(--sch-primary);
-  transition: width 300ms var(--sch-ease);
-}
-.sch-week__load[data-tone="primary"] .sch-week__load-fill {
-  background: var(--sch-primary);
-}
-.sch-week__load[data-tone="secondary"] .sch-week__load-fill {
-  background: var(--sch-secondary);
-}
-.sch-week__load[data-tone="error"] .sch-week__load-fill {
-  background: var(--sch-error);
-}
-.sch-week__load[data-tone="muted"] .sch-week__load-fill {
-  background: var(--sch-bright);
-}
-.sch-week__load-text {
-  display: block;
-  margin-top: 8px;
+  right: 6px;
+  /*
+   * Căn theo đường kẻ giờ.
+   *
+   * `transform` (translateY) đã đủ để canh — KHÔNG dùng `margin-top` vì
+   * sẽ cộng dồn với transform → lệch ~7px so với cột ngày.
+   */
   font-family: var(--sch-mono);
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--sch-text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ---------- Cột ngày ---------- */
+.sch-tg__col {
+  position: relative;
+  background: var(--sch-bg);
+  min-width: 0;
+  /* Chiều cao = số giờ trục × chiều cao 1 giờ */
+  height: calc(var(--sch-tg-hours, 17) * var(--sch-tg-hour-h));
+  /*
+   * Đường kẻ ngang theo giờ — hairline 1px, lặp mỗi 1 giờ.
+   * Dùng `repeating-linear-gradient` vì background-image chỉ nhận 1 lớp.
+   */
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--sch-line-soft) 0,
+    var(--sch-line-soft) 1px,
+    transparent 1px,
+    transparent var(--sch-tg-hour-h)
+  );
+  background-color: var(--sch-bg);
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+.sch-tg__col:hover { background: var(--sch-low); }
+.sch-tg__col--rest { background-color: #0d0d0d; }
+.sch-tg__col--rest:hover { background-color: var(--sch-low); }
+.sch-tg__col--today {
+  background-color: rgba(0, 217, 146, 0.03);
+  box-shadow: inset 1px 0 0 0 rgba(0, 217, 146, 0.25),
+    inset -1px 0 0 0 rgba(0, 217, 146, 0.25);
+}
+.sch-tg__empty {
+  padding: 16px 8px;
+  text-align: center;
   font-size: 12px;
   line-height: 16px;
   color: var(--sch-text-3);
-  font-variant-numeric: tabular-nums;
 }
 
-.sch-week__events {
-  display: flex;
-  flex-direction: column;
-  /*
-   * Khoảng cách giữa các task card trong cùng 1 ngày.
-   *
-   * 14px + 1 đường kẻ mảnh phân cách → mỗi card là 1 "vùng đọc" riêng biệt,
-   * mắt không bị rối khi lịch dày nhiều task.
-   */
-  gap: 14px;
-  flex: 1;
-  min-height: 0;
-}
-
+/* ---------- Block giờ ---------- */
 /*
- * Đường kẻ phân cách giữa 2 task card liền kề (không vẽ sau card cuối).
+ * ⚠️ KHÔNG còn `.sch-tg__block-wrap`.
  *
- * Chỉ 1 đoạn ngắn ở giữa (60px) → gợi ranh giới mà không chia khúc ngang
- * cả cột, tránh cảm giác "bị cắt".
+ * Trước đây card slot được bọc trong 1 wrapper flex kèm nút Start/Make up
+ * bên cạnh → wrapper bị kéo giãn, card trượt dài xuống và trông như bị
+ * duplicate. Nay card đứng độc lập, mọi hành động focus nằm trong modal
+ * chi tiết.
  */
-.sch-week__events > * + * {
-  position: relative;
-}
-.sch-week__events > * + *::before {
-  content: "";
+.sch-tg__block {
   position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  top: -8px;
-  width: 56px;
-  height: 1px;
-  background: var(--sch-line);
-}
-.sch-week__empty {
-  font-size: 14px;
-  line-height: 20px;
-  color: var(--sch-text-3);
-  text-align: center;
-  padding: 24px 0;
-}
-
-/* ===========================================================
- * TaskCard — ô vuông lớn cho mỗi task trên lịch tuần
- *
- * Bố cục (theo yêu cầu):
- *   ┌─────────────────────────┐
- *   │ ▍ Tên task              │  ← tên task luôn ở trên
- *   │   09:00 – 10:30 · Task  │  ← ngày giờ / nguồn
- *   │   • Subtask 1  10:00–10:45│  ← subtask + khung giờ (nếu có)
- *   │   • Subtask 2  11:00–12:00│
- *   └─────────────────────────┘
- *
- * Chrome theo DESIGN.md: canvas-soft surface, hairline border,
- * rounded-md (8px), shadow-free (Level 1 — Hairline).
- * =========================================================== */
-.sch-card-wrap {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  min-width: 0;
-}
-.sch-card-wrap > .sch-tcard {
-  flex: 1;
-  min-width: 0;
-}
-.sch-card-wrap > .fc-slot-btn {
-  flex-shrink: 0;
-}
-
-/*
- * ── TaskCard ──────────────────────────────────────────────
- * Thiết kế: "1 task = 1 khối gọn", đọc theo thứ tự từ trên xuống:
- *
- *   ┌──────────────────────────────────────┐
- *   │▍ Viết tài liệu API          [2]     │  ← tên task (đậm) + số việc con
- *   │  08:00 – 10:30                       │  ← 1 dòng meta tối giản
- *   │  ┆                                   │
- *   │  ├ 08:00  Thiết kế endpoint          │  ← subtask: giờ · tên
- *   │  └ 09:30  Viết OpenAPI spec         │
- *   └──────────────────────────────────────┘
- *
- * Nguyên tắc chống rối mắt:
- *   • 1 accent duy nhất (dải trái 2px) — không thêm dot/badge màu rác.
- *   • Chỉ 1 dòng meta, không chip tròn rải rác.
- *   • Subtask dạng timeline dọc: giờ căn trái (mono tabular), tên bên
- *     phải, đường kẻ dọc nối các mốc → mắt quét theo 1 đường thẳng.
- *   • Padding + gap rộng rãi để mỗi card là 1 "vùng đọc" riêng biệt.
- */
-.sch-tcard {
-  position: relative;
+  z-index: 2;
   display: flex;
   align-items: stretch;
-  width: 100%;
-  min-width: 0;
-  padding: 13px 14px 13px 16px;
+  gap: 6px;
+  overflow: hidden;
+  padding: 5px 7px 5px 9px;
   border: 1px solid var(--sch-line);
   border-radius: var(--sch-r-sm);
   background: var(--sch-low);
@@ -1160,262 +1159,233 @@
   cursor: pointer;
   transition:
     background-color 140ms ease,
-    border-color 140ms ease,
-    box-shadow 140ms ease;
-}
-.sch-tcard:hover {
-  background: var(--sch-high);
-  border-color: var(--sch-bright);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
-}
-.sch-tcard:focus-visible {
-  outline: 2px solid var(--sch-primary);
-  outline-offset: 2px;
+    border-color 140ms ease;
 }
 
-/* Dải accent trạng thái ở mép trái — tín hiệu duy nhất, 2px */
-.sch-tcard__accent {
+/* ---------- Cột giờ bên TRÁI card ---------- */
+.sch-tg__block-time {
+  flex-shrink: 0;
+  /*
+   * 2 dong: gio bat dau (dong tren) + dau gio ket thuc (dong duoi).
+   * Compact hon 1 dong "08:00 - 10:00" -> block rong van con cho ten viec.
+   */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  min-width: 38px;
+  padding-right: 5px;
+  border-right: 1px solid var(--sch-line-soft);
+  font-family: var(--sch-mono);
+  font-size: 10px;
+  line-height: 13px;
+  font-weight: 500;
+  color: var(--sch-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  align-self: stretch;
+  justify-content: flex-start;
+  text-align: right;
+}
+.sch-tg__block-time-start {
+  font-weight: 600;
+}
+.sch-tg__block-time-end {
+  color: var(--sch-text-3);
+  font-weight: 400;
+}
+.sch-tg__block:hover {
+  background: var(--sch-high);
+  border-color: var(--sch-bright);
+}
+.sch-tg__block:focus-visible {
+  outline: 2px solid var(--sch-primary);
+  outline-offset: 1px;
+}
+.sch-tg__block--done { opacity: 0.55; }
+
+/*
+ * ===========================================================
+ * Card ngắn (30 phút) — thu gọn để dành chỗ cho TÊN TASK
+ * ===========================================================
+ *
+ * Thứ tự ưu tiên khi thiếu chỗ (xem `TimeBlock`):
+ *   tên task > giờ bắt đầu > giờ kết thúc > tên task cha > việc con > chip meta
+ *
+ * Ở chế độ "tight":
+ *   - padding gọn lại (1px trên/dưới)
+ *   - cột giờ chỉ còn giờ bắt đầu
+ *   - tên task được phép xuống 2 dòng (wrap) thay vì bị cắt
+ */
+.sch-tg__block[data-compact="tight"] {
+  padding: 1px 5px 1px 7px;
+  gap: 4px;
+}
+.sch-tg__block[data-compact="tight"] .sch-tg__block-time {
+  min-width: 32px;
+  padding-right: 4px;
+  justify-content: center;
+}
+.sch-tg__block[data-compact="tight"] .sch-tg__block-title {
+  font-size: 11px;
+  line-height: 13px;
+  /*
+   * Card rat ngan (~24px) → chi 1 dong duoc. Uu tien hien TEN TASK, con
+   * thong tin khac bi cat (xem `TimeBlock`).
+   */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/*
+ * Card vua phai (34–56px) → chua hien duoc danh sach viec con, nhung con
+ * du chuc cho TEN TASK xuong 2 dong.
+ */
+.sch-tg__block[data-compact="mid"] .sch-tg__block-title {
+  font-size: 11px;
+  line-height: 13px;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-clamp: 2;
+  overflow: hidden;
+}
+.sch-tg__block[data-compact="tight"] .sch-tg__block-body {
+  justify-content: center;
+}
+
+/* Dải accent 2px ở mép trái — tín hiệu duy nhất */
+.sch-tg__block-accent {
   position: absolute;
   left: 0;
   top: 0;
   bottom: 0;
   width: 2px;
-  border-radius: var(--sch-r-sm) 0 0 var(--sch-r-sm);
   background: var(--sch-primary);
 }
-.sch-tcard__accent[data-tone="primary"] { background: var(--sch-primary); }
-.sch-tcard__accent[data-tone="secondary"] { background: var(--sch-sky); }
-.sch-tcard__accent[data-tone="tertiary"] { background: var(--sch-tertiary); }
-.sch-tcard__accent[data-tone="error"] { background: var(--sch-error); }
-.sch-tcard__accent[data-tone="muted"] { background: var(--sch-text-3); }
-.sch-tcard__accent[data-tone="sky"] { background: var(--sch-sky); }
+.sch-tg__block-accent[data-tone="primary"] { background: var(--sch-primary); }
+.sch-tg__block-accent[data-tone="secondary"] { background: var(--sch-sky); }
+.sch-tg__block-accent[data-tone="tertiary"] { background: var(--sch-tertiary); }
+.sch-tg__block-accent[data-tone="error"] { background: var(--sch-error); }
+.sch-tg__block-accent[data-tone="muted"] { background: var(--sch-text-3); }
+.sch-tg__block-accent[data-tone="sky"] { background: var(--sch-sky); }
 
-/* Task đang chạy → nhấp nháy nhẹ bằng dải accent (không đổi layout) */
-.sch-tcard[data-tone="primary"] {
-  border-color: rgba(0, 217, 146, 0.35);
-  background: linear-gradient(
-    90deg,
-    rgba(0, 217, 146, 0.06) 0%,
-    rgba(0, 217, 146, 0) 55%
-  );
-}
-
-.sch-tcard__body {
+.sch-tg__block-body {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
   flex: 1;
 }
 
-/* ---------- Header: tên task + chip + số việc con ---------- */
-.sch-tcard__head {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  min-width: 0;
-}
-
-/* Tên task — 14px, weight 600, tối đa 2 dòng */
-.sch-tcard__title {
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 19px;
-  color: var(--sch-text);
-  overflow-wrap: anywhere;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  min-width: 0;
-  flex: 1;
-}
-
-/* Số việc con — chỉ 1 con số nhỏ, không viền (đỡ rối) */
-.sch-tcard__count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 9999px;
-  background: var(--sch-primary-soft);
-  color: var(--sch-primary);
+/*
+ * TÉN SUBTASK - dong phu (nho hon dong chinh).
+ *
+ * Chi hien khi card du cao (>= 40px). Khi card ngan, chi con lai tên task.
+ */
+.sch-tg__block-parent {
   font-size: 10px;
-  line-height: 1;
-  font-weight: 600;
-  flex-shrink: 0;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Dấu đã hoàn thành — icon ✓ nhỏ, đặt cuối header */
-.sch-tcard__done {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  color: var(--sch-primary);
-  align-self: center;
-}
-.sch-tcard__done .sch-icon-12 {
-  font-size: 14px !important;
-}
-
-/* ---------- Meta: 1 dòng tối giản ---------- */
-.sch-tcard__meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--sch-text-3);
-  font-variant-numeric: tabular-nums;
-}
-
-.sch-tcard__time {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--sch-text-2);
+  line-height: 13px;
   font-weight: 500;
+  letter-spacing: 0.3px;
+  color: var(--sch-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sch-tcard__time .sch-icon-12 {
-  font-size: 13px !important;
-  color: var(--sch-text-3);
+
+/*
+ * TÉN TASK - dong CHINH, luon hien.
+ *
+ * Day la thu quan trong nhat: khi card qua ngan, cac thong tin khac bi cat
+ * truoc, ten task luon duoc giu lai.
+ */
+.sch-tg__block-title {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  color: var(--sch-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Địa tiún đều tiên task truớc khi bị cất. */
+  flex-shrink: 0;
 }
 
-/* Chip — chỉ dùng cho taskType / nguồn, viền rất nhạt */
-.sch-tcard__tag {
+/* Danh sách việc con: giờ · tên */
+.sch-tg__block-subs {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.sch-tg__block-sub {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 4px;
+  min-width: 0;
+}
+.sch-tg__block-sub-time {
+  font-family: var(--sch-mono);
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--sch-text-3);
+  font-variant-numeric: tabular-nums;
+}
+.sch-tg__block-sub-title {
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--sch-text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Chip meta */
+.sch-tg__block-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.sch-tg__block-tag {
   display: inline-flex;
   align-items: center;
-  padding: 0 6px;
+  gap: 2px;
+  padding: 0 5px;
   border-radius: var(--sch-r-pill);
   border: 1px solid var(--sch-line);
-  color: var(--sch-text-3);
   font-size: 10px;
-  line-height: 15px;
-  font-weight: 500;
-  white-space: nowrap;
-  flex-shrink: 0;
-  align-self: center;
-}
-.sch-tcard__tag--muted {
-  color: var(--sch-text-3);
-  opacity: 0.75;
-}
-/*
- * Chip nhóm — slot việc nhóm (mục 10 của cập nhật BE).
- * Tên nhóm dùng primary-soft để phân biệt với việc cá nhân ngay trên lịch.
- */
-.sch-tcard__tag--group {
-  gap: 3px;
-  color: var(--sch-secondary);
-  border-color: var(--sch-primary-glow);
-  background: var(--sch-primary-soft);
-}
-.sch-tcard__tag--group .sch-icon-12 {
-  font-size: 12px !important;
-  color: var(--sch-secondary);
-}
-
-/* ---------- Subtask: timeline dọc ---------- */
-.sch-tcard__subs {
-  list-style: none;
-  margin: 3px 0 0;
-  padding: 7px 0 0;
-  border-top: 1px solid var(--sch-line-soft);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-/*
- * Mỗi subtask = 1 dòng: [giờ] │ [tên]
- *   - Cột giờ cố định 42px, mono tabular → các mốc thẳng hàng dọc.
- *   - Đường kẻ dọc mảnh nối các mốc → mắt quét theo 1 đường.
- */
-.sch-tcard__sub {
-  display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-  position: relative;
-  padding-left: 9px;
-}
-
-/* Đường kẻ dọc nối các mốc subtask */
-.sch-tcard__sub::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: var(--sch-line);
-}
-.sch-tcard__sub:last-child::before {
-  bottom: auto;
-  height: 9px;
-}
-
-/* Chấm đầu mốc trên đường kẻ */
-.sch-tcard__sub::after {
-  content: "";
-  position: absolute;
-  left: -3px;
-  top: 5px;
-  width: 7px;
-  height: 7px;
-  border-radius: 9999px;
-  background: var(--sch-text-3);
-  box-shadow: 0 0 0 3px var(--sch-low);
-}
-
-/* Giờ subtask — cột trái cố định, tabular */
-.sch-tcard__sub-time {
-  font-size: 11px;
-  line-height: 17px;
+  line-height: 14px;
   color: var(--sch-text-3);
   white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.1px;
-}
-
-/* Tên subtask — ĐỦ TÊN, wrap tối đa 2 dòng (không cắt ngang) */
-.sch-tcard__sub-title {
-  font-size: 12px;
-  line-height: 17px;
-  color: var(--sch-text-2);
-  overflow-wrap: anywhere;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  max-width: 100%;
   overflow: hidden;
-  min-width: 0;
+  text-overflow: ellipsis;
 }
+.sch-tg__block-tag .sch-icon-12 { font-size: 11px !important; }
+.sch-tg__block-tag--muted { border-color: transparent; }
 
-/* Task đã xong → mờ + gạch ngang (giữ hành vi cũ) */
-.sch-tcard--done { opacity: 0.5; }
-.sch-tcard--done .sch-tcard__title {
-  text-decoration: line-through;
-  text-decoration-color: var(--sch-text-3);
+/* ===========================================================
+ * Responsive — lưới giờ co lại ở màn hình nhỏ
+ * =========================================================== */
+@media (max-width: 1100px) {
+  .sch-tg {
+    grid-template-columns: 48px repeat(var(--sch-tg-cols, 7), minmax(0, 1fr));
+    --sch-tg-hour-h: 42px;
+  }
+  .sch-tg__block-title { font-size: 11px; }
+  .sch-tg__block-sub { grid-template-columns: 30px minmax(0, 1fr); }
 }
-.sch-tcard--done .sch-tcard__sub::after {
-  background: var(--sch-line);
-}
-
-/* single-accent bar ở đáy cell */
-.sch-accent-bar {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 2px;
-  z-index: 2;
-  pointer-events: none;
+@media (max-width: 768px) {
+  .sch-tg {
+    grid-template-columns: 42px repeat(var(--sch-tg-cols, 7), minmax(0, 1fr));
+    --sch-tg-hour-h: 38px;
+  }
+  .sch-tg__corner-text { display: none; }
 }
 
 /* ===========================================================
@@ -1454,26 +1424,15 @@
 }
 
 /*
- * Wrapper của chip + nút Start/Stop.
+ * Wrapper cß╗ºa chip + n├║t Start/Stop.
  *
- * HTML không cho lồng `<button>` trong `<button>`, nên ta tách chip ra khỏi
- * wrapper và đặt nút focus action cạnh bên.
+ * HTML kh├┤ng cho lß╗ông `<button>` trong `<button>`, n├¬n ta t├ích chip ra khß╗Åi
+ * wrapper v├á ─æß║╖t n├║t focus action cß║ính b├¬n.
  */
-.sch-chip-wrap {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  width: 100%;
-}
-.sch-chip-wrap > .sch-chip-event {
-  flex: 1;
-  min-width: 0;
-}
-/* Nút Start/Stop không được làm chip giãn ra quá mức. */
-.sch-chip-wrap > .fc-slot-btn {
-  flex-shrink: 0;
-}
+/*
+ * ⚠️ KHÔNG còn `.sch-chip-wrap` — chip lịch tháng không kèm nút Start/Make up
+ * bên cạnh nữa (hành động focus nằm trong modal chi tiết).
+ */
 .sch-chip-event__dot {
   width: 6px;
   height: 6px;
@@ -1520,60 +1479,54 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ===========================================================
- * Chip gộp: 1 task có nhiều subtask → hiển thị 1 ô duy nhất,
- * tên task ở trên, bên dưới là từng việc con + khung giờ.
- * =========================================================== */
-.sch-chip-event--grouped {
-  align-items: flex-start;
-  padding: 8px 10px;
-}
 
-/* Danh sách việc con bên dưới tên task. */
-.sch-chip-event__subs {
-  list-style: none;
-  margin: 6px 0 0;
-  padding: 0 0 0 2px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  border-left: 1px solid var(--sch-line);
-  padding-left: 8px;
-}
-
-.sch-chip-event__sub {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-  font-size: 13px;
-  line-height: 18px;
-}
-
-.sch-chip-event__sub-title {
-  color: var(--sch-text);
+/* Ten task cha (o chua 1 subtask) - dong nho phia tren ten subtask */
+.sch-chip-event__parent {
+  font-size: 11px;
+  line-height: 15px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--sch-text-3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  min-width: 0;
 }
 
-.sch-chip-event__sub-meta {
+/* single-accent bar o day cell (dung boi MonthGrid) */
+.sch-accent-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* Multi-project badge (dung boi MonthGrid) */
+.sch-multi-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 8px;
+  border-radius: var(--sch-r-pill);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--accent-color, #00d992) 50%, transparent);
+  color: var(--accent-color, var(--sch-primary));
   font-family: var(--sch-mono);
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 600;
   line-height: 16px;
-  color: var(--sch-text-3);
-  flex-shrink: 0;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background-color 150ms ease;
 }
-
-/* Việc con đã xong → mờ + gạch ngang (giống task đã xong). */
-.sch-chip-event__sub--done .sch-chip-event__sub-title {
-  color: var(--sch-text-3);
-  text-decoration: line-through;
-  text-decoration-color: var(--sch-text-3);
+.sch-multi-badge:hover {
+  background: color-mix(in srgb, var(--accent-color, #00d992) 18%, transparent);
+}
+.sch-multi-badge--mini {
+  padding: 0 6px;
+  font-size: 11px;
 }
 
 /* ===========================================================
@@ -1729,13 +1682,57 @@
   border: 1px solid var(--sch-line);
   border-radius: var(--sch-r-md);
   padding: 16px;
-  padding-top: 44px;
   overflow-x: auto;
+  /*
+   * Layout dùng chung giữa header, các row và ribbon overlay.
+   *
+   * - `--sch-gantt-name-w`: bề rộng cột "Item"
+   * - `--sch-gantt-gap`: khe giữa 2 cột ngày
+   * - `--sch-gantt-col-gap`: khe giữa cột "Item" và vùng 7 cột ngày
+   *
+   * Cả 3 vùng (head / rows / ribbons) phải dùng CÙNG giá trị này, và
+   * phần ngày luôn là grid 7 cột riêng — nếu không, cột ngày lệch nhau và
+   * bar/ribbon chồng lên nhau.
+   */
+  --sch-gantt-name-w: 200px;
+  --sch-gantt-gap: 4px;
+  --sch-gantt-col-gap: 8px;
+}
+/*
+ * Canvas bọc ribbons + head + rows.
+ */
+.sch-gantt__canvas {
+  position: relative;
+  /* Chiều rộng tối thiểu để các cột ngày không bị bóp khi màn hình hẹp
+     (`.sch-gantt` có overflow-x: auto nên sẽ cuộn ngang). */
+  min-width: calc(
+    var(--sch-gantt-name-w, 200px) + var(--sch-gantt-col-gap, 8px) +
+    var(--sch-gantt-cols, 7) * 80px + (var(--sch-gantt-cols, 7) - 1) * var(--sch-gantt-gap, 4px)
+  );
+}
+/*
+ * Ribbon overlay — grid RIÊNG 2 cột: cột "Item" + vùng 7 cột ngày.
+ * Cùng cấu trúc với `.sch-gantt__head` & `.sch-gantt__row` → ribbon
+ * luôn nằm đúng cột ngày (trước đây dùng `gridColumn` trong 1 container
+ * không phải grid → bị bỏ qua → tất cả ribbon chồng lên nhau).
+ */
+.sch-gantt__ribbons {
+  display: grid;
+  grid-template-columns: var(--sch-gantt-name-w, 200px) 1fr;
+  gap: var(--sch-gantt-col-gap, 8px);
+  margin-bottom: 8px;
+}
+.sch-gantt__ribbons-name { min-width: 0; }
+.sch-gantt__ribbons-track {
+  display: grid;
+  grid-template-columns: repeat(var(--sch-gantt-cols, 7), minmax(0, 1fr));
+  gap: var(--sch-gantt-gap, 4px);
+  align-items: center;
 }
 .sch-gantt__ribbon {
-  position: absolute;
-  top: 8px;
+  position: relative;
   height: 28px;
+  min-width: 0;
   pointer-events: none;
   z-index: 1;
 }
@@ -1753,7 +1750,16 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 100%;
+  /* `border-box` để padding + border nằm trong 28px (không tràn dải ribbon). */
+  box-sizing: border-box;
+  height: 28px;
+  max-height: 100%;
+  /*
+   * `max-width: 100%` để KHÔNG tràn ra ngoài dải ribbon khi project dài hơn
+   * số cột ngày nó chiếm.
+   */
+  max-width: 100%;
+  min-width: 0;
   width: fit-content;
   margin: 0 auto;
   padding: 4px 10px;
@@ -1766,8 +1772,14 @@
   letter-spacing: 0.5px;
   text-transform: uppercase;
   white-space: nowrap;
+  overflow: hidden;
+}
+/* Tên project / ngày bị cắt → ellipsis thay vì tràn ra ngoài. */
+.sch-gantt__ribbon-label > .material-symbols-outlined {
+  flex-shrink: 0;
 }
 .sch-gantt__ribbon-dates {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1782,14 +1794,31 @@
   color: var(--sch-text-3);
   font-variant-numeric: tabular-nums;
 }
+/* Tên project dài → cắt bằng ellipsis, không đẩy label tràn ra dải ribbon. */
+.sch-gantt__ribbon-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .sch-gantt__head {
   display: grid;
-  grid-template-columns: 200px repeat(7, minmax(80px, 1fr));
-  gap: 4px;
+  /* Cột "Item" + vùng 7 cột ngày — phải khớp `.sch-gantt__row`. */
+  grid-template-columns: var(--sch-gantt-name-w, 200px) 1fr;
+  gap: var(--sch-gantt-col-gap, 8px);
   padding-bottom: 8px;
   border-bottom: 1px solid var(--sch-line);
   margin-bottom: 12px;
+}
+/*
+ * 7 cột ngày — grid RIÊNG, gap khớp `.sch-gantt__bar-wrap` để header
+ * và bar nằm đúng cùng cột ngày.
+ */
+.sch-gantt__days {
+  display: grid;
+  grid-template-columns: repeat(var(--sch-gantt-cols, 7), minmax(0, 1fr));
+  gap: var(--sch-gantt-gap, 4px);
 }
 .sch-gantt__col {
   font-size: 12px;
@@ -1820,9 +1849,10 @@
 .sch-gantt__rows { display: flex; flex-direction: column; }
 .sch-gantt__row {
   display: grid;
-  grid-template-columns: 200px 1fr;
+  /* Cột tên + vùng track — phải khớp `.sch-gantt__head`. */
+  grid-template-columns: var(--sch-gantt-name-w, 200px) 1fr;
   align-items: center;
-  gap: 8px;
+  gap: var(--sch-gantt-col-gap, 8px);
   padding: 8px 0;
   border-bottom: 1px solid var(--sch-line-soft);
 }
@@ -1862,15 +1892,21 @@
   font-size: 12px;
   line-height: 16px;
   color: var(--sch-text-3);
-  flex-shrink: 0;
+  /* Tên nhóm có thể dài → cho co lại + cắt bằng ellipsis, không tràn ra
+     ngoài cột tên. */
+  min-width: 0;
+  flex-shrink: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .sch-gantt__bar-wrap {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 4px;
+  /* 7 cột ngày — gap & track width phải khớp `.sch-gantt__days`. */
+  grid-template-columns: repeat(var(--sch-gantt-cols, 7), minmax(0, 1fr));
+  gap: var(--sch-gantt-gap, 4px);
   min-height: 32px;
 }
 .sch-gantt__bar {
@@ -2146,89 +2182,6 @@
   word-break: break-word;
 }
 .sch-side-meta__row code { color: var(--sch-primary); }
-
-/* ===========================================================
- * Google Calendar integration card (sidebar /schedule)
- * =========================================================== */
-.sch-gcal__badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 10px;
-  border-radius: var(--sch-r-pill);
-  border: 1px solid var(--sch-line);
-  background: var(--sch-low);
-  color: var(--sch-text-3);
-  font-family: var(--sch-mono);
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 18px;
-  letter-spacing: 0.4px;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-.sch-gcal__badge--on {
-  border-color: rgba(0, 217, 146, 0.4);
-  background: var(--sch-primary-soft);
-  color: var(--sch-primary);
-}
-.sch-gcal__actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 12px;
-}
-/*
- * Vùng nội dung của card Google Calendar.
- *
- * Bọc hint + token meta + note vào 1 div để chúng xếp dọc, không chồng
- * lên nhau. Trong toolbar, div này là 1 grid item duy nhất ở vùng `body`.
- */
-.sch-gcal__body {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  min-width: 0;
-}
-.sch-gcal__btn {
-  width: 100%;
-  justify-content: center;
-}
-.sch-gcal__btn--full {
-  margin-top: 12px;
-}
-.sch-gcal__btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-.sch-gcal__error {
-  margin: 10px 0 0;
-  padding: 8px 10px;
-  border-radius: var(--sch-r-sm);
-  border: 1px solid rgba(255, 107, 107, 0.35);
-  background: var(--sch-error-soft);
-  color: var(--sch-error);
-  font-size: 13px;
-  line-height: 18px;
-}
-
-.sch-gcal__note {
-  margin: 10px 0 0;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--sch-text-3);
-}
-.sch-gcal__note code {
-  padding: 1px 5px;
-  border-radius: var(--sch-r-xs);
-  border: 1px solid var(--sch-line);
-  background: var(--sch-low);
-  color: var(--sch-primary);
-  font-family: var(--sch-mono);
-  font-size: 11px;
-  white-space: nowrap;
-}
 
 /* ===========================================================
  * Aggregate task: timeline view
@@ -2535,6 +2488,26 @@
   outline-offset: 2px;
 }
 
+/*
+ * Khu vực hành động focus (Start / Make up / Stop / Add minutes) của
+ * riêng 1 khối giờ trong modal chi tiết.
+ *
+ * ⚠️ Trước đây các nút này nằm cạnh card trên lịch → card bị kéo giãn.
+ * Nay nằm trong modal, tách 1 hàng riêng cho dễ bấm.
+ */
+.sch-aggregate__focus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--sch-line-soft);
+}
+.sch-aggregate__focus .fc-slot-btn {
+  flex-shrink: 0;
+}
+
 /* ===========================================================
  * Cell popover
  * =========================================================== */
@@ -2726,9 +2699,15 @@
   line-height: 15px;
   color: var(--sch-text-3);
   white-space: nowrap;
+  /* Tên nhóm có thể dài → co lại + ellipsis thay vì tràn ra ngoài popover. */
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .sch-cell-popover__tag--status {
   text-transform: capitalize;
+  flex-shrink: 1;
 }
 
 /* Item clickable → có pointer + hover */
@@ -2855,6 +2834,86 @@
 }
 
 /* ===========================================================
+ * Confirm dialog — xác nhận trước khi xóa slot
+ * =========================================================== */
+.sch-modal--confirm {
+  z-index: 60;
+}
+.sch-modal__panel--confirm {
+  /* `border-box` để `max-width` tính cả padding → panel 420px thật. */
+  box-sizing: border-box;
+  max-width: 420px;
+  padding: 24px;
+}
+.sch-confirm__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.sch-confirm__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: var(--sch-r-sm);
+  border: 1px solid currentColor;
+}
+.sch-confirm__icon--danger {
+  color: var(--sch-error);
+  background: var(--sch-error-soft);
+}
+.sch-confirm__icon--warn {
+  color: var(--sch-primary);
+  background: var(--sch-primary-soft);
+}
+.sch-confirm__title {
+  margin: 0;
+  font-family: var(--sch-sans);
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+  color: var(--sch-text);
+}
+.sch-confirm__message {
+  margin: 0 0 20px;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--sch-text-2);
+}
+.sch-confirm__message strong {
+  color: var(--sch-text);
+  font-weight: 600;
+}
+.sch-confirm__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.sch-confirm__confirm {
+  border-color: var(--sch-bright);
+  background: var(--sch-high);
+  color: var(--sch-text);
+}
+.sch-confirm__confirm:hover:not(:disabled) {
+  border-color: var(--sch-text-2);
+  background: var(--sch-highest);
+}
+.sch-confirm__confirm--danger {
+  border-color: rgba(255, 107, 107, 0.5);
+  background: var(--sch-error-soft);
+  color: var(--sch-error);
+}
+.sch-confirm__confirm--danger:hover:not(:disabled) {
+  border-color: var(--sch-error);
+  background: rgba(255, 107, 107, 0.18);
+}
+
+/* ===========================================================
  * Animations & scrollbars
  * =========================================================== */
 @keyframes sch-fade-up {
@@ -2892,35 +2951,10 @@
     padding: 32px 0 48px;
   }
   .sch-kpi__num { font-size: 30px; line-height: 34px; }
-  .sch-week__day { min-height: 260px; padding: 10px; }
   .sch-gantt { padding: 12px; padding-top: 44px; }
 }
 @media (max-width: 768px) {
-  .sch-week {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .sch-month__dow { font-size: 11px; letter-spacing: 0.4px; }
   .sch-month__cell { min-height: 84px; padding: 6px; }
 }
 
-/* ===========================================================
- * Task card — lưới tuần co lại ở màn hình nhỏ
- *
- * Mặc định lịch tuần chỉ hiện 5 ngày làm việc (T2–T6) → 5 cột. Ở màn
- * hình nhỏ ta co còn 3 cột (rồi 2 cột) để task card vẫn đủ rộng đọc dễ.
- *
- * Lưu ý: `grid-template-columns` ở đây sẽ GHI ĐÈ giá trị inline
- * `--sch-week-cols`; khi bật "Cuối tuần" (7 ngày) ở màn hình nhỏ thì vẫn
- * dùng số cột theo breakpoint — chấp nhận hẹp hơn.
- * =========================================================== */
-@media (max-width: 1100px) {
-  .sch-week {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  .sch-week__day { min-height: 300px; }
-}
-@media (max-width: 900px) {
-  .sch-week {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}

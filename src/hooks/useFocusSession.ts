@@ -536,11 +536,11 @@ export function useFocusSession(enabled: boolean = true): UseFocusSessionResult 
 
   const start = useCallback(
     async (req: FocusStartRequest): Promise<StartFocusOutcome> => {
-      if (!enabled) return { kind: "error", error: "Chưa đăng nhập." };
+      if (!enabled) return { kind: "error", error: "Not signed in." };
       setPhase("busy");
       setError(null);
       const res = await startFocusSession(req);
-      if (!alive.current) return { kind: "error", error: "Đã hủy." };
+      if (!alive.current) return { kind: "error", error: "Cancelled." };
 
       if (res.ok) {
         // `plannedMinutes` chỉ có ở response của start → lưu lại để vẽ mốc.
@@ -631,9 +631,10 @@ export function useFocusSession(enabled: boolean = true): UseFocusSessionResult 
       note?: string | null,
       sessionId?: string,
     ): Promise<StopFocusOutcome> => {
-      if (!enabled) return { kind: "error", error: "Chưa đăng nhập." };
+      if (!enabled) return { kind: "error", error: "Not signed in." };
       const targetId = sessionId ?? session?.sessionId;
-      if (!targetId) return { kind: "error", error: "Không có phiên đang chạy." };
+      if (!targetId)
+        return { kind: "error", error: "No running session." };
 
       /*
        * ⚠️ `note` là **tuỳ chọn** với mọi lý do dừng
@@ -655,7 +656,7 @@ export function useFocusSession(enabled: boolean = true): UseFocusSessionResult 
         stopReason: reason,
         note: note ?? null,
       });
-      if (!alive.current) return { kind: "error", error: "Đã hủy." };
+      if (!alive.current) return { kind: "error", error: "Cancelled." };
 
       if (res.ok) {
         // Slot đã đổi trạng thái (Done nếu Completed, Due nếu các lý do còn

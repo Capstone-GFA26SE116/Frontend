@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import { useStaggeredMount } from "../../hooks/useStaggeredMount";
@@ -8,9 +8,13 @@ import {
   getProjectProgress,
   listCalendar,
   listProjects,
+  getProductiveHours,
+  getTodayBriefing,
+  type BriefingResponse,
   type CalendarItemDto,
   type GoogleCalendarSyncDirection,
   type GoogleCalendarSyncResultDto,
+  type ProductiveHoursDto,
 } from "../../lib/api-client";
 import "./dashboard.css";
 
@@ -22,6 +26,21 @@ const TICK_MS = 30 * 1000;
 /** Số project tối đa hiện trong Deadline radar (cột phải). */
 const RADAR_LIMIT = 5;
 
+/* ---------- Hằng số cho metric card (dữ liệu thật từ API) ---------- */
+/**
+ * Ngưỡng coi 1 giờ là "khung giờ hiệu quả" (0–1 → phần trăm).
+ * Chỉ dùng để tô màu thanh nhiệt, KHÔNG phải ngưỡng AI dùng để xếp lịch.
+ */
+const HOUR_SCALE = 100;
+/**
+ * Ngưỡng TƯƠNG ĐỐI để gom khung giờ vàng: giờ chỉ được tính vào khung nếu
+ * đạt ≥ 70% điểm đỉnh. Dùng mốc tương đối để không gom nhầm giờ "vừa có
+ * dữ liệu" (mọi giờ > 0) thành 1 khum hết ngày.
+ */
+const PEAK_RATIO = 70;
+/** Số giờ nhóm liền kề gộp lại thành 1 "khung giờ vàng" (vd 9–12, 14–18). */
+const PEAK_BLOCK_MIN_HOURS = 1;
+
 /** "42m" / "1h 05" — định dạng ngắn cho phần thời gian còn lại. */
 function formatRemain(ms: number): string {
   if (ms <= 0) return "0m";
@@ -29,6 +48,97 @@ function formatRemain(ms: number): string {
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
   return h > 0 ? `${h}h ${String(m).padStart(2, "0")}` : `${m}m`;
+}
+
+/** "09:00" / "9:00" — giờ từ số (0–23) hoặc chuỗi ISO. */
+function fmtHourLabel(h: number): string {
+  return `${String(h).padStart(2, "0")}:00`;
+}
+
+/**
+ * "09:00" / "09:00:00" / "9" → số giờ (0–23). Trả `null` nếu không parse được.
+ * Dùng cho `top_hours[]` của API (BE trả chuỗi giờ dạng text).
+ */
+function parseHourFromClock(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const first = value.trim().split(":")[0];
+  const n = Number(first);
+  if (!Number.isFinite(n) || n < 0 || n > 23) return null;
+  return Math.floor(n);
+}
+
+/**
+ * Chuẩn hoá 1 điểm giờ (0–1) về phần trăm (0–100).
+ * BE có thể trả 0–1 hoặc 0–100 → đọc cả hai để không phụ thuộc shape.
+ */
+function toPercent(value: number | null | undefined): number | null {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return null;
+  }
+  const pct = value <= 1 ? value * HOUR_SCALE : value;
+  return Math.max(0, Math.min(100, Math.round(pct)));
+}
+
+/**
+ * Từ mảng `hours[24]` → khung giờ hiệu quả nhất (giờ có điểm cao nhất).
+ * Trả `null` khi BE chưa có dữ liệu (user chưa onboard, hoặc chưa học được).
+ */
+function findPeakHour(hours: number[] | undefined): number | null {
+  if (!hours || hours.length === 0) return null;
+  let best: number | null = null;
+  for (let i = 0; i < hours.length; i++) {
+    const v = toPercent(hours[i]);
+    if (v === null) continue;
+    if (best === null || v > (toPercent(hours[best]) ?? -1)) best = i;
+  }
+  return best;
+}
+
+/**
+ * Gom các giờ hiệu quả thành các khung liên tục → "09:00 – 12:00".
+ *
+ * Ngưỡng là **tương đối**: chỉ tính giờ đạt ≥ `PEAK_RATIO` (mặc định 70%)
+ * của điểm đỉnh. Nếu dùng mốc tuyệt đối (> 0) thì mọi giờ có dữ liệu
+ * đều bị gộp thành 1 khum hết ngày.
+ *
+ * Trả về tối đa `maxBlocks` khung, mỗi khung là `{ start, end }` (end = giờ kế tiếp).
+ */
+function findPeakBlocks(
+  hours: number[] | undefined,
+  maxBlocks = 2,
+): { start: number; end: number }[] {
+  if (!hours || hours.length === 0) return [];
+  const peak = findPeakHour(hours);
+  if (peak === null) return [];
+  const peakPct = toPercent(hours[peak]) ?? 0;
+  if (peakPct <= 0) return [];
+  const threshold = (peakPct * PEAK_RATIO) / HOUR_SCALE;
+
+  const good: boolean[] = hours.map((v) => {
+    const pct = toPercent(v);
+    return pct !== null && pct > 0 && pct / HOUR_SCALE >= threshold;
+  });
+
+  const blocks: { start: number; end: number }[] = [];
+  let i = 0;
+  while (i < good.length) {
+    if (!good[i]) {
+      i++;
+      continue;
+    }
+    const start = i;
+    while (i < good.length && good[i]) i++;
+    const end = i; // exclusive
+    if (end - start >= PEAK_BLOCK_MIN_HOURS) blocks.push({ start, end });
+  }
+  // Ưu tiên khung dài nhất (đây là khung "vàng" nhất).
+  blocks.sort((a, b) => b.end - b.start - (a.end - a.start));
+  return blocks.slice(0, maxBlocks);
+}
+
+/** "09:00 – 12:00" — nhãn 1 khung giờ hiệu quả. */
+function fmtPeakBlock(b: { start: number; end: number }): string {
+  return `${fmtHourLabel(b.start)} – ${fmtHourLabel(b.end)}`;
 }
 
 /* ---------- Types ---------- */
@@ -66,7 +176,7 @@ interface FocusSlot {
 
 /* ---------- Calendar helpers ---------- */
 
-const TZ = "vi-VN";
+const TZ = "en-GB";
 
 /** Số ngày còn lại từ hôm nay tới deadline (âm = quá hạn); null nếu không parse được. */
 function daysUntil(iso: string): number | null {
@@ -268,7 +378,7 @@ function itemToSlot(item: CalendarItemDto, now: Date): FocusSlot | null {  const
   const desc =
     item.explanation?.trim() ||
     descParts.join(" · ") ||
-    "Khối thời gian tập trung từ lịch của bạn.";
+    "A focus block from your schedule.";
 
   // Status dựa trên mốc thời gian + trạng thái task
   const statusLower = (item.status ?? "").toLowerCase();
@@ -372,7 +482,7 @@ function withUpNext(slots: FocusSlot[], nowMs: number): FocusSlot[] {
  *  2) Top 3 Minimalist Key Metrics (energy peak, K_bias, today).
  *  3) Main grid 8/4 (65% / 35%):
  *      - Left  (8/12): Today's recommended schedule (timeline).
- *      - Right (4/12): Quick Task Drawer (input + upcoming + AI tip).
+ *      - Right (4/12): Deadline radar + AI tip.
  *
  * Class prefix `.dash-*`. Render bên trong <SiteLayout /> để có header/footer
  * chuẩn + nav active "Trang chủ".
@@ -380,10 +490,6 @@ function withUpNext(slots: FocusSlot[], nowMs: number): FocusSlot[] {
 export function DashboardPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  // Scratch pad: task user gõ nhanh ở ô quick capture (chỉ tồn tại trong
-  // phiên hiện tại — BE chưa có endpoint "inbox" nên chưa lưu được).
-  const [quickTask, setQuickTask] = useState("");
-  const [captured, setCaptured] = useState<{ id: string; title: string }[]>([]);
   // Tháng đang xem ở mini calendar (rail trái).
   const [monthAnchor, setMonthAnchor] = useState<Date>(() => new Date());
   // Số khối thời gian theo ngày trong tháng đang xem: key `YYYY-MM-DD`.
@@ -400,6 +506,12 @@ export function DashboardPage() {
   // Deadline radar: project sắp tới hạn + progress thật (cột phải).
   const [radar, setRadar] = useState<RadarItem[]>([]);
   const [radarLoading, setRadarLoading] = useState(true);
+  /* ---------- Dữ liệu metric card (API thật) ---------- */
+  // GET /profile/productive-hours → điểm giờ hiệu quả + khung giờ vàng.
+  const [productive, setProductive] = useState<ProductiveHoursDto | null>(null);
+  // GET /briefing/today → task ưu tiên + task thiếu thời gian (at risk).
+  const [briefing, setBriefing] = useState<BriefingResponse | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   /** Mở hộp thoại đồng bộ (chọn hướng + khoảng ngày). */
   const [syncOpen, setSyncOpen] = useState(false);
@@ -425,8 +537,6 @@ export function DashboardPage() {
   const slotsAnim = useStaggeredMount(90, 220, focusSlots.length);
   // Stagger cho các dòng deadline radar (mỗi dòng +80ms), chạy lại khi list đổi.
   const radarAnim = useStaggeredMount(80, 260, radar.length);
-  // Stagger cho các task đã capture (mỗi task +80ms).
-  const capturedAnim = useStaggeredMount(80, 260, captured.length);
 
   function showToast(text: string, icon: string = "check_circle") {
     setToast({ visible: true, text, icon });
@@ -443,7 +553,7 @@ export function DashboardPage() {
    * Tách riêng khỏi `loadTodaySchedule` vì `loadTodaySchedule` setState
    * **đồng bộ** ở đầu → không được gọi trực tiếp trong `useEffect`
    * (react-hooks/set-state-in-effect). Effect dùng hàm này (setState chỉ
-   * chạy sau `await`), còn nút "Thử lại" dùng `loadTodaySchedule`.
+   * chạy sau `await`), còn nút "Retry" dùng `loadTodaySchedule`.
    */
   const fetchTodaySlots = useCallback(async () => {
     // Khoảng [00:00 hôm nay, 00:00 ngày mai) theo local time.
@@ -600,6 +710,34 @@ export function DashboardPage() {
     };
   }, []);
 
+  /* ---------- Load dữ liệu metric card từ API ----------
+   * 2 nguồn, gọi song song:
+   *   GET /profile/productive-hours → điểm giờ hiệu quả (khung giờ vàng)
+   *   GET /briefing/today           → task ưu tiên + task thiếu thời gian
+   *
+   * Cả 2 đều là endpoint READ-ONLY của AI service, **không** tốn lượt AI.
+   * Lỗi 1 nguồn không chặn nguồn kia → mỗi metric tự hiển thị "—".
+   */
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      const [hoursRes, briefRes] = await Promise.all([
+        getProductiveHours(),
+        getTodayBriefing("en"),
+      ]);
+      if (cancelled) return;
+
+      if (hoursRes.ok) setProductive(hoursRes.data);
+      if (briefRes.ok) setBriefing(briefRes.data);
+      setMetricsLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   /* ---------- Load số khối thời gian cho cả tháng (mini calendar) ----------
    * Chỉ đếm, không map sang FocusSlot, nên không đụng logic timeline.
    */
@@ -691,15 +829,6 @@ export function DashboardPage() {
     return () => window.clearInterval(id);
   }, []);
 
-  function handleQuickAdd(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const v = quickTask.trim();
-    if (!v) return;
-    setQuickTask("");
-    setCaptured((prev) => [{ id: `c${Date.now()}`, title: v }, ...prev]);
-    showToast(`Captured "${v.length > 28 ? v.slice(0, 28) + "…" : v}"`);
-  }
-
   /**
    * Mở hộp thoại đồng bộ Google Calendar.
    *
@@ -736,7 +865,7 @@ export function DashboardPage() {
         res.status === 401 || res.status === 400 || res.status === 404;
       if (notConnected && res.status !== 400) {
         showToast(
-          "Google Calendar chưa được liên kết. Kết nối ở trang Schedule.",
+          "Google Calendar isn't linked yet. Connect it on the Schedule page.",
           "error",
         );
         setSyncOpen(false);
@@ -745,12 +874,14 @@ export function DashboardPage() {
       // 409 `GOOGLE_RECONNECT_REQUIRED` → gợi ý kết nối lại (hook set cờ).
       if (res.status === 409 && res.errorCode === "GOOGLE_RECONNECT_REQUIRED") {
         setSyncError(
-          "Kết nối Google Calendar đã hết hạn hoặc bị thu hồi. Hãy kết nối lại Google Calendar rồi thử đồng bộ lần nữa.",
+          "Your Google Calendar connection expired or was revoked. Reconnect Google Calendar and try syncing again.",
         );
         return;
       }
       if (res.status === 502) {
-        setSyncError("Google Calendar đang lỗi hoặc mất mạng. Vui lòng thử lại sau.");
+        setSyncError(
+          "Google Calendar is having trouble or the connection dropped. Please try again later.",
+        );
         return;
       }
       // Lỗi khác (VD `to` trước `from`) → giữ hộp thoại mở để user sửa.
@@ -767,29 +898,24 @@ export function DashboardPage() {
 
     if (pushFailed > 0) {
       showToast(
-        `Đồng bộ xong nhưng có lỗi: ${pushFailed} slot chưa đẩy được, thử lại sau.`,
+        `Sync finished with errors: ${pushFailed} slots couldn't be pushed. Try again later.`,
         "error",
       );
     } else {
-      const parts = [`+${added} mới`, `${updated} cập nhật`, `${cancelled} huỷ`];
-      if (pushed > 0) parts.push(`${pushed} đẩy lên`);
-      showToast(`Đã đồng bộ: ${parts.join(" · ")}`, "sync_done");
+      const parts = [
+        `${added} added`,
+        `${updated} updated`,
+        `${cancelled} cancelled`,
+      ];
+      if (pushed > 0) parts.push(`${pushed} pushed`);
+      showToast(`Synced: ${parts.join(" · ")}`, "sync_done");
     }
     // Slot có thể đổi giờ sau khi sync → nạp lại timeline hôm nay.
     void loadTodaySchedule();
   }
 
-  function handleQuickAddFocus() {
-    const el = document.getElementById("dash-quick-input");
-    if (el) {
-      el.focus({ preventScroll: true });
-      el.classList.add("dash-input--ring");
-      window.setTimeout(() => el.classList.remove("dash-input--ring"), 1000);
-    }
-  }
-
   // Take the first whitespace-separated name part for the greeting
-  // (e.g. "Chào <First> 👋") with a safe fallback when name is null.
+  // (e.g. "Hi <First> 👋") with a safe fallback when name is null.
   const firstName = (user?.name ?? "there").trim().split(/\s+/)[0];
 
   /* ---------- Số liệu phái sinh cho welcome bar + metrics ---------- */
@@ -805,6 +931,90 @@ export function DashboardPage() {
   const weekdayLabel = new Date().toLocaleDateString("en-US", {
     weekday: "long",
   });
+
+  /* ---------- Số liệu metric card (100% từ API, không bịa) ---------- */
+
+  /* Metric 1: Giờ hiệu quả — GET /profile/productive-hours */
+  // Giờ có điểm cao nhất (null = BE chưa có dữ liệu).
+  const peakHour = useMemo(
+    () => findPeakHour(productive?.hours),
+    [productive?.hours],
+  );
+  // Điểm của giờ đỉnh (phần trăm 0–100), null = chưa có dữ liệu.
+  const peakScore = useMemo(() => {
+    if (peakHour === null) return null;
+    return toPercent(productive?.hours?.[peakHour]);
+  }, [productive?.hours, peakHour]);
+  // Khung giờ vàng. Ưu tiên `top_hours` do BE trả (đã tính sẵn từ hồ sơ
+  // năng suất); fallback tự gom từ `hours[]` nếu BE chưa có.
+  const peakBlocks = useMemo(() => {
+    const top = productive?.top_hours ?? [];
+    const fromApi = top
+      .map((r) => {
+        const start = parseHourFromClock(r.start);
+        const end = parseHourFromClock(r.end);
+        if (start === null || end === null || end <= start) return null;
+        return { start, end };
+      })
+      .filter((b): b is { start: number; end: number } => b !== null);
+    if (fromApi.length > 0) return fromApi;
+    return findPeakBlocks(productive?.hours);
+  }, [productive]);
+  // Nhãn khung giờ vàng đầu tiên, fallback sang giờ đỉnh đơn lẻ.
+  const peakLabel = peakBlocks.length
+    ? fmtPeakBlock(peakBlocks[0])
+    : peakHour !== null
+      ? fmtHourLabel(peakHour)
+      : "—";
+
+  /* Metric 2: Task ưu tiên — GET /briefing/today */
+  const topTasks = useMemo(() => briefing?.top_tasks ?? [], [briefing]);
+  // Tổng phút còn lại của các task ưu tiên (BE đã quy đổi sẵn).
+  const topRemainingMinutes = useMemo(
+    () => topTasks.reduce((sum, t) => sum + (t.remaining_minutes ?? 0), 0),
+    [topTasks],
+  );
+
+  /* Metric 3: Task thiếu thời gian — GET /briefing/today (at_risk) */
+  const atRisk = useMemo(() => briefing?.at_risk ?? [], [briefing]);
+  // Task at-risk sắp hết hạn nhất → hiển thị deadline gần nhất.
+  const nearestRisk = useMemo(() => {
+    if (atRisk.length === 0) return null;
+    return atRisk
+      .filter((t) => t.deadline && !Number.isNaN(new Date(t.deadline).getTime()))
+      .sort(
+        (a, b) =>
+          new Date(a.deadline).getTime() - new Date(b.deadline).getTime(),
+      )[0] ?? null;
+  }, [atRisk]);
+  // Tổng phút còn thiếu của các task at-risk.
+  const atRiskMissingMinutes = useMemo(
+    () => atRisk.reduce((sum, t) => sum + (t.missing_minutes ?? 0), 0),
+    [atRisk],
+  );
+  // Nhãn deadline gần nhất: "Due today" / "in 2d" / "3d overdue".
+  const nearestRiskLabel = useMemo(() => {
+    if (!nearestRisk) return "—";
+    const days = daysUntil(nearestRisk.deadline);
+    if (days === null) return "—";
+    return fmtDaysLeft(days);
+  }, [nearestRisk]);
+  // Tỉ lệ task thiếu thời gian / tổng task AI đang theo dõi (0–100).
+  const riskRatioPercent = useMemo(() => {
+    const tracked = topTasks.length + atRisk.length;
+    if (tracked === 0) return 0;
+    return Math.round((atRisk.length / tracked) * 100);
+  }, [topTasks.length, atRisk.length]);
+
+  /* Metric 4: Lịch hôm nay — tổng phút đã xếp (kể cả khung chưa tới giờ). */
+  const scheduledMinutes = useMemo(
+    () =>
+      focusSlots.reduce((acc, s) => {
+        const mins = Math.round((s.endMs - s.startMs) / 60_000);
+        return acc + (Number.isFinite(mins) && mins > 0 ? mins : 0);
+      }, 0),
+    [focusSlots],
+  );
 
   /* ---------- Mini calendar: lưới 6 tuần của tháng đang xem ---------- */
   const miniDays = useMemo(
@@ -889,22 +1099,22 @@ export function DashboardPage() {
             <Link
               to="/briefing"
               className="dash-btn dash-btn--ghost"
-              title="AI tổng hợp task ưu tiên, task thiếu thời gian và khung giờ tập trung hôm nay"
+              title="AI summary of your priority tasks, tasks missing time and today's focus windows"
             >
               <span className="material-symbols-outlined dash-btn-icon">
                 auto_awesome
               </span>
-              <span>Briefing hôm nay</span>
+              <span>Today's briefing</span>
             </Link>
             <button
               type="button"
               onClick={handleSync}
-              className="dash-btn dash-btn--ghost"
+              className="dash-btn dash-btn--primary"
               disabled={syncing}
               title={
                 googleConnected
-                  ? "Đồng bộ 2 chiều với Google Calendar"
-                  : "Chưa liên kết — kết nối ở trang Schedule & Tasks"
+                  ? "Two-way sync with Google Calendar"
+                  : "Not linked yet — connect it on the Schedule & Tasks page"
               }
             >
               <span
@@ -917,24 +1127,14 @@ export function DashboardPage() {
               </span>
               <span>{googleConnected ? "Sync Google Calendar" : "Google Calendar"}</span>
             </button>
-            <button
-              type="button"
-              onClick={handleQuickAddFocus}
-              className="dash-btn dash-btn--primary"
-            >
-              <span className="material-symbols-outlined dash-btn-icon">
-                add
-              </span>
-              <span>Quick add task</span>
-            </button>
           </div>
         </section>
 
-        {/* ================= 3 Key Metrics ================= */}
+        {/* ================= 4 Key Metrics (dữ liệu thật từ API) ================= */}
         <section
           className={"dash-metrics" + (pageMounted ? " dash-metrics--in" : "")}
         >
-          {/* Metric 1: Energy Peak */}
+          {/* Metric 1: Giờ hiệu quả — GET /profile/productive-hours */}
           <article
             className={
               "dash-metric" +
@@ -943,43 +1143,61 @@ export function DashboardPage() {
             style={metricsAnim.getDelay(0)}
           >
             <div className="dash-metric-head">
-              <span className="dash-metric-label">Focus energy</span>
-              <span className="dash-chip dash-chip--success">Optimal</span>
+              <span className="dash-metric-label">Peak focus hours</span>
+              <span
+                className={
+                  "dash-chip " +
+                  (productive?.onboarded
+                    ? "dash-chip--success"
+                    : "dash-chip--muted")
+                }
+              >
+                {productive?.onboarded ? "Set" : "Not set"}
+              </span>
             </div>
             <div className="dash-metric-value">
-              <span className="dash-metric-number">88%</span>
+              <span className="dash-metric-number">
+                {peakScore === null ? "—" : `${peakScore}%`}
+              </span>
               <span className="dash-metric-trend">
-                <span className="material-symbols-outlined">north_east</span>
-                Bio peak
+                <span className="material-symbols-outlined">schedule</span>
+                Best hour
               </span>
             </div>
             <div className="dash-metric-foot">
               <span>Deep work window</span>
-              <span className="dash-metric-foot-emph">14:00 - 16:30</span>
+              <span className="dash-metric-foot-emph">{peakLabel}</span>
             </div>
-            <div className="dash-sparkline" aria-hidden="true">
-              <svg
-                className="dash-sparkline-svg"
-                fill="none"
-                preserveAspectRatio="none"
-                viewBox="0 0 100 32"
-              >
-                <path
-                  d="M0,26 Q20,23 35,13 T65,5 T85,20 T100,16 L100,32 L0,32 Z"
-                  fill="currentColor"
-                  fillOpacity="0.15"
-                />
-                <path
-                  d="M0,26 Q20,23 35,13 T65,5 T85,20 T100,16"
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeWidth="2"
-                />
-              </svg>
+            {/* Thanh nhiệt 24 giờ — dựng từ `hours[]` thật của API. */}
+            <div
+              className="dash-hours"
+              role="img"
+              aria-label={
+                peakScore === null
+                  ? "No productive hours data yet"
+                  : `Peak focus ${peakScore}% at ${peakLabel}`
+              }
+            >
+              {(productive?.hours ?? Array.from({ length: 24 }, () => 0)).map(
+                (v, i) => {
+                  const pct = toPercent(v) ?? 0;
+                  return (
+                    <span
+                      key={i}
+                      className={
+                        "dash-hour" +
+                        (i === peakHour ? " dash-hour--peak" : "")
+                      }
+                      style={{ opacity: pct === 0 ? 0.12 : 0.25 + pct / 133 }}
+                      title={`${fmtHourLabel(i)} — ${pct}%`}
+                    />
+                  );
+                },
+              )}
             </div>
           </article>
 
-          {/* Metric 2: K_bias */}
+          {/* Metric 2: Task ưu tiên — GET /briefing/today (top_tasks) */}
           <article
             className={
               "dash-metric" +
@@ -988,42 +1206,49 @@ export function DashboardPage() {
             style={metricsAnim.getDelay(1)}
           >
             <div className="dash-metric-head">
-              <span className="dash-metric-label">
-                Time multiplier
-              </span>
+              <span className="dash-metric-label">Priority tasks</span>
               <span className="dash-chip dash-chip--primary">AI</span>
             </div>
 
             <div className="dash-metric-value">
-              <span className="dash-metric-number">1.34x</span>
+              <span className="dash-metric-number">
+                {metricsLoading ? "…" : topTasks.length}
+              </span>
+              {topTasks.length > 0 && (
+                <span className="dash-metric-trend">
+                  <span className="material-symbols-outlined">timer</span>
+                  {fmtMinutes(topRemainingMinutes)} left
+                </span>
+              )}
             </div>
 
             <div className="dash-metric-foot dash-metric-foot--pinned">
-              <span>Bias compensation</span>
-              <span className="dash-metric-foot-emph">+34%</span>
+              <span>Time needed today</span>
+              <span className="dash-metric-foot-emph">
+                {topTasks.length === 0
+                  ? "Nothing queued"
+                  : fmtMinutes(topRemainingMinutes)}
+              </span>
             </div>
 
+            {/* Thanh: phần phút đã ước tính / tổng phút việc hôm nay. */}
             <div
               className="dash-bar"
               role="img"
-              aria-label="60 min base, 20 min bias compensation, 20 min recovery buffer"
+              aria-label={
+                topTasks.length === 0
+                  ? "No priority tasks"
+                  : `${topTasks.length} priority tasks, ${fmtMinutes(topRemainingMinutes)} remaining`
+              }
             >
               <div
-                className="dash-bar-seg dash-bar-seg--60"
-                style={{ width: "60%" }}
-              />
-              <div
-                className="dash-bar-seg dash-bar-seg--20a"
-                style={{ width: "20%" }}
-              />
-              <div
-                className="dash-bar-seg dash-bar-seg--20b"
-                style={{ width: "20%" }}
+                className="dash-bar-seg dash-bar-seg--tasks"
+                style={{ width: "100%" }}
               />
             </div>
           </article>
 
-          {/* Metric 3: Today tasks */}
+          {/* Metric 3: Task thiếu thời gian — GET /briefing/today (at_risk) */}
           <article
             className={
               "dash-metric" +
@@ -1032,39 +1257,55 @@ export function DashboardPage() {
             style={metricsAnim.getDelay(2)}
           >
             <div className="dash-metric-head">
-              <span className="dash-metric-label">Today's tasks</span>
-              <span className="dash-chip dash-chip--success">
-                {weekdayLabel}
+              <span className="dash-metric-label">At risk</span>
+              <span
+                className={
+                  "dash-chip " +
+                  (atRisk.length > 0
+                    ? "dash-chip--warning"
+                    : "dash-chip--success")
+                }
+              >
+                {atRisk.length > 0 ? "Needs time" : "All clear"}
               </span>
             </div>
             <div className="dash-metric-value">
               <span className="dash-metric-number">
-                {doneSlots}/{totalSlots}
+                {metricsLoading ? "…" : atRisk.length}
               </span>
+              {atRisk.length > 0 && (
+                <span className="dash-metric-trend">
+                  <span className="material-symbols-outlined">warning</span>
+                  {fmtMinutes(atRiskMissingMinutes)} short
+                </span>
+              )}
             </div>
             <div className="dash-metric-foot dash-metric-foot--pinned">
-              <span>Remaining today</span>
+              <span>Nearest deadline</span>
               <span className="dash-metric-foot-emph">
-                {totalSlots - doneSlots === 0
-                  ? "All cleared"
-                  : `${totalSlots - doneSlots} to resolve`}
+                {nearestRiskLabel}
               </span>
             </div>
+            {/* Thanh: tỉ lệ task thiếu thời gian trong tổng việc AI đang theo dõi. */}
             <div
-              className="dash-progress"
-              role="progressbar"
-              aria-valuenow={donePercent}
-              aria-valuemin={0}
-              aria-valuemax={100}
+              className="dash-bar"
+              role="img"
+              aria-label={
+                atRisk.length === 0
+                  ? "No tasks are missing time"
+                  : `${atRisk.length} tasks are missing ${fmtMinutes(atRiskMissingMinutes)} of time`
+              }
             >
               <div
-                className="dash-progress-fill"
-                style={{ width: `${donePercent}%` }}
+                className="dash-bar-seg dash-bar-seg--risk"
+                style={{
+                  width: `${riskRatioPercent}%`,
+                }}
               />
             </div>
           </article>
 
-          {/* Metric 4: Focus minutes đã hoàn thành hôm nay */}
+          {/* Metric 4: Lịch hôm nay — GET /api/calendar (đã load sẵn cho timeline) */}
           <article
             className={
               "dash-metric" +
@@ -1073,18 +1314,30 @@ export function DashboardPage() {
             style={metricsAnim.getDelay(3)}
           >
             <div className="dash-metric-head">
-              <span className="dash-metric-label">Focus time</span>
-              <span className="dash-chip dash-chip--primary">Log</span>
+              <span className="dash-metric-label">Today's schedule</span>
+              <span className="dash-chip dash-chip--success">
+                {weekdayLabel}
+              </span>
             </div>
             <div className="dash-metric-value">
               <span className="dash-metric-number">
-                {fmtMinutes(doneMinutes)}
+                {doneSlots}/{totalSlots}
               </span>
+              {totalSlots > 0 && (
+                <span className="dash-metric-trend">
+                  <span className="material-symbols-outlined">schedule</span>
+                  {fmtMinutes(scheduledMinutes)}
+                </span>
+              )}
             </div>
             <div className="dash-metric-foot dash-metric-foot--pinned">
-              <span>Completed today</span>
+              <span>Remaining today</span>
               <span className="dash-metric-foot-emph">
-                {doneSlots} {doneSlots === 1 ? "block" : "blocks"}
+                {totalSlots === 0
+                  ? "Nothing scheduled"
+                  : totalSlots - doneSlots === 0
+                    ? "All cleared"
+                    : `${totalSlots - doneSlots} to resolve`}
               </span>
             </div>
             <div
@@ -1093,7 +1346,7 @@ export function DashboardPage() {
               aria-valuenow={donePercent}
               aria-valuemin={0}
               aria-valuemax={100}
-              aria-label="Phần thời gian đã hoàn thành trong ngày"
+              aria-label="Completed time today"
             >
               <div
                 className="dash-progress-fill"
@@ -1104,7 +1357,7 @@ export function DashboardPage() {
         </section>
 
         {/* ================= Rail trái: mini calendar + summary ================= */}
-        <aside className="dash-rail" aria-label="Lịch tháng">
+        <aside className="dash-rail" aria-label="Month calendar">
           <div className="dash-rail-block dash-rail-cal">
             <div className="dash-rail-cal-head">
               <button
@@ -1115,7 +1368,7 @@ export function DashboardPage() {
                     (d) => new Date(d.getFullYear(), d.getMonth() - 1, 1),
                   )
                 }
-                aria-label="Tháng trước"
+                aria-label="Previous month"
               >
                 <span className="material-symbols-outlined">chevron_left</span>
               </button>
@@ -1128,7 +1381,7 @@ export function DashboardPage() {
                     (d) => new Date(d.getFullYear(), d.getMonth() + 1, 1),
                   )
                 }
-                aria-label="Tháng sau"
+                aria-label="Next month"
               >
                 <span className="material-symbols-outlined">chevron_right</span>
               </button>
@@ -1162,11 +1415,11 @@ export function DashboardPage() {
                     onClick={() => navigate("/schedule")}
                     title={
                       d.count > 0
-                        ? `${d.count} khối thời gian`
-                        : "Không có lịch"
+                        ? `${d.count} time blocks`
+                        : "Nothing scheduled"
                     }
                     aria-label={`${d.date.getDate()}${
-                      d.count > 0 ? `, ${d.count} khối` : ""
+                      d.count > 0 ? `, ${d.count} blocks` : ""
                     }`}
                   >
                     <span className="dash-rail-cal-day-num">
@@ -1185,28 +1438,28 @@ export function DashboardPage() {
               className="dash-rail-cal-foot"
             >
               <span>
-                {daysWithSlots} ngày có lịch tháng này
+                {daysWithSlots} days with scheduled blocks this month
               </span>
               <span className="material-symbols-outlined">arrow_forward</span>
             </Link>
           </div>
 
           <div className="dash-rail-block">
-            <h3 className="dash-rail-title">Hôm nay</h3>
+            <h3 className="dash-rail-title">Today</h3>
             <div className="dash-rail-stat">
-              <span className="dash-rail-stat-label">Hoàn thành</span>
+              <span className="dash-rail-stat-label">Completed</span>
               <span className="dash-rail-stat-value">
                 {doneSlots}/{totalSlots}
               </span>
             </div>
             <div className="dash-rail-stat">
-              <span className="dash-rail-stat-label">Thời gian focus</span>
+              <span className="dash-rail-stat-label">Focus time</span>
               <span className="dash-rail-stat-value">
                 {fmtMinutes(doneMinutes)}
               </span>
             </div>
             <div className="dash-rail-stat">
-              <span className="dash-rail-stat-label">Kế tiếp</span>
+              <span className="dash-rail-stat-label">Next up</span>
               <span className="dash-rail-stat-value">
                 {nextSlot ? nextSlot.start : "—"}
               </span>
@@ -1235,7 +1488,7 @@ export function DashboardPage() {
                   <span className="material-symbols-outlined dash-slots-state-icon">
                     progress_activity
                   </span>
-                  <span>Đang tải lịch hôm nay…</span>
+                  <span>Loading today's schedule…</span>
                 </div>
               )}
 
@@ -1250,7 +1503,7 @@ export function DashboardPage() {
                     className="dash-slots-state-retry"
                     onClick={() => void loadTodaySchedule()}
                   >
-                    Thử lại
+                    Retry
                   </button>
                 </div>
               )}
@@ -1264,11 +1517,11 @@ export function DashboardPage() {
                     event_available
                   </span>
                   <h3 className="dash-empty-title">
-                    Chưa có khối thời gian nào hôm nay
+                    No time blocks scheduled today
                   </h3>
                   <p className="dash-empty-text">
-                    AI có thể xếp lịch cho bạn trong vài giây — chọn project
-                    trong Copilot, đề xuất khung giờ rồi duyệt là chạy.
+                    AI can schedule for you in a few seconds — pick a project in
+                    Copilot, suggest time slots, then approve and you're done.
                   </p>
                   <div className="dash-empty-actions">
                     <Link
@@ -1278,7 +1531,7 @@ export function DashboardPage() {
                       <span className="material-symbols-outlined dash-btn-icon">
                         auto_awesome
                       </span>
-                      <span>Đề xuất lịch bằng AI</span>
+                      <span>Plan with AI</span>
                     </Link>
                     <Link
                       to="/schedule"
@@ -1287,7 +1540,7 @@ export function DashboardPage() {
                       <span className="material-symbols-outlined dash-btn-icon">
                         calendar_month
                       </span>
-                      <span>Mở Schedule</span>
+                      <span>Open Schedule</span>
                     </Link>
                   </div>
                 </div>
@@ -1316,7 +1569,7 @@ export function DashboardPage() {
             </div>
           </div>
 
-          {/* Right column: Quick capture + Deadline radar + AI tip */}
+          {/* Right column: Deadline radar + AI tip */}
           <aside className="dash-col-right">
             <div className="dash-col-head">
               <div className="dash-col-head-left">
@@ -1330,52 +1583,13 @@ export function DashboardPage() {
               )}
             </div>
 
-            {/* Quick capture — ghi nhanh việc cần làm */}
-            <form className="dash-input-form" onSubmit={handleQuickAdd}>
-              <input
-                id="dash-quick-input"
-                type="text"
-                value={quickTask}
-                onChange={(e) => setQuickTask(e.target.value)}
-                placeholder="Capture a task and press Enter…"
-                className="dash-input"
-              />
-              <button
-                type="submit"
-                aria-label="Save quickly"
-                className="dash-input-submit"
-              >
-                <span className="material-symbols-outlined">
-                  keyboard_return
-                </span>
-              </button>
-            </form>
-
-            {captured.length > 0 && (
-              <div className="dash-captured">
-                {captured.map((c, i) => (
-                  <div
-                    key={`${capturedAnim.bumpKey}-${c.id}`}
-                    className={
-                      "dash-captured-item" +
-                      (capturedAnim.mounted ? " dash-captured-item--in" : "")
-                    }
-                    style={capturedAnim.getDelay(i)}
-                  >
-                    <span className="dash-captured-dot" aria-hidden="true" />
-                    <span className="dash-captured-title">{c.title}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
             <div className="dash-radar">
               {radarLoading && (
                 <div className="dash-radar-state">
                   <span className="material-symbols-outlined dash-radar-state-icon">
                     progress_activity
                   </span>
-                  <span>Đang tải dự án…</span>
+                  <span>Loading projects…</span>
                 </div>
               )}
 
@@ -1384,9 +1598,9 @@ export function DashboardPage() {
                   <span className="material-symbols-outlined dash-radar-state-icon">
                     event_busy
                   </span>
-                  <span>Chưa có dự án nào sắp tới hạn.</span>
+                  <span>No projects are due soon.</span>
                   <Link to="/projects" className="dash-link-primary">
-                    <span>Mở Projects</span>
+                    <span>Open Projects</span>
                     <span className="material-symbols-outlined">arrow_forward</span>
                   </Link>
                 </div>
@@ -1419,8 +1633,8 @@ export function DashboardPage() {
                 </div>
                 <p className="dash-tip-text">
                   {focusSlots.length > 0
-                    ? "Khung giờ tốt nhất hôm nay nằm trong các block đang chạy — ưu tiên deep work trước 16:30."
-                    : "Chưa có lịch hôm nay. Mở Copilot để AI xếp hộ bạn theo deadline gần nhất."}
+                    ? "Your best time today falls inside the blocks that are running — prioritise deep work before 16:30."
+                    : "Nothing scheduled today. Open Copilot and let AI plan around your nearest deadline."}
                 </p>
               </div>
             </div>
@@ -1433,8 +1647,8 @@ export function DashboardPage() {
         type="button"
         className="dash-fab"
         onClick={() => navigate("/copilot")}
-        aria-label="Mở AI Copilot"
-        title="Mở AI Copilot"
+        aria-label="Open AI Copilot"
+        title="Open AI Copilot"
       >
         <span className="dash-fab-glow" aria-hidden="true" />
         <span
@@ -1677,7 +1891,7 @@ function RadarRow({
         aria-valuenow={item.progress}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-label={`Tiến độ ${item.name}`}
+        aria-label={`Progress for ${item.name}`}
       >
         <div
           className="dash-radar-bar-fill"

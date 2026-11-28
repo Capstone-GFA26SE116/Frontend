@@ -281,6 +281,22 @@ export function LoginPage() {
                     {google.message ??
                       "Google Sign-In is not configured on this environment."}
                   </span>
+                  {/*
+                    Nút "Retry" — lỗi mạng / cache hỏng (`ERR_CACHE_READ_FAILURE`)
+                    là tạm thời → nạp lại script GIS không cần F5.
+                  */}
+                  {google.status === "failed" && (
+                    <button
+                      type="button"
+                      className="login-banner-action"
+                      onClick={google.reload}
+                    >
+                      <span className="material-symbols-outlined" aria-hidden="true">
+                        refresh
+                      </span>
+                      <span>Retry</span>
+                    </button>
+                  )}
                 </div>
               </div>
             )}

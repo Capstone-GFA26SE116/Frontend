@@ -105,11 +105,11 @@ export const PROPOSAL_GROUP_ORDER: ProposalGroupKind[] = [
   "ready",
 ];
 
-/** Nhãn tiếng Việt cho từng nhóm. */
+/** Nhãn tiếng Anh cho từng nhóm. */
 export const PROPOSAL_GROUP_LABELS: Record<ProposalGroupKind, string> = {
-  overdue: "Quá hạn",
-  tight: "Cần chờ trống",
-  ready: "Sẵn sàng",
+  overdue: "Overdue",
+  tight: "Waiting for a slot",
+  ready: "Ready",
 };
 
 /** Icon Material tương ứng từng nhóm. */
@@ -564,8 +564,11 @@ export function useScheduleProposal(opts: {
           );
 
       if (pool.length === 0) {
-        setError("Không còn task Flexible nào chưa có lịch.");
-        toast.info("Không có gì để xếp", "Mọi task flexible đều đã có lịch.");
+        setError("No flexible tasks left without a schedule.");
+        toast.info(
+          "Nothing to schedule",
+          "Every flexible task already has a slot.",
+        );
         return;
       }
 
@@ -583,12 +586,15 @@ export function useScheduleProposal(opts: {
       try {
         res = await proposeSchedule({
           task_ids: pool.map((t) => t.id),
-          language: "vi",
+          language: "en",
         });
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Lỗi mạng khi gọi AI xếp lịch.";
+        const msg =
+          e instanceof Error
+            ? e.message
+            : "Network error while calling the AI scheduler.";
         setError(msg);
-        toast.error("Không lấy được đề xuất", msg);
+        toast.error("Couldn't get the proposal", msg);
         return;
       } finally {
         inFlight.current = false;
@@ -598,9 +604,9 @@ export function useScheduleProposal(opts: {
       if (!res.ok) {
         // KHÔNG fallback gọi từng task riêng — đó chính là nguồn gây trùng
         // giờ + tốn quota. Báo lỗi và để user thử lại.
-        const msg = res.error || "Không gọi được AI để xếp lịch.";
+        const msg = res.error || "Couldn't reach the AI scheduler.";
         setError(msg);
-        toast.error("Không lấy được đề xuất", msg);
+        toast.error("Couldn't get the proposal", msg);
         return;
       }
 
@@ -609,7 +615,7 @@ export function useScheduleProposal(opts: {
 
       if (merged.slots.length === 0) {
         // Cảnh báo vẫn được giữ trong `merged.warnings` → UI hiện lý do cụ thể.
-        toast.info("AI chưa tìm được chỗ trống", merged.explanation ?? undefined);
+        toast.info("AI didn't find a free slot", merged.explanation ?? undefined);
       }
     },
     [
@@ -634,7 +640,10 @@ export function useScheduleProposal(opts: {
     if (approvingRef.current) return 0;
     const slots = selectedSlots;
     if (slots.length === 0) {
-      toast.info("Chưa chọn khung giờ nào", "Hãy tick ít nhất 1 khung giờ rồi bấm Apply.");
+      toast.info(
+        "No time slots selected",
+        "Tick at least 1 time slot, then press Apply.",
+      );
       return 0;
     }
 
@@ -688,7 +697,10 @@ export function useScheduleProposal(opts: {
     approvingRef.current = false;
 
     if (failed.length === 0) {
-      toast.success(`Đã apply ${created} khung giờ`, "Lịch đã cập nhật cho các slot được chọn.");
+      toast.success(
+        `Applied ${created} time slots`,
+        "Your schedule was updated for the selected slots.",
+      );
       reset();
       return created;
     }
@@ -698,13 +710,13 @@ export function useScheduleProposal(opts: {
     setExcluded(failedKeys);
     if (firstOverlapMsg) {
       toast.error(
-        `${created}/${slots.length} khung giờ đã apply`,
+        `${created}/${slots.length} time slots applied`,
         firstOverlapMsg,
       );
     } else {
       toast.error(
-        `${created}/${slots.length} khung giờ đã apply`,
-        `Không tạo được: ${failed.map((f) => f.title).join(", ")}`,
+        `${created}/${slots.length} time slots applied`,
+        `Couldn't create: ${failed.map((f) => f.title).join(", ")}`,
       );
     }
     return created;

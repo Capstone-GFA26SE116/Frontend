@@ -970,6 +970,37 @@
   font-size: 1rem;
 }
 
+/* Nút "Retry" trong banner cảnh báo (Google Sign-In lỗi tạm thời). */
+.login-banner-action {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: var(--voltagent-radius-xs);
+  border: 1px solid var(--voltagent-hairline);
+  background: transparent;
+  color: var(--voltagent-primary);
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1rem;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease;
+}
+
+.login-banner-action:hover {
+  border-color: var(--voltagent-primary);
+  background-color: rgba(0, 217, 146, 0.08);
+}
+
+.login-banner-action .material-symbols-outlined {
+  font-size: 1rem;
+}
+
 /* ===========================================================
  * Responsive
  * =========================================================== */

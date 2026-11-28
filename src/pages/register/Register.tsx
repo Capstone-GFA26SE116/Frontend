@@ -204,6 +204,22 @@ export function RegisterPage() {
                     {google.message ??
                       "Google Sign-Up is not configured on this environment."}
                   </span>
+                  {/* Retry — lỗi mạng / cache hỏng là tạm thời. */}
+                  {google.status === "failed" && (
+                    <button
+                      type="button"
+                      className="login-banner-action"
+                      onClick={google.reload}
+                    >
+                      <span
+                        className="material-symbols-outlined"
+                        aria-hidden="true"
+                      >
+                        refresh
+                      </span>
+                      <span>Retry</span>
+                    </button>
+                  )}
                 </div>
               </div>
             )}

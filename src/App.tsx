@@ -10,6 +10,7 @@ import { PricingPage } from "./pages/pricing/Pricing";
 import { ProjectsPage } from "./pages/projects/Projects";
 import { GroupsPage } from "./pages/groups/Groups";
 import { GroupDetailPage } from "./pages/groups/GroupDetail";
+import { GroupAiPlannerPage } from "./pages/groups/GroupAiPlannerPage";
 import { MyGroupTasksPage } from "./pages/groups/MyGroupTasks";
 import { ProjectAiChatPage } from "./pages/project-ai-chat/ProjectAiChat";
 import { ProjectImportPage } from "./pages/project-import/ProjectImport";
@@ -196,6 +197,14 @@ function App() {
         <Route
           path="/groups/:groupId"
           element={guarded("Chi tiết nhóm", <GroupDetailPage />)}
+        />
+        {/*
+         * Chat AI của nhóm — trang riêng, layout 3 cột:
+         * lịch sử chat (trái) · khung chat (giữa) · bản nháp plan (phải).
+         */}
+        <Route
+          path="/groups/:groupId/ai"
+          element={guarded("Chat AI nhóm", <GroupAiPlannerPage />)}
         />
         {/* Việc nhóm được giao cho tôi — GET /api/my-group-tasks */}
         <Route

@@ -1,0 +1,318 @@
+/* ===========================================================
+ * Group AI Planner — phần bổ sung
+ * ===========================================================
+ *
+ * Các class dùng ở trang `/groups/:groupId/ai` nhưng chưa có trong
+ * `group-ai.css` (dùng chung với tab "Chat AI" cũ).
+ * =========================================================== */
+
+/* Nút cỡ nhỏ */
+.gai-btn--sm {
+  padding: 6px 11px;
+  font-size: 12.5px;
+  line-height: 17px;
+  gap: 5px;
+}
+.gai-btn--sm .material-symbols-outlined {
+  font-size: 15px;
+}
+
+/* ----- Trạng thái: AI đang nghĩ / loading ----- */
+.gai-thinking {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 14px 16px;
+  border: 1px dashed var(--gai-p-hairline);
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--gai-p-mute);
+}
+.gai-thinking .material-symbols-outlined {
+  font-size: 17px;
+}
+
+/* ----- Chỉ báo "AI trả lời nhưng không có bản nháp" ----- */
+.gai-no-draft {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 14px 16px;
+  border: 1px solid rgba(227, 179, 65, 0.35);
+  border-radius: 6px;
+  background: rgba(227, 179, 65, 0.07);
+}
+.gai-no-draft > .material-symbols-outlined {
+  font-size: 19px;
+  color: #e3b341;
+  flex-shrink: 0;
+}
+.gai-no-draft-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.gai-no-draft-body strong {
+  font-size: 13.5px;
+  line-height: 19px;
+  color: #e3b341;
+}
+.gai-no-draft-body p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--gai-p-body);
+}
+.gai-no-draft-btn {
+  align-self: flex-start;
+}
+
+/* ----- Nút "Lên kế hoạch" sáng lên khi AI đủ thông tin ----- */
+.gai-plan-btn {
+  border-color: rgba(0, 217, 146, 0.45);
+  color: var(--gai-p-primary);
+  background: var(--gai-p-primary-wash);
+}
+.gai-plan-btn:hover:not(:disabled) {
+  border-color: var(--gai-p-primary);
+  color: var(--gai-p-primary);
+}
+
+/* ----- Khối xem trước bản nháp cũ (trong khung chat) ----- */
+.gai-draft--preview {
+  margin-top: 4px;
+  border: 1px solid var(--gai-p-hairline);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.gai-draft-preview-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  background: var(--gai-p-soft);
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 17px;
+  color: var(--gai-p-mute);
+  cursor: pointer;
+  text-align: left;
+  transition: color 160ms ease;
+}
+.gai-draft-preview-toggle:hover {
+  color: var(--gai-p-body);
+}
+.gai-draft-preview-toggle > .material-symbols-outlined {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.gai-draft-preview-label {
+  font-weight: 600;
+  color: var(--gai-p-body);
+  white-space: nowrap;
+}
+.gai-draft-preview-meta {
+  flex: 1;
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gai-draft-preview-caret {
+  flex-shrink: 0;
+}
+.gai-draft-preview-body {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--gai-p-hairline);
+}
+
+/* ----- Cảnh báo của AI trong bản nháp ----- */
+.gai-draft-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gai-draft-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 8px 10px;
+  border-radius: 5px;
+  background: rgba(227, 179, 65, 0.07);
+  border: 1px solid rgba(227, 179, 65, 0.28);
+  font-size: 12px;
+  line-height: 17px;
+  color: #e3b341;
+}
+.gai-draft-warning .material-symbols-outlined {
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+/* ----- Milestone: lý do của AI ----- */
+.gai-milestone-reason {
+  margin: 0;
+  padding: 0 14px 10px 14px;
+  font-size: 12px;
+  line-height: 17px;
+  font-style: italic;
+  color: var(--gai-p-mute);
+}
+
+/* ----- Task: các trường chỉnh sửa ----- */
+.gai-task-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 9px;
+}
+@media (min-width: 520px) {
+  .gai-task-fields {
+    grid-template-columns: minmax(0, 1fr) 92px;
+  }
+  /* Cột assignee trải hết 1 hàng (dưới 2 cột trên). */
+  .gai-task-fields .gai-field:last-child {
+    grid-column: 1 / -1;
+  }
+}
+.gai-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.gai-field-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--gai-p-mute);
+}
+
+/* Nút "Use AI's pick" */
+.gai-ai-pick-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  margin-top: 3px;
+  padding: 3px 9px;
+  border: 1px solid rgba(0, 217, 146, 0.35);
+  border-radius: 9999px;
+  background: var(--gai-p-primary-wash);
+  color: var(--gai-p-primary);
+  font-family: inherit;
+  font-size: 11.5px;
+  line-height: 16px;
+  cursor: pointer;
+  transition: border-color 160ms ease;
+}
+.gai-ai-pick-btn:hover:not(:disabled) {
+  border-color: var(--gai-p-primary);
+}
+.gai-ai-pick-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.gai-ai-pick-btn .material-symbols-outlined {
+  font-size: 13px;
+}
+
+/* ----- Task: domain + estimate ----- */
+.gai-domain {
+  padding: 2px 8px;
+  border-radius: 9999px;
+  border: 1px solid var(--gai-p-hairline);
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  line-height: 15px;
+  color: var(--gai-p-mute);
+}
+.gai-est {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 16px;
+  color: var(--gai-p-mute);
+}
+.gai-est .material-symbols-outlined {
+  font-size: 14px;
+}
+
+/* ----- Task: lý do chọn người ----- */
+.gai-task-reason {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 17px;
+  color: var(--gai-p-mute);
+}
+
+/* ----- Task: việc con ----- */
+.gai-subtask {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--gai-p-body);
+}
+.gai-subtask-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gai-subtask-est {
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--gai-p-mute);
+}
+
+/* ----- Khu vực nút Áp dụng ----- */
+.gai-draft-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  padding-top: 12px;
+  border-top: 1px solid var(--gai-p-hairline);
+}
+.gai-draft-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--gai-p-mute);
+}
+.gai-draft-summary .material-symbols-outlined {
+  font-size: 14px;
+}
+.gai-draft-summary-sep {
+  opacity: 0.5;
+}
+.gai-apply-btn {
+  white-space: nowrap;
+}
+
+/* ----- Tên chat ở header khung chat ----- */
+.gai-planner-stream-chat-title {
+  margin-left: 9px;
+  padding-left: 9px;
+  border-left: 1px solid var(--gai-p-hairline);
+  font-weight: 400;
+  font-size: 13px;
+  color: var(--gai-p-mute);
+}

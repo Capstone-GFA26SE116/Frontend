@@ -1,5 +1,9 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import {
+  listDomains,
+  type CreateTaskRequest,
+  type DomainDto,
   type MilestoneDto,
   type SubtaskDto,
   type TaskDto,
@@ -23,7 +27,7 @@ import {
  *   - Thêm  : dòng mới hiện ngay ở chế độ sửa tên, cha tự mở ra.
  *   - Sửa  : bấm ✎ → dòng thành ô nhập + Lưu / Huỷ (Enter = Lưu, Esc = Huỷ).
  *   - Xoá  : bấm 🗑 → dòng đổi thành "Xoá việc "…"? + Xoá (đỏ) / Huỷ.
- *             ⚠️ KHÔNG hỏi bằng popup che màn.
+ *             Confirm deletion in a dialog before sending the request.
  *   - Xong : tích ☐ → PUT task status = Done.
  * 4.3 Trạng thái rỗng + khung "Bản nháp của AI — chưa áp dụng".
  *
@@ -41,6 +45,7 @@ export interface ProjectTreeProps {
   } | null;
   milestones: MilestoneDto[];
   tasks: TaskDto[];
+  recentTaskIds?: ReadonlySet<string>;
   /** taskId -> subtasks. */
   subtasksByTaskId: Map<string, SubtaskDto[]>;
   /** Tên các cột mốc trong bản nháp chưa áp dụng (chỉ xem). */
@@ -52,32 +57,32 @@ export interface ProjectTreeProps {
   /** Sửa thông tin dự án. */
   onEditProject: () => void;
   /** Thêm cột mốc. */
-  onAddMilestone: () => void;
+  onAddMilestone: (name: string) => Promise<boolean>;
   /** Thêm việc vào cột mốc. */
-  onAddTask: (milestoneId: string, title: string) => void;
+  onAddTask: (milestoneId: string, task: CreateTaskRequest) => Promise<boolean>;
   /** Thêm việc con vào việc. */
-  onAddSubtask: (taskId: string, title: string) => void;
+  onAddSubtask: (taskId: string, title: string, minutes: number) => Promise<boolean>;
   /** Lưu tên milestone. */
-  onRenameMilestone: (milestoneId: string, name: string) => void;
+  onRenameMilestone: (milestoneId: string, name: string) => Promise<boolean>;
   /** Lưu tên task. */
-  onRenameTask: (taskId: string, title: string) => void;
+  onRenameTask: (taskId: string, title: string) => Promise<boolean>;
   /** Lưu tên việc con. */
-  onRenameSubtask: (subtaskId: string, title: string) => void;
+  onRenameSubtask: (subtaskId: string, title: string) => Promise<boolean>;
   /** Xoá milestone. */
-  onDeleteMilestone: (milestoneId: string) => void;
+  onDeleteMilestone: (milestoneId: string) => Promise<boolean>;
   /** Xoá task. */
-  onDeleteTask: (taskId: string) => void;
+  onDeleteTask: (taskId: string) => Promise<boolean>;
   /** Xoá việc con. */
-  onDeleteSubtask: (subtaskId: string) => void;
+  onDeleteSubtask: (subtaskId: string) => Promise<boolean>;
   /** Đánh dấu task xong / chưa xong. */
   onToggleTaskDone: (task: TaskDto) => void;
 }
 
 /** Khoá duy nhất cho 1 hành động đang chờ (rename/delete/add). */
 type PendingEdit =
-  | { kind: "rename"; id: string; value: string }
+  | { kind: "rename"; id: string }
   | { kind: "delete"; id: string; label: string }
-  | { kind: "add"; parentId: string; value: string }
+  | { kind: "add"; parentId: string }
   | null;
 
 export function ProjectTree(props: ProjectTreeProps) {
@@ -85,6 +90,7 @@ export function ProjectTree(props: ProjectTreeProps) {
     project,
     milestones,
     tasks,
+    recentTaskIds,
     subtasksByTaskId,
     draftMilestoneTitles,
     loading,
@@ -105,7 +111,7 @@ export function ProjectTree(props: ProjectTreeProps) {
   } = props;
 
   /** Milestone đang mở rộng (có thể mở nhiều cùng lúc). */
-  const [openMs, setOpenMs] = useState<Set<string>>(new Set());
+  const [openMs, setOpenMs] = useState<Map<string, boolean>>(() => new Map());
   /** Task đang mở rộng (hiện việc con). */
   const [openTasks, setOpenTasks] = useState<Set<string>>(new Set());
   const [pending, setPending] = useState<PendingEdit>(null);
@@ -145,24 +151,38 @@ export function ProjectTree(props: ProjectTreeProps) {
    *
    * Khoá có tiền tố: `ms:` = milestone · `ts:` = việc con · còn lại = task.
    */
+  async function finishEdit(save: Promise<boolean>) {
+    const saved = await save;
+    if (saved) setPending((current) => current === pending ? null : current);
+    return saved;
+  }
+
   function handleRename(id: string, value: string) {
-    const trimmed = value.trim();
-    if (!trimmed) return;
-    if (id.startsWith("ms:")) onRenameMilestone(id.slice(3), trimmed);
-    else if (id.startsWith("ts:")) onRenameSubtask(id.slice(3), trimmed);
-    else onRenameTask(id, trimmed);
-    setPending(null);
+    if (id.startsWith("ms:")) return finishEdit(onRenameMilestone(id.slice(3), value));
+    if (id.startsWith("ts:")) return finishEdit(onRenameSubtask(id.slice(3), value));
+    return finishEdit(onRenameTask(id, value));
   }
 
-  /** Xoá sau khi xác nhận nội tuyến. */
-  function handleDelete(id: string) {
-    if (id.startsWith("ms:")) onDeleteMilestone(id.slice(3));
-    else if (id.startsWith("ts:")) onDeleteSubtask(id.slice(3));
-    else onDeleteTask(id);
-    setPending(null);
+  function requestAddTask(id: string) {
+    setOpenMs((previous) => new Map(previous).set(id, true));
+    setPending({ kind: "add", parentId: `ms:${id}` });
   }
 
-  /** Bấm 🗑 → bật chế độ xác nhận nội tuyến (không dùng popup che màn). */
+  function requestAddSubtask(id: string) {
+    setOpenTasks((previous) => new Set(previous).add(id));
+    setPending({ kind: "add", parentId: id });
+  }
+
+  async function handleDelete(id: string) {
+    const deleted = id.startsWith("ms:")
+      ? await onDeleteMilestone(id.slice(3))
+      : id.startsWith("ts:")
+        ? await onDeleteSubtask(id.slice(3))
+        : await onDeleteTask(id);
+    if (deleted) setPending(null);
+  }
+
+  /** The trash button only opens confirmation. */
   function handleRequestDelete(id: string) {
     setPending({ kind: "delete", id, label: "" });
   }
@@ -239,11 +259,20 @@ export function ProjectTree(props: ProjectTreeProps) {
         <button
           type="button"
           className="aic-right__addms"
-          onClick={onAddMilestone}
+          onClick={() => setPending({ kind: "add", parentId: "project" })}
+          disabled={loading || !project}
         >
           <span className="material-symbols-outlined">add</span>
           Cột mốc
         </button>
+        {pending?.kind === "add" && pending.parentId === "project" && (
+          <InlineEditor
+            label="Tên cột mốc"
+            maxLength={150}
+            onSave={(name) => finishEdit(onAddMilestone(name))}
+            onCancel={() => setPending(null)}
+          />
+        )}
 
         {loading ? (
           <div
@@ -264,42 +293,54 @@ export function ProjectTree(props: ProjectTreeProps) {
           </div>
         ) : (
           <div className="aic-tree">
-            {milestones.map((m) => (
-              <MilestoneNode
-                key={m.id}
-                milestone={m}
-                tasks={tasksByMilestone.get(m.id) ?? []}
-                subtasksByTaskId={subtasksByTaskId}
-                open={openMs.has(m.id)}
-                openTasks={openTasks}
-                pending={pending}
-                onToggleMs={() => setOpenMs((s) => toggle(s, m.id))}
-                onToggleTask={(id) => setOpenTasks((s) => toggle(s, id))}
-                onAddTask={(msId, title) => onAddTask(msId, title)}
-                onAddSubtask={(taskId, title) => onAddSubtask(taskId, title)}
-                onRename={handleRename}
-                onRequestDelete={handleRequestDelete}
-                onCancelEdit={() => setPending(null)}
-                onDelete={handleDelete}
-                onToggleDone={onToggleTaskDone}
-                taskActions={taskActions}
-              />
-            ))}
+            {milestones.map((m) => {
+              const milestoneTasks = tasksByMilestone.get(m.id) ?? [];
+              const open = openMs.get(m.id) ?? milestoneTasks.some((task) => recentTaskIds?.has(task.id));
+              return (
+                <MilestoneNode
+                  key={m.id}
+                  milestone={m}
+                  tasks={milestoneTasks}
+                  recentTaskIds={recentTaskIds}
+                  subtasksByTaskId={subtasksByTaskId}
+                  open={open}
+                  openTasks={openTasks}
+                  pending={pending}
+                  onToggleMs={() => setOpenMs((previous) => new Map(previous).set(m.id, !open))}
+                  onToggleTask={(id) => setOpenTasks((s) => toggle(s, id))}
+                  defaultDeadline={m.dueDate ?? project?.deadline}
+                  onAddTask={requestAddTask}
+                  onAddSubtask={requestAddSubtask}
+                  onSaveTask={(id, task) => finishEdit(onAddTask(id, task))}
+                  onSaveSubtask={(id, title, minutes) => finishEdit(onAddSubtask(id, title, minutes))}
+                  onRename={(id) => setPending({ kind: "rename", id })}
+                  onSaveName={handleRename}
+                  onRequestDelete={handleRequestDelete}
+                  onCancelEdit={() => setPending(null)}
+                  onDelete={handleDelete}
+                  onToggleDone={onToggleTaskDone}
+                  taskActions={taskActions}
+                />
+              );
+            })}
 
             {/* Task chưa có cột mốc */}
             {orphanTasks.length > 0 && (
               <section className="aic-tree__orphan">
-                <h3 className="aic-tree__orphan-title">Chưa gán cột mốc</h3>
+                <h3 className="aic-tree__orphan-title">Chưa gán cột mốc · {orphanTasks.length} việc</h3>
                 {orphanTasks.map((t) => (
                   <TaskNode
                     key={t.id}
                     task={t}
+                    recentlyAdded={recentTaskIds?.has(t.id)}
                     subtasks={subtasksByTaskId.get(t.id) ?? []}
                     open={openTasks.has(t.id)}
                     pending={pending}
                     onToggle={() => setOpenTasks((s) => toggle(s, t.id))}
-                    onAddSubtask={(taskId, title) => onAddSubtask(taskId, title)}
-                    onRename={handleRename}
+                    onAddSubtask={requestAddSubtask}
+                    onSaveSubtask={(id, title, minutes) => finishEdit(onAddSubtask(id, title, minutes))}
+                    onRename={(id) => setPending({ kind: "rename", id })}
+                    onSaveName={handleRename}
                     onRequestDelete={handleRequestDelete}
                     onCancelEdit={() => setPending(null)}
                     onDelete={handleDelete}
@@ -322,6 +363,7 @@ export function ProjectTree(props: ProjectTreeProps) {
 function MilestoneNode({
   milestone,
   tasks,
+  recentTaskIds,
   subtasksByTaskId,
   open,
   openTasks,
@@ -330,7 +372,11 @@ function MilestoneNode({
   onToggleTask,
   onAddTask,
   onAddSubtask,
+  defaultDeadline,
+  onSaveTask,
+  onSaveSubtask,
   onRename,
+  onSaveName,
   onRequestDelete,
   onCancelEdit,
   onDelete,
@@ -339,21 +385,26 @@ function MilestoneNode({
 }: {
   milestone: MilestoneDto;
   tasks: TaskDto[];
+  recentTaskIds?: ReadonlySet<string>;
   subtasksByTaskId: Map<string, SubtaskDto[]>;
   open: boolean;
   openTasks: Set<string>;
   pending: PendingEdit;
   onToggleMs: () => void;
   onToggleTask: (id: string) => void;
-  onAddTask: (msId: string, title: string) => void;
-  onAddSubtask: (taskId: string, title: string) => void;
-  onRename: (id: string, value: string) => void;
-  /** Bấm 🗑 → bật chế độ xác nhận nội tuyến. */
+  onAddTask: (msId: string) => void;
+  onAddSubtask: (taskId: string) => void;
+  defaultDeadline?: string | null;
+  onSaveTask: ProjectTreeProps["onAddTask"];
+  onSaveSubtask: ProjectTreeProps["onAddSubtask"];
+  onRename: (id: string) => void;
+  onSaveName: (id: string, value: string) => Promise<boolean>;
+  /** Open the confirmation dialog. */
   onRequestDelete: (id: string) => void;
   /** Huỷ thao tác nội tuyến. */
   onCancelEdit: () => void;
   /** Xác nhận xoá → xoá thật. */
-  onDelete: (id: string) => void;
+  onDelete: (id: string) => Promise<void>;
   onToggleDone: (task: TaskDto) => void;
   taskActions?: ProjectTreeProps["taskActions"];
 }) {
@@ -368,15 +419,19 @@ function MilestoneNode({
       {deleting ? (
         <ConfirmDelete
           label={`cột mốc "${milestone.name}"`}
+          message={tasks.length
+            ? `${tasks.length} việc trong cột mốc sẽ chuyển sang “Chưa gán cột mốc”.`
+            : "Cột mốc sẽ bị xóa khỏi dự án."}
           onConfirm={() => onDelete(msId)}
           onCancel={onCancelEdit}
         />
       ) : renaming ? (
         <InlineEditor
+          label="Tên cột mốc"
+          maxLength={150}
           initial={milestone.name}
-          onSave={onRename}
+          onSave={(name) => onSaveName(msId, name)}
           onCancel={onCancelEdit}
-          id={msId}
         />
       ) : (
         <div className="aic-node__row">
@@ -402,7 +457,7 @@ function MilestoneNode({
             <button
               type="button"
               className="aic-icon-btn aic-icon-btn--xs"
-              onClick={() => onAddTask(milestone.id, "")}
+              onClick={() => onAddTask(milestone.id)}
               aria-label="Thêm việc"
               title="Thêm việc"
             >
@@ -411,7 +466,7 @@ function MilestoneNode({
             <button
               type="button"
               className="aic-icon-btn aic-icon-btn--xs"
-              onClick={() => onRename(msId, milestone.name)}
+              onClick={() => onRename(msId)}
               aria-label="Sửa cột mốc"
               title="Sửa"
             >
@@ -437,12 +492,15 @@ function MilestoneNode({
             <TaskNode
               key={t.id}
               task={t}
+              recentlyAdded={recentTaskIds?.has(t.id)}
               subtasks={subtasksByTaskId.get(t.id) ?? []}
               open={openTasks.has(t.id)}
               pending={pending}
               onToggle={() => onToggleTask(t.id)}
-              onAddSubtask={(taskId, title) => onAddSubtask(taskId, title)}
+              onAddSubtask={onAddSubtask}
+              onSaveSubtask={onSaveSubtask}
               onRename={onRename}
+              onSaveName={onSaveName}
               onRequestDelete={onRequestDelete}
               onCancelEdit={onCancelEdit}
               onDelete={onDelete}
@@ -452,9 +510,17 @@ function MilestoneNode({
           ))}
 
           {adding && (
-            <AddRow
-              placeholder="Việc mới"
-              onSubmit={(title) => onAddTask(milestone.id, title)}
+            <InlineEditor
+              label="Tên việc"
+              taskDeadline={defaultDeadline ?? ""}
+              onSave={(title, minutes, deadline, domainId) => onSaveTask(milestone.id, {
+                title,
+                taskType: "Flexible",
+                estimatedMinutes: minutes,
+                deadline,
+                domainId,
+              })}
+              onCancel={onCancelEdit}
             />
           )}
         </div>
@@ -468,12 +534,15 @@ function MilestoneNode({
  * =========================================================== */
 function TaskNode({
   task,
+  recentlyAdded,
   subtasks,
   open,
   pending,
   onToggle,
   onAddSubtask,
+  onSaveSubtask,
   onRename,
+  onSaveName,
   onRequestDelete,
   onCancelEdit,
   onDelete,
@@ -481,14 +550,17 @@ function TaskNode({
   taskActions,
 }: {
   task: TaskDto;
+  recentlyAdded?: boolean;
   subtasks: SubtaskDto[];
   open: boolean;
   pending: PendingEdit;
   onToggle: () => void;
-  onAddSubtask: (taskId: string, title: string) => void;
-  onRename: (id: string, value: string) => void;
-  onDelete: (id: string) => void;
-  /** Bấm 🗑 → bật chế độ xác nhận nội tuyến. */
+  onAddSubtask: (taskId: string) => void;
+  onSaveSubtask: ProjectTreeProps["onAddSubtask"];
+  onRename: (id: string) => void;
+  onSaveName: (id: string, value: string) => Promise<boolean>;
+  onDelete: (id: string) => Promise<void>;
+  /** Open the confirmation dialog. */
   onRequestDelete: (id: string) => void;
   /** Huỷ thao tác nội tuyến. */
   onCancelEdit: () => void;
@@ -505,15 +577,16 @@ function TaskNode({
       {deleting ? (
         <ConfirmDelete
           label={`việc "${task.title}"`}
+          message="Việc, các việc con và khung giờ liên quan có thể bị xóa khỏi dự án. Bạn không thể hoàn tác thao tác này."
           onConfirm={() => onDelete(task.id)}
           onCancel={onCancelEdit}
         />
       ) : renaming ? (
         <InlineEditor
+          label="Tên việc"
           initial={task.title}
-          onSave={onRename}
+          onSave={(title) => onSaveName(task.id, title)}
           onCancel={onCancelEdit}
-          id={task.id}
         />
       ) : (
         <div className={`aic-node__row${done ? " aic-node__row--done" : ""}`}>
@@ -546,6 +619,7 @@ function TaskNode({
           </label>
 
           <span className="aic-node__title">{task.title}</span>
+          {recentlyAdded && <span className="pc-recent-task">Mới</span>}
 
           <span className="aic-node__meta">
             {fmtDuration(task.estimatedMinutes)}
@@ -556,7 +630,7 @@ function TaskNode({
             <button
               type="button"
               className="aic-icon-btn aic-icon-btn--xs"
-              onClick={() => onAddSubtask(task.id, "")}
+              onClick={() => onAddSubtask(task.id)}
               aria-label="Thêm việc con"
               title="Thêm việc con"
             >
@@ -565,7 +639,7 @@ function TaskNode({
             <button
               type="button"
               className="aic-icon-btn aic-icon-btn--xs"
-              onClick={() => onRename(task.id, task.title)}
+              onClick={() => onRename(task.id)}
               aria-label="Sửa việc"
               title="Sửa"
             >
@@ -595,6 +669,7 @@ function TaskNode({
               subtask={s}
               pending={pending}
               onRename={onRename}
+              onSaveName={onSaveName}
               onRequestDelete={onRequestDelete}
               onCancelEdit={onCancelEdit}
               onDelete={onDelete}
@@ -602,9 +677,11 @@ function TaskNode({
           ))}
 
           {adding && (
-            <AddRow
-              placeholder="Việc con mới"
-              onSubmit={(title) => onAddSubtask(task.id, title)}
+            <InlineEditor
+              label="Tên việc con"
+              needsMinutes
+              onSave={(title, minutes) => onSaveSubtask(task.id, title, minutes)}
+              onCancel={onCancelEdit}
             />
           )}
         </div>
@@ -620,14 +697,16 @@ function SubtaskNode({
   subtask,
   pending,
   onRename,
+  onSaveName,
   onRequestDelete,
   onCancelEdit,
   onDelete,
 }: {
   subtask: SubtaskDto;
   pending: PendingEdit;
-  onRename: (id: string, value: string) => void;
-  onDelete: (id: string) => void;
+  onRename: (id: string) => void;
+  onSaveName: (id: string, value: string) => Promise<boolean>;
+  onDelete: (id: string) => Promise<void>;
   /** Bam 🗑 → bat che do xac nhan noi tuyen. */
   onRequestDelete: (id: string) => void;
   /** Huy thao tac noi tuyen. */
@@ -642,15 +721,16 @@ function SubtaskNode({
       {deleting ? (
         <ConfirmDelete
           label={`việc con "${subtask.title}"`}
+          message="Việc con và khung giờ liên quan có thể bị xóa. Bạn không thể hoàn tác thao tác này."
           onConfirm={() => onDelete(id)}
           onCancel={onCancelEdit}
         />
       ) : renaming ? (
         <InlineEditor
+          label="Tên việc con"
           initial={subtask.title}
-          onSave={onRename}
+          onSave={(title) => onSaveName(id, title)}
           onCancel={onCancelEdit}
-          id={id}
         />
       ) : (
         <div className="aic-node__row">
@@ -665,7 +745,7 @@ function SubtaskNode({
             <button
               type="button"
               className="aic-icon-btn aic-icon-btn--xs"
-              onClick={() => onRename(id, subtask.title)}
+              onClick={() => onRename(id)}
               aria-label="Sửa việc con"
               title="Sửa"
             >
@@ -687,125 +767,150 @@ function SubtaskNode({
   );
 }
 
-/* ===========================================================
- * Dòng thêm mới (hiện ngay ở chế độ sửa tên)
- * =========================================================== */
-function AddRow({
-  placeholder,
-  onSubmit,
+/** Save only on submit and keep the form open when the request fails. */
+function InlineEditor({
+  label,
+  initial = "",
+  maxLength = 200,
+  needsMinutes = false,
+  taskDeadline,
+  onSave,
+  onCancel,
 }: {
-  placeholder: string;
-  onSubmit: (title: string) => void;
+  label: string;
+  initial?: string;
+  maxLength?: number;
+  needsMinutes?: boolean;
+  taskDeadline?: string;
+  onSave: (title: string, minutes: number, deadline?: string, domainId?: string) => Promise<boolean>;
+  onCancel: () => void;
 }) {
-  const [value, setValue] = useState("");
+  const [title, setTitle] = useState(initial);
+  const [minutes, setMinutes] = useState("");
+  const [deadline, setDeadline] = useState(taskDeadline?.slice(0, 10) ?? "");
+  const [domainId, setDomainId] = useState("");
+  const [domains, setDomains] = useState<DomainDto[] | null>(null);
+  const [domainError, setDomainError] = useState(false);
+  const [domainRequest, setDomainRequest] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const submitted = useRef(false);
+  const creatingTask = taskDeadline !== undefined;
+  const showMinutes = needsMinutes || creatingTask;
 
-  function commit() {
-    const t = value.trim();
-    if (!t) return;
-    onSubmit(t);
-    setValue("");
+  useEffect(() => {
+    if (!creatingTask) return;
+    let active = true;
+    void listDomains().then((result) => {
+      if (!active) return;
+      if (result.ok) setDomains(result.data);
+      else setDomainError(true);
+    });
+    return () => { active = false; };
+  }, [creatingTask, domainRequest]);
+
+  async function save() {
+    if (submitted.current || !title.trim() || (creatingTask && (!deadline || !domainId))) return;
+    submitted.current = true;
+    setBusy(true);
+    try {
+      const due = creatingTask ? new Date(`${deadline}T23:59:59`).toISOString() : undefined;
+      await onSave(title.trim(), Number(minutes), due, domainId || undefined);
+    } finally {
+      submitted.current = false;
+      setBusy(false);
+    }
   }
 
   return (
-    <div className="aic-node__row aic-node__row--add">
-      <input
-        className="aic-node__input"
-        placeholder={placeholder}
-        value={value}
-        autoFocus
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            commit();
-          }
-          if (e.key === "Escape") setValue("");
-        }}
-      />
-      <button
-        type="button"
-        className="aic-btn aic-btn--tiny aic-btn--primary"
-        onClick={commit}
-      >
-        Thêm
-      </button>
-    </div>
+    <form
+      className="aic-node__editor"
+      onSubmit={(event) => { event.preventDefault(); void save(); }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && !submitted.current) {
+          event.preventDefault();
+          onCancel();
+        }
+      }}
+    >
+      <fieldset disabled={busy}>
+        <label>
+          {label}
+          <input className="aic-node__input" value={title} maxLength={maxLength} required autoFocus
+            onChange={(event) => setTitle(event.target.value)} />
+        </label>
+        {showMinutes && (
+          <label>
+            Thời lượng (phút)
+            <input className="aic-node__input" type="number" min={1} max={2147483647} step={1}
+              value={minutes} required onChange={(event) => setMinutes(event.target.value)} />
+          </label>
+        )}
+        {creatingTask && (
+          <>
+            <label>
+              Hạn hoàn thành
+              <input className="aic-node__input" type="date" value={deadline} required
+                onChange={(event) => setDeadline(event.target.value)} />
+            </label>
+            <label>
+              Lĩnh vực
+              <select className="aic-node__input" value={domainId} required
+                disabled={!domains?.length} onChange={(event) => setDomainId(event.target.value)}>
+                <option value="">{domains || domainError ? "Chọn lĩnh vực" : "Đang tải lĩnh vực…"}</option>
+                {domains?.map((domain) => <option key={domain.id} value={domain.id}>{domain.name}</option>)}
+              </select>
+            </label>
+            {domainError && (
+              <button type="button" className="aic-btn aic-btn--tiny" onClick={() => {
+                setDomainError(false);
+                setDomainRequest((count) => count + 1);
+              }}>
+                Tải lại lĩnh vực
+              </button>
+            )}
+            {domains?.length === 0 && <span>Chưa có lĩnh vực để chọn.</span>}
+          </>
+        )}
+        <div className="aic-node__editor-actions">
+          <button type="submit" className="aic-btn aic-btn--tiny aic-btn--primary"
+            disabled={!title.trim() || (creatingTask && !domainId)}>
+            {busy ? "Đang lưu…" : "Lưu"}
+          </button>
+          <button type="button" className="aic-btn aic-btn--tiny" onClick={onCancel}>Hủy</button>
+        </div>
+      </fieldset>
+    </form>
   );
 }
 
 /* ===========================================================
- * Ô sửa tên nội tuyến (Enter = Lưu, Esc = Huỷ)
- * =========================================================== */
-function InlineEditor({
-  initial,
-  onSave,
-  onCancel,
-  id,
-}: {
-  initial: string;
-  onSave: (id: string, value: string) => void;
-  onCancel: () => void;
-  id: string;
-}) {
-  const [value, setValue] = useState(initial);
-
-  return (
-    <div className="aic-node__row aic-node__row--editing">
-      <input
-        className="aic-node__input"
-        value={value}
-        autoFocus
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            onSave(id, value);
-          }
-          if (e.key === "Escape") {
-            e.preventDefault();
-            onCancel();
-          }
-        }}
-      />
-      <button
-        type="button"
-        className="aic-btn aic-btn--tiny aic-btn--primary"
-        onClick={() => onSave(id, value)}
-      >
-        Lưu
-      </button>
-      <button type="button" className="aic-btn aic-btn--tiny" onClick={onCancel}>
-        Huỷ
-      </button>
-    </div>
-  );
-}
-
-/* ===========================================================
- * Xác nhận xoá nội tuyến (KHÔNG dùng popup che màn)
+ * Deletion confirmation
  * =========================================================== */
 function ConfirmDelete({
   label,
+  message,
   onConfirm,
   onCancel,
 }: {
   label: string;
-  onConfirm: () => void;
+  message: string;
+  onConfirm: () => Promise<void>;
   onCancel: () => void;
 }) {
-  return (
-    <div className="aic-node__row aic-node__row--confirm">
-      <span className="aic-node__confirm-text">Xoá {label}?</span>
-      <button
-        type="button"
-        className="aic-btn aic-btn--tiny aic-btn--danger"
-        onClick={onConfirm}
-      >
-        Xoá
-      </button>
-      <button type="button" className="aic-btn aic-btn--tiny" onClick={onCancel}>
-        Huỷ
-      </button>
-    </div>
-  );
+  const [busy, setBusy] = useState(false);
+  const submitted = useRef(false);
+  async function confirm() {
+    if (submitted.current) return;
+    submitted.current = true;
+    setBusy(true);
+    try {
+      await onConfirm();
+    } finally {
+      submitted.current = false;
+      setBusy(false);
+    }
+  }
+  return <ConfirmDialog open title={`Xóa ${label}?`} message={message}
+    confirmLabel="Xóa" cancelLabel="Hủy" busy={busy}
+    onConfirm={() => void confirm()} onCancel={onCancel} />;
 }

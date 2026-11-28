@@ -46,9 +46,12 @@ export interface ChatHistoryPanelProps {
   /** Mở 1 cuộc chat. */
   onOpen: (item: ChatHistoryItemDto) => void;
   /** Nút "Import file" (mở trang nhập dự án từ file). */
-  onImportFile: () => void;
+  onImportFile?: () => void;
   /** Nút "+ Dự án mới". */
-  onCreateProject: () => void;
+  onCreateProject?: () => void;
+  onCreateConversation?: () => void;
+  creatingConversation?: boolean;
+  activeEmptyConversation?: boolean;
   /** Tải lại danh sách (sau khi tạo dự án / import). */
   refreshKey: string | number;
   /**
@@ -73,6 +76,9 @@ export function ChatHistoryPanel({
   onOpen,
   onImportFile,
   onCreateProject,
+  onCreateConversation,
+  creatingConversation = false,
+  activeEmptyConversation = false,
   refreshKey,
   projectIdFilter = null,
   hideFooter = false,
@@ -208,9 +214,18 @@ export function ChatHistoryPanel({
   }, [items]);
 
   const total = items.length;
+  const showEmptyConversation = activeEmptyConversation && !query &&
+    !items.some((item) => item.conversation_id === activeId);
 
   return (
     <aside className="aic-left" aria-label="Lịch sử chat">
+      {onCreateConversation && <div className="aic-left__foot pc-chat-new">
+        <button type="button" className="aic-left__foot-btn aic-left__foot-btn--primary"
+          onClick={onCreateConversation} disabled={creatingConversation}>
+          <span className="material-symbols-outlined" aria-hidden="true">add</span>
+          Cuộc trò chuyện mới
+        </button>
+      </div>}
       {/* ============ Ô tìm kiếm ============ */}
       <div className="aic-left__search">
         <span className="material-symbols-outlined aic-left__search-icon">
@@ -239,6 +254,10 @@ export function ChatHistoryPanel({
 
       {/* ============ Danh sách ============ */}
       <div className="aic-left__list" role="list">
+        {showEmptyConversation && <div className="pc-chat-empty" role="listitem" aria-current="true">
+          <strong>Cuộc trò chuyện mới</strong>
+          <p>Chưa có tin nhắn</p>
+        </div>}
         {loading ? (
           <div className="aic-left__skeleton" role="status" aria-label="Đang tải lịch sử chat">
             {Array.from({ length: 5 }).map((_, i) => (
@@ -253,7 +272,7 @@ export function ChatHistoryPanel({
             <span className="material-symbols-outlined">error</span>
             <p>{error}</p>
           </div>
-        ) : total === 0 ? (
+        ) : total === 0 && !showEmptyConversation ? (
           <div className="aic-left__state">
             <span className="material-symbols-outlined">forum</span>
             <p>
@@ -310,9 +329,9 @@ export function ChatHistoryPanel({
       </div>
 
       {/* ============ Nút dưới cùng ============ */}
-      {!hideFooter && (
+      {!hideFooter && ((!hideImportButton && onImportFile) || (!hideCreateButton && onCreateProject)) && (
         <div className="aic-left__foot">
-          {!hideImportButton && (
+          {!hideImportButton && onImportFile && (
             <button
               type="button"
               className="aic-left__foot-btn"
@@ -322,7 +341,7 @@ export function ChatHistoryPanel({
               Import file
             </button>
           )}
-          {!hideCreateButton && (
+          {!hideCreateButton && onCreateProject && (
             <button
               type="button"
               className="aic-left__foot-btn aic-left__foot-btn--primary"

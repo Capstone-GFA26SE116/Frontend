@@ -142,12 +142,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             onboardingCompleted: res.data.onboardingCompleted,
           };
           setUser(u);
-          setToken(token);
+          setToken(getAccessToken());
           setOnboardingCompleted(res.data.onboardingCompleted);
-        } else {
-          // Token hết hạn hoặc invalid → xoá
-          clearTokens();
-          clearSession();
         }
         setIsReady(true);
       });
@@ -225,15 +221,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role: dto.role ?? null,
       onboardingCompleted: onboardingDone,
     };
-    // Lưu vào localStorage để mock code vẫn hoạt động nếu cần
-    saveSession({ token: dto.accessToken, email: u.email });
+    const accessToken = getAccessToken();
+    if (!accessToken) {
+      return { ok: false as const, error: "google_auth_failed" as AuthError };
+    }
+    saveSession({ token: accessToken, email: u.email });
     setUser(u);
-    setToken(dto.accessToken);
+    setToken(accessToken);
     setOnboardingCompleted(onboardingDone);
     if (dto.isNewUser) {
       setIsNewUser(true);
     }
-    return { ok: true as const, session: { user: u, token: dto.accessToken } };
+    return { ok: true as const, session: { user: u, token: accessToken } };
   }, []);
 
   const login = useCallback<AuthContextValue["login"]>(async (email, password) => {

@@ -42,6 +42,13 @@ import {
 } from "../../lib/api-client";
 import { describeSlotOverlapError } from "../../components/schedule/slot-overlap";
 import { ScheduleConfirmDialog } from "../../components/schedule/ScheduleConfirmDialog";
+import { EditSlotDialog } from "../../components/schedule/EditSlotDialog";
+import { AlertDialog } from "../../components/schedule/AlertDialog";
+import {
+  listGroups,
+  listMyGroupWork,
+  type GroupDto,
+} from "../../lib/group-api";
 import "./schedule.css";
 
 /* ===========================================================
@@ -91,6 +98,13 @@ interface CalEvent {
   taskId: string | null;
   subTaskId: string | null;
   projectId: string | null;
+  /**
+   * Tên project — hiển thị trong modal detail.
+   *
+   * Ưu tiên lấy từ `GET /api/calendar` (`CalendarItemDto.projectName`) vì BE
+   * đã enrich sẵn. Nếu thiếu → fallback tra `projectsById` (dự án local).
+   */
+  projectName?: string | null;
   /**
    * Việc nhóm của slot nhóm — `null` với lịch cá nhân.
    *
@@ -672,14 +686,23 @@ export function SchedulePage() {
         /*
          * ⚠️ `409 SLOT_OVERLAP` — khung giờ mới chồng lên slot đang chiếm giờ.
          * Spec: `FE_CHANGES.md` mục 3.2.
+         *
+         * Lỗi → hiện POP-UP báo lỗi (tiếng Anh, dễ hiểu) thay vì toast.
          */
         const overlapMsg = describeSlotOverlapError(res, {
           taskTitle: taskData.taskTitle,
         });
-        toast.error(
-          overlapMsg ? "Time slot overlaps" : "Couldn't create the schedule",
-          overlapMsg ?? res.error,
-        );
+        setSlotAlert({
+          title: overlapMsg
+            ? "That time is already taken"
+            : "Couldn't schedule this task",
+          message: overlapMsg
+            ? `${overlapMsg} Try dropping it into another free time slot.`
+            : `${
+                res.error ?? "Something went wrong on our side."
+              } The task wasn't added to your calendar — please try again.`,
+          tone: "error",
+        });
       }
 
       // Clear localStorage
@@ -734,6 +757,43 @@ export function SchedulePage() {
     return () => { cancelled = true; };
   }, [projectId]);
 
+  /*
+   * Load danh sách nhóm — chỉ để fallback tên nhóm cho slot việc nhóm.
+   *
+   * Lỗi không chặn trang: đây là dữ liệu phụ (tên nhóm đã có sẵn trong
+   * response của `GET /api/calendar`).
+   */
+  useEffect(() => {
+    let cancelled = false;
+    void listGroups().then((res) => {
+      if (cancelled) return;
+      if (res.ok) setGroups(res.data ?? []);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  /*
+   * Load tên nhóm theo `groupTaskId` — fallback cho slot việc nhóm.
+   *
+   * `GET /api/my-group-tasks` trả về việc + việc con được giao cho tôi,
+   * mỗi item có `groupId` + `groupName` → map theo id việc nhóm.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    void listMyGroupWork().then((res) => {
+      if (cancelled || !res.ok) return;
+      const map: Record<string, string> = {};
+      for (const t of res.data?.tasks ?? []) {
+        if (t.groupName) map[t.taskId] = t.groupName;
+      }
+      for (const st of res.data?.subTasks ?? []) {
+        if (st.groupName) map[st.taskId] = st.groupName;
+      }
+      setGroupNamesByTaskId(map);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
   /* Range based on view mode */
   const range = useMemo(() => {
     if (viewMode === "month") {
@@ -770,6 +830,26 @@ export function SchedulePage() {
    * fallback về local build nếu cần.
    */
   const [allProjects, setAllProjects] = useState<ProjectDto[]>([]);
+
+  /**
+   * Danh sách nhóm của user — dùng để FALLBACK tên nhóm cho slot việc nhóm.
+   *
+   * ⚠️ `GET /api/calendar` đã enrich `groupName` cho slot → thường có sẵn.
+   * Nhưng khi fallback build event từ local `ScheduleSlotDto` thì `groupName`
+   * là `undefined` → cần map id → tên để modal detail hiện đúng.
+   */
+  const [groups, setGroups] = useState<GroupDto[]>([]);
+
+  /**
+   * Map `groupTaskId` → tên nhóm — fallback cho slot việc nhóm.
+   *
+   * ⚠️ `ScheduleSlotDto` KHÔNG có `groupId`, chỉ có `groupTaskId`. Nên ta
+   * dùng `GET /api/my-group-tasks` (việc + việc con được giao cho tôi) —
+   * response có sẵn `groupId` + `groupName` cho từng việc nhóm.
+   */
+  const [groupNamesByTaskId, setGroupNamesByTaskId] = useState<
+    Record<string, string>
+  >({});
 
   /** Track if calendar API is unavailable (404) to skip future calls */
   const calendarApiUnavailable = useRef(false);
@@ -1079,6 +1159,28 @@ export function SchedulePage() {
   }, [tasks]);
 
   /**
+   * Map projectId -> ProjectDto — dùng để hiện TÊN dự án trong modal detail
+   * khi BE không enrich `projectName` (fallback path build event từ local).
+   */
+  const projectsById = useMemo<Record<string, ProjectDto>>(() => {
+    const m: Record<string, ProjectDto> = {};
+    for (const p of allProjects) m[p.id] = p;
+    // Single-project mode (/projects/:id/schedule) — chỉ có `project`.
+    if (project) m[project.id] = project;
+    return m;
+  }, [allProjects, project]);
+
+  /**
+   * Map groupId -> GroupDto — fallback tên nhóm cho slot việc nhóm khi BE
+   * không enrich `groupName` (fallback path build event từ local slots).
+   */
+  const groupsById = useMemo<Record<string, GroupDto>>(() => {
+    const m: Record<string, GroupDto> = {};
+    for (const g of groups) m[g.id] = g;
+    return m;
+  }, [groups]);
+
+  /**
    * Map taskId -> SubtaskDto[] (đã sort theo orderIndex).
    *
    * TaskCard dùng map này để hiện danh sách subtask + khung giờ bên dưới
@@ -1208,6 +1310,8 @@ export function SchedulePage() {
         taskId: item.taskId ?? null,
         subTaskId: item.subTaskId ?? null,
         projectId: item.projectId ?? null,
+        // BE đã enrich `projectName` cho calendar item → dùng luôn.
+        projectName: item.projectName ?? null,
         /*
          * ⚠️ Slot của việc nhóm: `taskId = null`, các trường dự án / khách hàng
          * / loại công việc cũng `null`. Ta gán riêng các trường nhóm để màn
@@ -1256,6 +1360,7 @@ export function SchedulePage() {
             taskId: t.id,
             subTaskId: null,
             projectId: t.projectId,
+            projectName: projectsById[t.projectId]?.name ?? null,
             task: t,
           });
         }
@@ -1279,6 +1384,7 @@ export function SchedulePage() {
             taskId: t.id,
             subTaskId: null,
             projectId: t.projectId,
+            projectName: projectsById[t.projectId]?.name ?? null,
             task: t,
           });
         }
@@ -1311,6 +1417,9 @@ export function SchedulePage() {
             taskId: st.taskId,
             subTaskId: st.id,
             projectId: parent?.projectId ?? null,
+            projectName: parent
+              ? projectsById[parent.projectId]?.name ?? null
+              : null,
             subtask: st,
             task: parent,
           });
@@ -1338,6 +1447,9 @@ export function SchedulePage() {
           taskId: slot.taskId,
           subTaskId: slot.subTaskId,
           projectId: parentTask?.projectId ?? null,
+          projectName: parentTask
+            ? projectsById[parentTask.projectId]?.name ?? null
+            : null,
           /*
            * Slot của việc nhóm (mục 10 của cập nhật BE): `taskId = null`.
            * Ta mang theo thông tin nhóm để lịch hiển thị đúng và không điều
@@ -1346,7 +1458,13 @@ export function SchedulePage() {
           groupTaskId: slot.groupTaskId ?? null,
           groupSubTaskId: slot.groupSubTaskId ?? null,
           userId: slot.userId ?? null,
-          groupName: slot.groupName ?? null,
+          // Fallback tên nhóm khi BE không enrich (`groupName` chỉ có trong
+          // response của `GET /api/calendar`).
+          groupName:
+            slot.groupName ??
+            (slot.groupTaskId
+              ? groupNamesByTaskId[slot.groupTaskId] ?? null
+              : null),
           scheduleSlotId: slot.id,
           slotPlannedMinutes: slot.proposedMinutes ?? null,
           slotStatus: slot.status,
@@ -1358,7 +1476,7 @@ export function SchedulePage() {
     }
 
     return list;
-  }, [tasks, subtasks, scheduleSlots, calendarItems, tasksById]);
+  }, [tasks, subtasks, scheduleSlots, calendarItems, tasksById, projectsById, groupNamesByTaskId]);
 
   /* ---------- Bước 2: gộp event theo task → lịch chỉ hiện task, click mở modal subtask ---------- */
   const events = useMemo<CalEvent[]>(() => {
@@ -1417,6 +1535,7 @@ export function SchedulePage() {
         taskId: null,
         subTaskId: null,
         projectId: null,
+        projectName: null,
         groupTaskId,
         groupSubTaskId: null,
         userId: evs[0].userId ?? null,
@@ -1474,6 +1593,10 @@ export function SchedulePage() {
         taskId,
         subTaskId: null,
         projectId: parentTask?.projectId ?? evs[0].projectId,
+        projectName:
+          parentTask
+            ? projectsById[parentTask.projectId]?.name ?? null
+            : evs[0].projectName ?? null,
         task: parentTask,
         /*
          * Focus Session: aggregate gộp nhiều slot của 1 task. Ta gắn slot
@@ -1536,7 +1659,7 @@ export function SchedulePage() {
     list.push(...filtered, ...aggregateEvents);
 
     return list;
-  }, [rawEvents, tasksById]);
+  }, [rawEvents, tasksById, projectsById]);
 
   /* ===========================================================
    * Luật "làm trước - làm sau"
@@ -2135,15 +2258,31 @@ export function SchedulePage() {
   const [focusSlotId, setFocusSlotId] = useState<string | null>(null);
 
   /**
+   * Danh sách SUBTASK thuộc card người dùng vừa bấm.
+   *
+   * ⚠️ Slot và subtask là 2 định danh khác nhau: 1 subtask có thể có nhiều
+   * slot (mỗi slot là 1 khung giờ).
+   *
+   * ⚠️ 2 subtask LIÊN TIẾP được gộp chung thành 1 card trên lịch → bấm card
+   * đó phải thấy CẢ 2 việc con, không phải 1. Vì vậy ta lưu MẢNG id
+   * (tất cả việc con có trong card đã bấm), không lưu 1 id.
+   */
+  const [focusSubTaskIds, setFocusSubTaskIds] = useState<string[]>([]);
+
+  /**
    * Mở modal chi tiết cho 1 event.
    *
    * `focusSlotId` = slot cụ thể người dùng vừa bấm trên lịch (nếu có) → modal
    * hiện nút Start/Make up/Stop đúng cho slot đó.
    */
-  const openDetail = useCallback((e: CalEvent, focus?: string | null) => {
-    setSelected(e);
-    setFocusSlotId(focus ?? null);
-  }, []);
+  const openDetail = useCallback(
+    (e: CalEvent, focus?: string | null, focusSubs?: string[] | null) => {
+      setSelected(e);
+      setFocusSlotId(focus ?? null);
+      setFocusSubTaskIds(focusSubs ?? []);
+    },
+    [],
+  );
 
   /** Cell popover: hiện khi click 1 cell — liệt kê TẤT CẢ task trong ngày. */
   const [popover, setPopover] = useState<{ day: Date; items: DayItem[] } | null>(null);
@@ -2187,6 +2326,20 @@ export function SchedulePage() {
   /** Đang gọi API xóa → khoá nút xác nhận. */
   const [deletingSlot, setDeletingSlot] = useState(false);
 
+  /**
+   * Lỗi hiển thị bằng POP-UP (tiếng Anh).
+   *
+   * Dùng cho mọi thao tác thất bại trên trang lịch (xoá slot, sửa slot…)
+   * → user đọc được và hiểu ngay, thay vì toast bay mất.
+   *
+   * `tone: "success"` → pop-up báo thao tác thành công (sửa slot, xoá slot).
+   */
+  const [slotAlert, setSlotAlert] = useState<{
+    title: string;
+    message: string;
+    tone: "error" | "warn" | "success";
+  } | null>(null);
+
   /** Mở pop-up xác nhận xóa (chưa xóa). */
   const requestDeleteSlot = useCallback(
     (slotId: string, title: string, isGroup = false) => {
@@ -2194,6 +2347,23 @@ export function SchedulePage() {
     },
     []
   );
+
+  /**
+   * Slot đang được SỬA (dialog "Edit slot" → `PUT /api/schedule-slots/{id}`).
+   *
+   * `null` = dialog đóng.
+   */
+  const [slotPendingEdit, setSlotPendingEdit] = useState<string | null>(null);
+
+  /** Mở dialog sửa slot. */
+  const requestEditSlot = useCallback((slotId: string) => {
+    setSlotPendingEdit(slotId);
+  }, []);
+
+  /** Đóng dialog sửa slot. */
+  const cancelEditSlot = useCallback(() => {
+    setSlotPendingEdit(null);
+  }, []);
 
   /** Bỏ qua xóa → đóng pop-up. */
   const cancelDeleteSlot = useCallback(() => {
@@ -2210,12 +2380,16 @@ export function SchedulePage() {
     setSlotPendingDelete(null);
     if (res.ok) {
       setScheduleSlots((prev) => prev.filter((s) => s.id !== slotPendingDelete.slotId));
-      toast.success(
-        "Slot deleted",
-        slotPendingDelete.isGroup
+      /*
+       * ✅ Thành công → hiện POP-UP (tiếng Anh) thay vì toast bay mất.
+       */
+      setSlotAlert({
+        title: "Time block removed",
+        message: slotPendingDelete.isGroup
           ? "The group work block was removed from your calendar."
           : "The time block was removed from your calendar.",
-      );
+        tone: "success",
+      });
       /*
        * ⚠️ Ở `/schedule`, lịch được dựng từ `GET /api/calendar`
        * (`calendarItems`) chứ không phải từ `scheduleSlots` → phải refetch để
@@ -2223,9 +2397,19 @@ export function SchedulePage() {
        */
       void loadData();
     } else {
-      toast.error("Couldn't delete the slot", res.error);
+      /*
+       * ❌ Lỗi → hiện POP-UP báo lỗi (tiếng Anh, dễ hiểu) chứ không chỉ
+       * toast (toast bay mất rất nhanh, user dễ bỏ sót).
+       */
+      setSlotAlert({
+        title: "Couldn't remove this time block",
+        message: `${
+          res.error ?? "Something went wrong on our side."
+        } The time block is still on your calendar — please try again.`,
+        tone: "error",
+      });
     }
-  }, [slotPendingDelete, toast, loadData]);
+  }, [slotPendingDelete, loadData, setSlotAlert]);
 
   /* Filtered events: simple status filter for now */
   const visibleWeek = useMemo(() => {
@@ -2469,10 +2653,10 @@ export function SchedulePage() {
                 </div>
               )}
               {viewMode === "month" && (
-                <MonthGrid days={monthGrid} onSelectEvent={setSelected} spans={projectSpans} onCellClick={openCellPopover} accentByKey={cellAccentByKey} gridRef={monthGridRef} />
+                <MonthGrid days={monthGrid} onSelectEvent={openDetail} spans={projectSpans} onCellClick={openCellPopover} accentByKey={cellAccentByKey} gridRef={monthGridRef} />
               )}
               {viewMode === "gantt" && (
-                <GanttView days={visibleWeek} onSelectEvent={setSelected} spans={projectSpans} />
+                <GanttView days={visibleWeek} onSelectEvent={openDetail} spans={projectSpans} />
               )}
             </div>
           </div>
@@ -2485,9 +2669,14 @@ export function SchedulePage() {
           event={selected}
           subtasks={subtasks}
           focusSlotId={focusSlotId}
+          selectedSubTaskIds={focusSubTaskIds}
           blockedReasonFor={blockedReasonFor}
+          projectsById={projectsById}
+          groupsById={groupsById}
+          groupNamesByTaskId={groupNamesByTaskId}
           onClose={() => setSelected(null)}
           onDelete={requestDeleteSlot}
+          onEditSlot={requestEditSlot}
           onSlotChanged={() => void loadData()}
         />
       )}
@@ -2508,16 +2697,57 @@ export function SchedulePage() {
       */}
       <ScheduleConfirmDialog
         open={slotPendingDelete !== null}
-        title="Delete this slot?"
+        title="Remove this time block?"
         message={
           slotPendingDelete
-            ? `The time block for "${slotPendingDelete.title}" will be removed from your calendar. This action cannot be undone.`
+            ? `“${slotPendingDelete.title}” will be removed from your calendar and won't show up in your schedule anymore. You can always create it again later.`
             : ""
         }
-        confirmLabel="Delete slot"
+        confirmLabel="Remove slot"
         busy={deletingSlot}
         onConfirm={() => void confirmDeleteSlot()}
         onCancel={cancelDeleteSlot}
+      />
+
+      {/*
+        Dialog SỬA slot — gọi `PUT /api/schedule-slots/{slotId}`.
+        Mở từ nút "Edit slot" trong modal detail hoặc nút edit trên từng
+        khối giờ. Song song với modal detail (modal cha vẫn mở) nên z-index
+        cao hơn.
+      */}
+      <EditSlotDialog
+        open={slotPendingEdit !== null}
+        slotId={slotPendingEdit}
+        onClose={cancelEditSlot}
+        onSaved={() => {
+          /*
+           * ✅ Thành công → hiện POP-UP (tiếng Anh) thay vì toast bay mất.
+           * Pop-up do trang lịch hiển thị (nằm ngoài dialog) để không bị
+           * unmount khi dialog đóng.
+           */
+          setSlotAlert({
+            title: "Schedule updated",
+            message:
+              "Your time block was rescheduled successfully. Your calendar and Google Calendar are now up to date.",
+            tone: "success",
+          });
+          void loadData();
+        }}
+      />
+
+      {/*
+        Pop-up thông báo chung của trang lịch (tiếng Anh, dễ hiểu).
+        Hiện khi một thao tác thành công (sửa slot, xoá slot) hoặc thất bại
+        (lỗi API, đồng bộ Google Calendar…) → user đọc được ngay thay vì
+        toast bay mất.
+      */}
+      <AlertDialog
+        open={slotAlert !== null}
+        title={slotAlert?.title ?? ""}
+        message={slotAlert?.message ?? ""}
+        tone={slotAlert?.tone ?? "error"}
+        actionLabel={slotAlert?.tone === "success" ? "Great" : "Got it"}
+        onClose={() => setSlotAlert(null)}
       />
 
       {proposalOpen && (
@@ -2593,7 +2823,7 @@ function WeekBoard({
   gridStartHour = 6, gridEndHour = 23,
 }: {
   days: DayPlan[];
-  onSelectEvent: (e: CalEvent, focusSlotId?: string | null) => void;
+  onSelectEvent: (e: CalEvent, focusSlotId?: string | null, focusSubTaskIds?: string[] | null) => void;
   tasksById: Record<string, TaskDto>;
   spans: ProjectSpan[];
   onCellClick?: (day: Date) => void;
@@ -2803,7 +3033,7 @@ function WeekBoard({
                 axisStart={axisStart}
                 axisEnd={axisEnd}
                 day={d.date}
-                onClick={(focusSlotId) => onSelectEvent(seg.ev, focusSlotId)}
+                onClick={(focusSlotId, focusSubTaskIds) => onSelectEvent(seg.ev, focusSlotId, focusSubTaskIds)}
                 taskType={seg.ev.taskId ? tasksById[seg.ev.taskId]?.taskType : undefined}
                 subtasksByTaskId={subtasksByTaskId}
               />
@@ -2827,7 +3057,7 @@ function TimeBlock({
   axisStart: number;
   axisEnd: number;
   day: Date;
-  onClick: (focusSlotId: string | null) => void;
+  onClick: (focusSlotId: string | null, focusSubTaskIds?: string[] | null) => void;
   taskType?: string;
   subtasksByTaskId?: Map<string, SubtaskDto[]>;
 }) {
@@ -2855,6 +3085,20 @@ function TimeBlock({
     }
     return ev.scheduleSlotId ?? null;
   }, [seg.blocks, ev.scheduleSlotId]);
+
+  /**
+   * Danh sách id SUBTASK thuộc đúng khối giờ (card) này.
+   *
+   * ⚠️ 1 card có thể chứa N việc con (2 subtask liên tiếp được gộp chung).
+   * Khi bấm card → modal phải hiện TẤT CẢ N việc con đó, không lọc còn 1.
+   */
+  const focusSubTaskIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const b of seg.blocks) {
+      if (b.subTaskId && !ids.includes(b.subTaskId)) ids.push(b.subTaskId);
+    }
+    return ids;
+  }, [seg.blocks]);
 
   /*
    * Vị trí trên trục giờ (theo % chiều cao lưới).
@@ -3067,7 +3311,7 @@ function TimeBlock({
        */
       data-compact={compactLevel}
       style={boxStyle}
-      onClick={() => onClick(focusSlotId)}
+      onClick={() => onClick(focusSlotId, focusSubTaskIds)}
       data-tone={dotFor(ev)}
       title={`${taskName}${subName ? ` · ${subName}` : ""} · ${fmtTime(seg.start)} – ${fmtTime(seg.end)}`}
     >
@@ -3694,7 +3938,7 @@ function CellPopover({
   day: Date;
   items: DayItem[];
   onClose: () => void;
-  onSelectEvent: (e: CalEvent) => void;
+  onSelectEvent: (e: CalEvent, focusSlotId?: string | null, focusSubTaskIds?: string[] | null) => void;
 }) {
   const totalMinutes = items.reduce((s, i) => s + i.minutes, 0);
   const taskCount = items.filter((i) => i.task).length;
@@ -3755,11 +3999,11 @@ function CellPopover({
                   className="sch-cell-popover__task"
                   role="button"
                   tabIndex={0}
-                  onClick={() => onSelectEvent(it.event)}
+                  onClick={() => onSelectEvent(it.event, null, it.subtask ? [it.subtask.id] : null)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
-                      onSelectEvent(it.event);
+                      onSelectEvent(it.event, null, it.subtask ? [it.subtask.id] : null);
                     }
                   }}
                 >
@@ -3907,7 +4151,8 @@ function NowBadge({ start, end }: { start: Date; end: Date }) {
 }
 
 function EventDetailModal({
-  event, subtasks, focusSlotId, blockedReasonFor, onClose, onDelete, onSlotChanged,
+  event, subtasks, focusSlotId, selectedSubTaskIds, blockedReasonFor, onClose, onDelete, onSlotChanged, onEditSlot,
+  projectsById, groupsById, groupNamesByTaskId,
 }: {
   event: CalEvent;
   subtasks: SubtaskDto[];
@@ -3918,6 +4163,16 @@ function EventDetailModal({
    * cho ĐÚNG khối đã bấm, không phải slot đầu tiên.
    */
   focusSlotId?: string | null;
+  /**
+   * Danh sách subtask thuộc card người dùng vừa bấm (rỗng = không xác định).
+   *
+   * Dùng để lọc danh sách "Subtasks" bên cột phải: chỉ hiện những việc con
+   * có trong card đã bấm.
+   *
+   * ⚠️ 1 card có thể chứa N việc con (2 subtask liên tiếp được gộp chung) →
+   * phải giữ được CẢ N, không lọc còn 1.
+   */
+  selectedSubTaskIds?: string[];
   onClose: () => void;
   /**
    * Mở pop-up xác nhận xóa slot.
@@ -3926,6 +4181,12 @@ function EventDetailModal({
    * (tiếng Anh) rồi mới gọi API.
    */
   onDelete?: (slotId: string, title: string, isGroup?: boolean) => void;
+  /**
+   * Mở dialog sửa slot (`PUT /api/schedule-slots/{slotId}`).
+   *
+   * Truyền `slotId` cụ thể → component cha mở `EditSlotDialog`.
+   */
+  onEditSlot?: (slotId: string) => void;
   /** Refetch lịch sau khi slot đổi trạng thái (Start/Stop). */
   onSlotChanged?: () => void;
   /**
@@ -3936,6 +4197,21 @@ function EventDetailModal({
    * modal → vẫn truyền xuống để nút Start bị disable + tooltip giải thích.
    */
   blockedReasonFor?: (ev: CalEvent, day?: Date) => string | null;
+  /**
+   * Map projectId -> ProjectDto — fallback tên dự án khi BE không enrich
+   * `projectName` (fallback path build event từ local tasks/slots).
+   */
+  projectsById?: Record<string, ProjectDto>;
+  /**
+   * Map groupId -> GroupDto — fallback tên nhóm khi BE không enrich
+   * `groupName` (fallback path build event từ local slots).
+   */
+  groupsById?: Record<string, GroupDto>;
+  /**
+   * Map `groupTaskId` -> tên nhóm — fallback tên nhóm cho slot việc nhóm khi
+   * BE không enrich `groupName`.
+   */
+  groupNamesByTaskId?: Record<string, string>;
 }) {
   const task = event.task;
   const subtask = event.subtask;
@@ -3949,6 +4225,29 @@ function EventDetailModal({
    * KHÔNG điều hướng sang trang task cá nhân.
    */
   const isGroupSlot = !!event.groupTaskId;
+
+  /**
+   * TÊN nhóm hiển thị trong modal.
+   *
+   * Ưu tiên `event.groupName` (BE enrich từ `GET /api/calendar`) → không có
+   * thì fallback tra `groupsById` theo `groupId`, hoặc `groupNamesByTaskId`
+   * theo `groupTaskId` (slot DTO không có `groupId`).
+   */
+  const groupName =
+    event.groupName ??
+    (event.groupId ? groupsById?.[event.groupId]?.name : undefined) ??
+    (event.groupTaskId ? groupNamesByTaskId?.[event.groupTaskId] : undefined);
+
+  /**
+   * TÊN dự án hiển thị trong modal (việc cá nhân).
+   *
+   * Ưu tiên `event.projectName` (BE enrich) → không có thì fallback tra
+   * `projectsById` bằng `projectId`.
+   */
+  const projectName =
+    event.projectName ??
+    (event.projectId ? projectsById?.[event.projectId]?.name ?? null : null);
+
   /** Task đã gộp nhiều event con (slot/subtask) → hiển thị dạng task view. */
   const isAggregate = !!event.aggregatedEvents && event.aggregatedEvents.length > 1;
   /**
@@ -3970,6 +4269,22 @@ function EventDetailModal({
       ? isAggregate || taskSubtasks.length > 0
       : /* Slot việc nhóm: không có task cá nhân → dùng danh sách slot của nhóm. */
         isAggregate && (event.aggregatedEvents?.length ?? 0) > 0;
+
+  /**
+   * Map `subtaskId` -> số thứ tự trong task (1-based).
+   *
+   * Dùng để hiển thị đúng vị trí của việc con ("Subtask #2") kể cả khi
+   * danh sách đang lọc chỉ còn 1 việc con.
+   *
+   * Ưu tiên `orderIndex` của BE (đã là thứ tự user sắp xếp trong task).
+   */
+  const subtaskOrder = useMemo(() => {
+    const map = new Map<string, number>();
+    taskSubtasks.forEach((st, idx) => {
+      map.set(st.id, idx + 1);
+    });
+    return map;
+  }, [taskSubtasks]);
 
   /**
    * Id của slot cần xóa.
@@ -4006,6 +4321,17 @@ function EventDetailModal({
       slotPlannedMinutes?: number | null;
       /** Event gốc của khối (dùng để tra luật "làm trước - làm sau"). */
       ev?: CalEvent;
+      /**
+       * Số thứ tự của việc con trong TASK (1-based, theo `orderIndex`).
+       *
+       * ⚠️ Không dùng index của danh sách đang render — khi lọc chỉ hiện 1
+       * việc con thì index đó luôn là 0 → số hiển thị sai. Số thứ tự này
+       * cố định theo vị trí việc con trong task.
+       *
+       * `null` = khối này không gắn với subtask nào (ví dụ slot việc nhóm)
+       * → fallback về số thứ tự theo danh sách.
+       */
+      order?: number | null;
     }>
   >(() => {
     // Ưu tiên event gốc đã gộp — khớp chính xác với những gì lịch đang hiển thị
@@ -4028,19 +4354,21 @@ function EventDetailModal({
             slotStatus: e.slotStatus ?? e.status ?? null,
             slotPlannedMinutes: e.slotPlannedMinutes ?? null,
             ev: e,
+            order: subtaskOrder.get(e.subTaskId ?? "") ?? null,
           };
         });
     }
     // Data từ BE: suy ra block từ scheduledStart/scheduledEnd của từng subtask
-    return taskSubtasks.map((st) => ({
+    return taskSubtasks.map((st, idx) => ({
       key: st.id,
       title: st.title,
       status: st.status ?? "",
       start: new Date(st.scheduledStart ?? event.start),
       end: new Date(st.scheduledEnd ?? event.end),
       subtaskId: st.id,
+      order: idx + 1,
     }));
-  }, [isAggregate, event.aggregatedEvents, event.start, event.end, subtasks, taskSubtasks]);
+  }, [isAggregate, event.aggregatedEvents, event.start, event.end, subtasks, taskSubtasks, subtaskOrder]);
 
   /**
    * Khối (block) trong danh sách subtask tương ứng với slot đang focus.
@@ -4054,6 +4382,54 @@ function EventDetailModal({
     }
     return detailBlocks.find((b) => b.slotId && b.slotId === slotId) ?? null;
   }, [detailBlocks, focusSlotId, slotId]);
+
+  /**
+   * Danh sách block được CHỌN (sẽ được nổi bật) trong danh sách subtask.
+   *
+   * Thứ tự ưu tiên:
+   *   1. `selectedSubTaskIds` — các việc con có trong card người dùng bấm.
+   *   2. `focusSlotId`    — khung giờ người dùng bấm (fallback).
+   *
+   * → `[]` = không bấm việc con nào → không lọc, không nổi bật gì.
+   */
+  const selectedBlockKeys = useMemo(() => {
+    const keys: string[] = [];
+    if (selectedSubTaskIds?.length) {
+      for (const subId of selectedSubTaskIds) {
+        const bySub = detailBlocks.find((b) => b.subtaskId === subId);
+        if (bySub && !keys.includes(bySub.key)) keys.push(bySub.key);
+      }
+      if (keys.length > 0) return keys;
+    }
+    if (focusSlotId) {
+      const bySlot = detailBlocks.find((b) => b.slotId === focusSlotId);
+      if (bySlot) return [bySlot.key];
+    }
+    return [];
+  }, [detailBlocks, selectedSubTaskIds, focusSlotId]);
+
+  /** Block được chọn đầu tiên (dùng cho badge ở header + scroll). */
+  const selectedBlock = useMemo(
+    () => (selectedBlockKeys.length ? detailBlocks.find((b) => b.key === selectedBlockKeys[0]) ?? null : null),
+    [detailBlocks, selectedBlockKeys],
+  );
+
+  /**
+   * Danh sách block THỰC SỰ hiển thị trong cột phải.
+   *
+   * Nếu người dùng đã bấm 1 card có việc con → chỉ hiện những việc con CÓ
+   * TRONG card đó (2 subtask gộp chung → hiện cả 2) → không bị rối mắt,
+   * mọi thông tin trong modal đều nói về đúng thứ người dùng vừa chọn.
+   *
+   * Nếu KHÔNG bấm việc con nào (bấm card task / slot) → hiện toàn bộ danh
+   * sách như trước.
+   */
+  const visibleBlocks = useMemo(() => {
+    if (selectedBlockKeys.length === 0) return detailBlocks;
+    const picked = detailBlocks.filter((b) => selectedBlockKeys.includes(b.key));
+    // Fallback: nếu không khớp block nào (ví dụ subtask chưa có slot) → hiện tất cả.
+    return picked.length > 0 ? picked : detailBlocks;
+  }, [selectedBlockKeys, detailBlocks]);
 
   /**
    * Thông tin slot đang focus — gom từ event gốc (không phụ thuộc DTO slot
@@ -4094,6 +4470,21 @@ function EventDetailModal({
   const focusTaskId = focusInfo.taskId;
   /** `subTaskId` của SLOT đang focus (không phải của event — spec mục 6.1). */
   const focusSubTaskId = focusInfo.subTaskId;
+
+  /*
+   * Cuộn danh sách subtask tới block được chọn khi modal mở.
+   *
+   * Nếu việc con được bấm nằm ngoài vùng nhìn thấy → người dùng phải tự
+   * cuộn mới thấy → nổi bật là vô nghĩa. Ta tự cuộn tới (mượt, `behavior:
+   * "smooth"`).
+   */
+  const selectedItemRef = useRef<HTMLLIElement | null>(null);
+  useEffect(() => {
+    if (!selectedBlockKeys.length) return;
+    const el = selectedItemRef.current;
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [selectedBlockKeys]);
 
   return (
     <div className="sch-modal" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -4138,7 +4529,7 @@ function EventDetailModal({
                 <>
                   <div className="sch-side-meta__row">
                     <span>Group</span>
-                    <strong>{event.groupName ?? "—"}</strong>
+                    <strong>{groupName ?? "—"}</strong>
                   </div>
                   <div className="sch-side-meta__row">
                     <span>Work type</span>
@@ -4153,6 +4544,18 @@ function EventDetailModal({
                     </div>
                   )}
                 </>
+              )}
+
+              {/*
+                Việc cá nhân (task / subtask) → hiện TÊN dự án đang sở hữu.
+                Ưu tiên `event.projectName` (BE enrich từ GET /api/calendar),
+                không có thì fallback tra `projectsById`.
+              */}
+              {!isGroupSlot && projectName && (
+                <div className="sch-side-meta__row">
+                  <span>Project</span>
+                  <strong>{projectName}</strong>
+                </div>
               )}
 
               {slot && (
@@ -4280,27 +4683,77 @@ function EventDetailModal({
               <div className="sch-aggregate">
                 <div className="sch-aggregate__head">
                   <span className="material-symbols-outlined sch-icon-18">account_tree</span>
-                  <strong>Subtasks ({detailBlocks.length})</strong>
+                  <strong>
+                    {selectedBlockKeys.length > 0
+                      ? selectedBlockKeys.length === 1
+                        ? `Subtask #${selectedBlock?.order ?? 1}`
+                        : `Subtasks (${visibleBlocks.length})`
+                      : `Subtasks (${detailBlocks.length})`}
+                  </strong>
+                  {selectedBlock && selectedBlockKeys.length === 1 && (
+                    <span className="sch-aggregate__head-selected">
+                      <span className="material-symbols-outlined sch-icon-12">near_me</span>
+                      Selected: {selectedBlock.title}
+                    </span>
+                  )}
+                  {selectedBlockKeys.length > 1 && (
+                    <span className="sch-aggregate__head-selected">
+                      <span className="material-symbols-outlined sch-icon-12">near_me</span>
+                      {visibleBlocks.length} subtasks in this block
+                    </span>
+                  )}
                   <span className="sch-aggregate__head-total">
-                    {durationHours(event).toFixed(1)}h total
+                    {selectedBlockKeys.length === 1 && selectedBlock
+                      ? formatMinutesShort(
+                          selectedBlock.end.getTime() - selectedBlock.start.getTime(),
+                        )
+                      : `${durationHours(event).toFixed(1)}h total`}
                   </span>
                 </div>
                 <ul className="sch-aggregate__list">
-                  {detailBlocks.map((b, i) => {
+                  {visibleBlocks.map((b, i) => {
                     const sStart = b.start;
                     const sEnd = b.end;
                     const durMs = Math.max(0, sEnd.getTime() - sStart.getTime());
                     const totalMs = Math.max(1, event.end.getTime() - event.start.getTime());
                     const pct = Math.min(100, Math.round((durMs / totalMs) * 100));
                     const offsetPct = Math.min(100, Math.max(0, Math.round(((sStart.getTime() - event.start.getTime()) / totalMs) * 100)));
+                    /*
+                     * Block được CHỌN (người dùng vừa bấm việc con này trên
+                     * lịch) → nổi bật: viền accent + nền wash + badge.
+                     */
+                    const isSelected = selectedBlockKeys.includes(b.key);
+                    /*
+                     * Số thứ tự của việc con TRONG TASK.
+                     *
+                     * ⚠️ `i + 1` là index của list đang render → khi đã lọc còn
+                     * 1 việc con thì luôn ra "1" (sai). Dùng `b.order` (theo
+                     * `orderIndex` của BE) → luôn đúng vị trí trong task.
+                     */
+                    const orderNo = b.order ?? i + 1;
                     return (
-                      <li key={b.key} className="sch-aggregate__item">
+                      <li
+                        key={b.key}
+                        /*
+                         * Chỉ gắn ref cho block được chọn ĐẦU TIÊN → cuộn tới
+                         * đúng việc con đầu trong card (nếu gắn cho tất cả thì
+                         * ref cuối cùng sẽ thắng).
+                         */
+                        ref={isSelected && b.key === selectedBlockKeys[0] ? selectedItemRef : undefined}
+                        className={`sch-aggregate__item${isSelected ? " sch-aggregate__item--selected" : ""}`}
+                      >
                         <div className="sch-aggregate__rail">
-                          <span className="sch-aggregate__dot">{i + 1}</span>
+                          <span className="sch-aggregate__dot">{orderNo}</span>
                         </div>
                         <div className="sch-aggregate__body">
                           <div className="sch-aggregate__item-row">
                             <strong>{b.title}</strong>
+                            {isSelected && (
+                              <span className="sch-aggregate__badge sch-aggregate__badge--selected">
+                                <span className="material-symbols-outlined sch-icon-12">check_circle</span>
+                                Selected
+                              </span>
+                            )}
                             {b.status && (
                               <span className="sch-aggregate__badge">{b.status}</span>
                             )}
@@ -4393,6 +4846,21 @@ function EventDetailModal({
                               </div>
                             )}
                           {/*
+                            Nút sửa slot của khối này → mở dialog Edit slot
+                            (`PUT /api/schedule-slots/{slotId}`).
+                          */}
+                          {(b.slot || b.slotId) && onEditSlot && (
+                            <button
+                              type="button"
+                              className="sch-aggregate__edit"
+                              title="Edit this slot"
+                              aria-label={`Edit slot: ${b.title}`}
+                              onClick={() => onEditSlot(b.slotId ?? b.slot!.id)}
+                            >
+                              <span className="material-symbols-outlined sch-icon-16">edit</span>
+                            </button>
+                          )}
+                          {/*
                             Nút xóa slot của khối này.
                             ⚠️ Chỉ mở pop-up xác nhận — KHÔNG xóa ngay.
                             Modal cha vẫn mở để user đổi ý.
@@ -4421,7 +4889,22 @@ function EventDetailModal({
         </div>
 
         <div className="sch-modal__actions">
-          <button type="button" className="sch-btn sch-btn--soft" onClick={onClose}>Close</button>
+          {/*
+            Nút "Edit slot" → mở dialog sửa (`PUT /api/schedule-slots/{slotId}`).
+            ⚠️ Chỉ hiện khi có `slotId` — ở `/schedule` dữ liệu đến từ
+            `GET /api/calendar` nên `event.scheduleSlot` có thể null nhưng
+            `event.scheduleSlotId` vẫn có.
+          */}
+          {slotId && onEditSlot && (
+            <button
+              type="button"
+              className="sch-btn sch-btn--soft"
+              onClick={() => onEditSlot(slotId)}
+            >
+              <span className="material-symbols-outlined sch-icon-18">edit</span>
+              Edit slot
+            </button>
+          )}
           {/*
             Nút "Remove Slot".
             ⚠️ Chỉ hiện khi có `slotId` — ở `/schedule` dữ liệu đến từ

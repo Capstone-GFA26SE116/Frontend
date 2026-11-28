@@ -267,7 +267,7 @@
   background: var(--canvas);
   border-radius: 8px;
   border: 1px solid var(--hairline);
-  padding: 24px;
+  padding: 16px 18px;
   transition: border-color 200ms ease;
   /* Cột flex: các card cao bằng nhau, thanh biểu diễn trượt xuống đáy
      để 3 thanh (sparkline / bar / progress) nằm cùng một đường ngang.
@@ -275,7 +275,7 @@
      thanh xuống đáy card. */
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 .dash-metric:hover {
   border-color: var(--primary);
@@ -294,9 +294,9 @@
 /* Metric label — body-sm */
 .dash-metric-label {
   font-family: var(--font-sans);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 24px;
+  line-height: 20px;
   color: var(--body);
   /* cho phép co lại khi không đủ chỗ, thay vì overflow */
   min-width: 0;
@@ -307,13 +307,13 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 12px;
+  padding: 2px 10px;
   border-radius: 9999px;
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 11px;
   font-weight: 600;
-  line-height: 20px;
-  letter-spacing: 2.52px;
+  line-height: 18px;
+  letter-spacing: 1.2px;
   text-transform: uppercase;
   white-space: nowrap;
   border: 1px solid var(--hairline);
@@ -369,10 +369,10 @@
 /* Metric number — display-sm */
 .dash-metric-number {
   font-family: var(--font-mono);
-  font-size: 48px;
-  line-height: 52px;
+  font-size: 34px;
+  line-height: 38px;
   font-weight: 550;
-  letter-spacing: -1.2px;
+  letter-spacing: -1px;
   color: var(--ink-strong);
 }
 .dash-metric-number--sm {
@@ -388,12 +388,12 @@
   align-items: center;
   gap: 4px;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 11px;
   color: var(--primary);
   letter-spacing: 0;
 }
 .dash-metric-trend .material-symbols-outlined {
-  font-size: 14px;
+  font-size: 13px;
 }
 .dash-metric-trend--mono {
   letter-spacing: 0;
@@ -401,9 +401,9 @@
 
 .dash-metric-sub {
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: 12px;
   color: var(--body);
-  line-height: 20px;
+  line-height: 18px;
 }
 
 .dash-metric-foot {
@@ -411,7 +411,7 @@
   align-items: center;
   justify-content: space-between;
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 13px;
   color: var(--body);
 }
 /* Foot đi kèm thanh biểu diễn: ghim cặp foot + thanh xuống đáy card,
@@ -429,32 +429,54 @@
   letter-spacing: 0;
 }
 
-/* ----- Thanh nhiệt 24 giờ (Peak focus hours) -----
-   Mỗi cột là 1 giờ trong ngày; độ đậm theo điểm `hours[]` từ
-   GET /profile/productive-hours. Giờ đỉnh được viền sáng. */
-.dash-hours {
-  margin-top: auto;
-  display: grid;
-  grid-template-columns: repeat(24, 1fr);
-  align-items: end;
+/* ----- Danh sách khung giờ AI đề xuất (Pending schedule) -----
+   Mỗi dòng là 1 slot trong đề xuất lịch đang chờ duyệt
+   (GET /api/schedule/proposals/pending): giờ + thời lượng.
+
+   ⚠️ Prefix `dash-prop-*` (proposal) — KHÔNG dùng `dash-slot*` vì class
+   đó đã thuộc timeline "Focus slots" ở dưới (`.dash-slot`, `.dash-slot-time`). */
+.dash-prop-list {
+  display: flex;
+  flex-direction: column;
   gap: 2px;
-  height: 2.75rem;
-  padding: 2px;
+  list-style: none;
+  padding: 0;
+  /* Chiều cao cố định = 2 dòng → card cao bằng các card khác
+     (dù đề xuất có 1 hay 20 slot). */
+  min-height: 36px;
+}
+.dash-prop-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 1px 8px;
   border-radius: 4px;
   background: var(--canvas-soft);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--body);
 }
-.dash-hour {
-  display: block;
-  height: 100%;
-  min-height: 3px;
-  border-radius: 1px;
-  background: var(--primary);
-  transition: opacity 200ms ease;
+.dash-prop-time {
+  color: var(--ink-strong);
+  font-weight: 550;
 }
-.dash-hour--peak {
-  outline: 1px solid var(--primary);
-  outline-offset: 0;
-  box-shadow: 0 0 6px color-mix(in srgb, var(--primary) 45%, transparent);
+.dash-prop-dur {
+  color: var(--mute);
+  flex-shrink: 0;
+}
+
+/* Chip dạng link — bấm để sang màn hình duyệt lịch. */
+.dash-chip--link {
+  text-decoration: none;
+  transition: border-color 200ms ease, background 200ms ease;
+}
+.dash-chip--link:hover {
+  filter: brightness(1.15);
+}
+.dash-chip__icon {
+  font-size: 14px;
 }
 
 /* formula row */

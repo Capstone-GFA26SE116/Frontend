@@ -126,8 +126,13 @@ export function canStartFocus(
  * Người khác gọi API sẽ bị `403` → ta ẩn nút.
  * =========================================================== */
 
-/** Việc còn mở (ToDo / InProgress). */
-function isOpenGroupTask(status: string): boolean {
+/**
+ * Việc còn mở (ToDo / InProgress).
+ *
+ * ⚠️ Export để dùng lại ở tab "My tasks" — việc đã `Done` / `Skipped`
+ * là việc CŨ → không cho bấm giờ.
+ */
+export function isOpenGroupTask(status: string): boolean {
   const s = (status ?? "").trim().toLowerCase();
   return (
     s === "todo" ||

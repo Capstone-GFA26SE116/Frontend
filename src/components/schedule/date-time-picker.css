@@ -1,0 +1,300 @@
+/* ===========================================================
+ * DateTimePicker — popover chọn ngày + giờ.
+ * Dùng chung token `.sch-*` với trang lịch (biến được khai báo ở `.sch`).
+ * Vì render qua portal ra `document.body` nên token phải khai báo lại ở đây.
+ * =========================================================== */
+
+.dtp-popover {
+  --dtp-bg: #101010;
+  --dtp-low: #1a1a1a;
+  --dtp-high: #212121;
+  --dtp-line: #3d3a39;
+  --dtp-text: #f2f2f2;
+  --dtp-text-2: #bdbdbd;
+  --dtp-text-3: #8b949e;
+  --dtp-primary: #00d992;
+  --dtp-primary-soft: rgba(0, 217, 146, 0.1);
+  --dtp-primary-glow: rgba(0, 217, 146, 0.45);
+  --dtp-mono: "SFMono-Regular", "JetBrains Mono", Menlo, Monaco, Consolas,
+    "Liberation Mono", monospace;
+  --dtp-sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --dtp-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  position: fixed;
+  z-index: 200;
+  width: 336px;
+  box-sizing: border-box;
+  padding: 12px;
+  border-radius: var(--dtp-r-md, 8px);
+  border: 1px solid var(--dtp-line);
+  background: var(--dtp-low);
+  color: var(--dtp-text);
+  font-family: var(--dtp-sans);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+  animation: dtp-in 0.16s var(--dtp-ease);
+}
+
+@keyframes dtp-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---------- Nút mở popover ---------- */
+.dtp-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  min-height: 38px;
+  border-radius: 6px;
+  border: 1px solid var(--sch-line, #3d3a39);
+  background: var(--sch-bg, #101010);
+  color: var(--sch-text, #f2f2f2);
+  font-family: var(--sch-sans, Inter, system-ui, sans-serif);
+  font-size: 14px;
+  line-height: 20px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, color 160ms ease;
+}
+.dtp-trigger:hover:not(:disabled) {
+  border-color: var(--sch-primary, #00d992);
+  color: var(--sch-primary, #00d992);
+}
+.dtp-trigger:focus-visible {
+  outline: 2px solid var(--sch-primary, #00d992);
+  outline-offset: 1px;
+}
+.dtp-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.dtp-trigger__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--dtp-mono);
+  font-size: 13px;
+  color: var(--sch-text, #f2f2f2);
+}
+.dtp-trigger__caret {
+  flex-shrink: 0;
+  color: var(--sch-text-3, #8b949e);
+}
+
+/* ---------- Header tháng ---------- */
+.dtp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.dtp-head__title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--dtp-text);
+}
+.dtp-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  border: 1px solid var(--dtp-line);
+  background: transparent;
+  color: var(--dtp-text-2);
+  cursor: pointer;
+  transition: border-color 160ms ease, color 160ms ease;
+}
+.dtp-nav:hover {
+  border-color: var(--dtp-primary);
+  color: var(--dtp-primary);
+}
+.dtp-nav .material-symbols-outlined {
+  font-size: 18px;
+}
+
+/* ---------- Lịch ---------- */
+.dtp-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  margin-bottom: 4px;
+}
+.dtp-weekday {
+  text-align: center;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--dtp-text-3);
+}
+
+.dtp-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.dtp-day {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--dtp-text-2);
+  font-family: var(--dtp-mono);
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease,
+    border-color 140ms ease;
+}
+.dtp-day:hover:not(.dtp-day--empty) {
+  background: var(--dtp-high);
+  color: var(--dtp-text);
+}
+.dtp-day--empty {
+  cursor: default;
+  pointer-events: none;
+}
+.dtp-day--today {
+  border-color: var(--dtp-line);
+  color: var(--dtp-text);
+}
+.dtp-day--draft {
+  border-color: var(--dtp-primary-glow);
+  color: var(--dtp-primary);
+}
+.dtp-day--selected {
+  background: var(--dtp-primary);
+  border-color: var(--dtp-primary);
+  color: #101010;
+  font-weight: 600;
+}
+.dtp-day--selected:hover {
+  background: var(--dtp-primary);
+  color: #101010;
+}
+
+/* ---------- Danh sách giờ ---------- */
+.dtp-time {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--dtp-line);
+}
+.dtp-time__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.dtp-time__title {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 14px;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--dtp-text-3);
+}
+.dtp-time__now {
+  padding: 2px 8px;
+  border-radius: 9999px;
+  border: 1px solid var(--dtp-primary-glow);
+  background: var(--dtp-primary-soft);
+  color: var(--dtp-primary);
+  font-family: var(--dtp-sans);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  cursor: pointer;
+  transition: background-color 140ms ease;
+}
+.dtp-time__now:hover {
+  background: rgba(0, 217, 146, 0.18);
+}
+
+.dtp-time__cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.dtp-time__col {
+  min-width: 0;
+}
+
+.dtp-time__col-title {
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--dtp-text-3);
+}
+
+.dtp-time__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 190px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--dtp-line) transparent;
+}
+.dtp-time__list::-webkit-scrollbar {
+  width: 6px;
+}
+.dtp-time__list::-webkit-scrollbar-thumb {
+  background: var(--dtp-line);
+  border-radius: 9999px;
+}
+
+.dtp-time__item {
+  padding: 5px 0;
+  text-align: center;
+  border-radius: 6px;
+  border: 1px solid var(--dtp-line);
+  background: transparent;
+  color: var(--dtp-text-2);
+  font-family: var(--dtp-mono);
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+  transition: border-color 140ms ease, color 140ms ease,
+    background-color 140ms ease;
+}
+.dtp-time__item:hover {
+  border-color: var(--dtp-primary);
+  color: var(--dtp-primary);
+}
+.dtp-time__item--active {
+  background: var(--dtp-primary);
+  border-color: var(--dtp-primary);
+  color: #101010;
+  font-weight: 600;
+}
+.dtp-time__item--active:hover {
+  background: var(--dtp-primary);
+  color: #101010;
+}

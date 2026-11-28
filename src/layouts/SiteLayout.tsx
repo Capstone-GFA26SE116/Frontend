@@ -119,7 +119,19 @@ export function SiteLayout() {
       <header className="site-header">
         <div className="site-header-inner">
           <div className="site-header-left">
-            <Link to="/" className="site-brand" aria-label="METANOIA">
+            {/*
+             * Logo METANOIA:
+             *   - Đã đăng nhập  → về `/dashboard` (trang "Today" của app thật).
+             *   - Chưa đăng nhập → về `/` (landing page / demo).
+             *
+             * Dùng `isAuthenticated` từ AuthContext (đã có sẵn ở trên) thay vì
+             * đọc localStorage trực tiếp → không lệch với state của app.
+             */}
+            <Link
+              to={isAuthenticated ? "/dashboard" : "/"}
+              className="site-brand"
+              aria-label="METANOIA"
+            >
               <MetanoiaLogo size={28} withWordmark tone="dark" />
             </Link>
 
@@ -526,8 +538,14 @@ export function SiteLayout() {
                 <Link to="/#today" className="site-footer-link">
                   Today
                 </Link>
+                <Link to="/#schedule" className="site-footer-link">
+                  Schedule
+                </Link>
                 <Link to="/#projects" className="site-footer-link">
-                  Features
+                  Projects
+                </Link>
+                <Link to="/#groups" className="site-footer-link">
+                  Groups
                 </Link>
               </>
             )}

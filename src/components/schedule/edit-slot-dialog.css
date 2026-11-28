@@ -1,0 +1,212 @@
+/* ===========================================================
+ * Edit slot dialog — dùng chung token với `.sch-*` của trang lịch.
+ * Modal nằm trong portal cấp cao hơn modal detail → z-index cao hơn.
+ * =========================================================== */
+
+.sch-modal--edit {
+  z-index: 70;
+}
+
+.sch-modal__panel--edit {
+  box-sizing: border-box;
+  max-width: 520px;
+}
+
+.sch-edit__state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 8px;
+  color: var(--sch-text-3);
+}
+.sch-edit__state p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.sch-edit__form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.sch-edit__meta {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 10px 12px;
+  border-radius: var(--sch-r-sm);
+  border: 1px solid var(--sch-line);
+  background: var(--sch-bg);
+  font-family: var(--sch-mono);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--sch-text-3);
+}
+.sch-edit__meta strong {
+  color: var(--sch-text-2);
+  font-weight: 500;
+}
+
+.sch-edit__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.sch-edit__field--full {
+  grid-column: 1 / -1;
+}
+
+.sch-edit__label {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--sch-text-3);
+}
+
+.sch-edit__input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 12px;
+  min-height: 36px;
+  border-radius: var(--sch-r-sm);
+  border: 1px solid var(--sch-line);
+  background: var(--sch-bg);
+  color: var(--sch-text);
+  font-family: var(--sch-sans);
+  font-size: 14px;
+  line-height: 20px;
+  transition: border-color 160ms ease, color 160ms ease;
+}
+.sch-edit__input:hover {
+  border-color: var(--sch-bright);
+}
+.sch-edit__input:focus-visible {
+  outline: 2px solid var(--sch-primary);
+  outline-offset: 1px;
+  border-color: var(--sch-primary);
+}
+.sch-edit__input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.sch-edit__textarea {
+  resize: vertical;
+  min-height: 72px;
+}
+
+/* Slot đang có phiên focus chạy → không cho sửa */
+.sch-edit__blocked {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--sch-r-sm);
+  border: 1px solid var(--sch-primary-glow);
+  background: var(--sch-primary-soft);
+  color: var(--sch-secondary);
+  font-size: 13px;
+  line-height: 19px;
+}
+.sch-edit__blocked .material-symbols-outlined {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.sch-edit__check {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--sch-text-2);
+  cursor: pointer;
+}
+.sch-edit__check input {
+  accent-color: var(--sch-primary);
+  width: 16px;
+  height: 16px;
+}
+
+.sch-edit__error {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--sch-r-sm);
+  border: 1px solid rgba(255, 107, 107, 0.35);
+  background: var(--sch-error-soft);
+  color: var(--sch-error);
+  font-size: 13px;
+  line-height: 19px;
+}
+.sch-edit__error .material-symbols-outlined {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* Tóm tắt thay đổi trong pop-up xác nhận */
+.sch-edit__summary {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 20px;
+  border: 1px solid var(--sch-line);
+  border-radius: var(--sch-r-sm);
+  background: var(--sch-bg);
+  overflow: hidden;
+}
+.sch-edit__summary-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--sch-line-soft);
+}
+.sch-edit__summary-row:last-child {
+  border-bottom: 0;
+}
+.sch-edit__summary-row > span {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--sch-text-3);
+}
+.sch-edit__summary-row strong {
+  font-family: var(--sch-mono);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--sch-text);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+/* Pop-up xác nhận của Edit slot — nằm trên modal edit slot */
+.sch-modal--confirm-edit {
+  z-index: 80;
+}
+
+.sch-modal__panel--edit .sch-modal__actions {
+  grid-column: 1 / -1;
+  margin-top: 8px;
+}
+
+@media (max-width: 560px) {
+  .sch-edit__form {
+    grid-template-columns: 1fr;
+  }
+}

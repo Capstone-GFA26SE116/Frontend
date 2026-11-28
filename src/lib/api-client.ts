@@ -2154,6 +2154,67 @@ export async function listCalendar(params: {
 }
 
 /* ================================================================
+ * ĐỀ XUẤT LỊCH ĐANG CHỜ DUYỆT
+ * ----------------------------------------------------------
+ * GET /api/schedule/proposals/pending
+ *
+ * BE lưu "đề xuất lịch" của AI ở bảng riêng và trả về đề xuất đang chờ
+ * user duyệt (nếu có). Dùng cho:
+ *   - Metric card "Pending schedule" ở trang Today (/dashboard).
+ *   - Nút "Review" → mở màn hình duyệt lịch (/schedule).
+ *
+ * ⚠️ Khi KHÔNG có đề xuất nào, BE trả `404` — đây là trạng thái bình
+ * thường, KHÔNG phải lỗi → hàm này trả `ok: true` với `data: null`.
+ * ================================================================ */
+
+/** 1 slot trong đề xuất lịch (BE đã tính sẵn các đại lượng). */
+export interface PendingProposalSlotDto {
+  id: string;
+  taskId: string | null;
+  subTaskId: string | null;
+  startTime: string;
+  endTime: string;
+  /** Phút AI đề xuất cho slot này. */
+  proposedMinutes: number;
+  /** Giải thích của AI cho slot này (có thể null). */
+  explanation: string | null;
+  status: string | null;
+}
+
+/** Đề xuất lịch đang chờ duyệt. */
+export interface PendingProposalDto {
+  id: string;
+  /** BE có thể trả `null` khi đề xuất không còn khả thi. */
+  status: string | null;
+  /** Đề xuất còn xếp lịch được không. */
+  isFeasible: boolean;
+  /** Phút còn thiếu để hoàn thành (0 = đủ chỗ). */
+  missingMinutes: number | null;
+  /** Giải thích chung của AI cho cả đề xuất. */
+  explanation: string | null;
+  createdAt: string;
+  /** Các slot AI đề xuất. */
+  slots: PendingProposalSlotDto[] | null;
+}
+
+/**
+ * GET /api/schedule/proposals/pending
+ *
+ * Trả đề xuất lịch đang chờ duyệt, hoặc `null` nếu không có.
+ * `404` (không có đề xuất) được quy về `ok: true` + `data: null` để
+ * caller không phải xử lý lỗi cho một trạng thái hoàn toàn bình thường.
+ */
+export async function getPendingScheduleProposal(): Promise<
+  ApiResult<PendingProposalDto | null>
+> {
+  const res = await get<PendingProposalDto>("/api/schedule/proposals/pending");
+  if (res.ok) return { ok: true, data: res.data ?? null };
+  // 404 = không có đề xuất nào đang chờ → không phải lỗi.
+  if (res.status === 404) return { ok: true, data: null };
+  return res;
+}
+
+/* ================================================================
  * GOOGLE CALENDAR — tích hợp tài khoản Google của user
  *
  * BE đã deploy đủ 9 endpoint (tag `GoogleCalendar` trong swagger.json).

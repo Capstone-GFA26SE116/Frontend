@@ -1,0 +1,14 @@
+/* ===========================================================
+ * AlertDialog — pop-up báo lỗi (tiếng Anh), dùng chung token `.sch-*`.
+ * Nằm trên cùng modal detail + dialog edit slot → z-index cao nhất.
+ * =========================================================== */
+
+.sch-modal--alert {
+  z-index: 90;
+}
+
+.sch-modal__panel--alert {
+  box-sizing: border-box;
+  max-width: 460px;
+  padding: 24px;
+}

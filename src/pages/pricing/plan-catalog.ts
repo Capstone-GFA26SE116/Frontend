@@ -85,85 +85,91 @@ const TIER_META: Record<PlanTier, PlanMeta> = {
   free: {
     tier: "free",
     icon: "person",
-    eyebrow: "Khởi đầu",
-    desc: "Phù hợp cho freelancer và cá nhân làm việc độc lập bước đầu thiết lập kỷ luật và quản lý lịch trình cơ bản.",
+    eyebrow: "Starter",
+    desc: "For freelancers and solo workers who want to build a routine and get basic schedule control.",
     features: [
-      { ok: true, text: "Sắp xếp theo hạn chót & khung giờ rảnh" },
-      { ok: true, text: "Đồng bộ 1 Google Calendar" },
-      { ok: true, text: "Ma trận Eisenhower AI tự động phân loại mức độ ưu tiên" },
-      { ok: false, text: "Vector memory lưu trữ ngữ cảnh" },
+      { ok: true, text: "Sorting by deadline & available time slots" },
+      { ok: true, text: "One Google Calendar sync" },
+      { ok: true, text: "AI Eisenhower matrix — automatic priority ranking" },
+      { ok: false, text: "Vector memory for context storage" },
     ],
     limits: {
-      tasks: "50 nhiệm vụ / tháng",
+      tasks: "50 tasks / month",
       ai: "—",
-      memory: "Lưu 7 ngày",
+      memory: "7-day retention",
       storage: "—",
       projects: "—",
-      support: "Cộng đồng Discord",
+      support: "Discord community",
     },
   },
   pro: {
     tier: "pro",
     icon: "psychology",
-    eyebrow: "Hiệu suất tối đa",
-    desc: "Tối ưu năng suất cho remote worker và freelancer: giữ trạng thái Deep Work, quản lý đa khách hàng và cân bằng nhịp sinh học.",
+    eyebrow: "Peak productivity",
+    desc: "Built for remote workers and freelancers: protect deep work, manage multiple clients and balance your biological rhythm.",
     features: [
       {
         ok: true,
-        text: "Ma trận Eisenhower AI tự động phân loại mức độ ưu tiên",
+        text: "AI Eisenhower matrix — automatic priority ranking",
         emphasize: true,
       },
-      { ok: true, text: "Thuật toán K_bias tự tiến hóa theo nhịp sinh học" },
+      { ok: true, text: "K_bias algorithm that evolves with your biological rhythm" },
       {
         ok: true,
-        text: "Đồng bộ tức thì SignalR qua đa thiết bị & lịch làm việc",
+        text: "Real-time SignalR sync across devices & schedules",
       },
-      { ok: true, text: "Phân rã dự án & Macro Task không giới hạn" },
+      { ok: true, text: "Unlimited project & macro-task breakdown" },
       {
         ok: true,
-        text: "Tích hợp pgvector lưu trữ ngữ cảnh khách hàng trọn đời",
+        text: "pgvector integration — lifetime client context storage",
       },
     ],
     limits: {
-      tasks: "Không giới hạn",
-      ai: "Có",
-      memory: "Vĩnh viễn (Personal)",
+      tasks: "Unlimited",
+      ai: "Yes",
+      memory: "Lifetime (Personal)",
       storage: "—",
-      projects: "Không giới hạn",
-      support: "Ưu tiên < 2h",
+      projects: "Unlimited",
+      support: "Priority < 2h",
     },
   },
   team: {
     tier: "team",
     icon: "groups",
-    eyebrow: "Hợp tác từ xa",
-    desc: "Dành cho nhóm làm việc từ xa 4 - 6 thành viên, phối hợp dự án linh hoạt, điều phối deadline chéo và cân bằng tải công việc.",
+    eyebrow: "Remote collaboration",
+    desc: "For remote teams of 4–6 members: flexible project coordination, cross-team deadlines and balanced workloads.",
     features: [
-      { ok: true, text: "Bao gồm 4 - 6 thành viên team remote" },
-      { ok: true, text: "Phối hợp lịch biểu & cân bằng tải công việc nhóm" },
-      { ok: true, text: "Bảng tổng phổ năng lượng & Burnout cảnh báo sớm" },
+      { ok: true, text: "Includes 4–6 remote team members" },
+      { ok: true, text: "Shared scheduling & team workload balancing" },
+      { ok: true, text: "Energy overview & early burnout warnings" },
       {
         ok: true,
-        text: "Xuất báo cáo tiến độ dự án & Timesheet 1-click (PDF/Notion/CSV)",
+        text: "One-click project progress & timesheet export (PDF/Notion/CSV)",
       },
-      { ok: true, text: "Bộ nhớ ngữ cảnh dự án dùng chung (Shared Team Vector)" },
+      { ok: true, text: "Shared project context memory (Shared Team Vector)" },
     ],
     limits: {
-      tasks: "Không giới hạn",
-      ai: "Có",
-      memory: "Vĩnh viễn (Shared Team)",
+      tasks: "Unlimited",
+      ai: "Yes",
+      memory: "Lifetime (Shared Team)",
       storage: "—",
-      projects: "Không giới hạn",
-      support: "Kỹ sư AI hỗ trợ 1:1",
+      projects: "Unlimited",
+      support: "1:1 AI engineer support",
     },
   },
 };
 
-/** Tên hiển thị tiếng Việt fallback khi BE trả `name = null`. */
-const TIER_FALLBACK_NAME: Record<PlanTier, string> = {
-  free: "Cá nhân khởi đầu",
-  pro: "Chuyên nghiệp & Freelancer Pro",
-  team: "Nhóm Chuyên gia & Studio",
+/**
+ * English display names per tier.
+ *
+ * The API still returns Vietnamese plan names ("Miễn phí", "Tiêu chuẩn"…),
+ * so the UI always shows the English tier name to keep /pricing fully
+ * in English.
+ */
+export const TIER_DISPLAY_NAME: Record<PlanTier, string> = {
+  free: "Free",
+  pro: "Pro",
+  team: "Team",
 };
 
 /**
@@ -195,23 +201,36 @@ export function durationToMonths(durationDays: number): number {
   return Math.max(1, Math.round(durationDays / 30));
 }
 
-/** Nhãn thời hạn hiển thị: "30 ngày", "3 tháng", "12 tháng". */
+/** Label for a billing period: "30 days", "3 months", "12 months". */
 export function durationLabel(durationDays: number): string {
   const m = durationToMonths(durationDays);
-  if (durationDays >= 360) return m === 12 ? "12 tháng" : `${m} tháng`;
-  if (durationDays >= 28) return `${m} tháng`;
-  return `${durationDays} ngày`;
+  if (durationDays >= 360) return m === 12 ? "12 months" : `${m} months`;
+  if (durationDays >= 28) return `${m} months`;
+  return `${durationDays} days`;
 }
 
-/** Định dạng hạn mức số (null = không giới hạn). */
+/** Units that are never pluralised (MB, GB, …). */
+const NON_COUNTABLE_UNITS = new Set(["mb", "gb", "tb", "kb"]);
+
+/**
+ * Format a numeric limit (null = unlimited).
+ *
+ * Pass a SINGULAR unit ("call", "project"): a trailing "s" is added unless
+ * the value is exactly 1. Non-countable units ("MB") stay as-is.
+ */
 export function formatLimit(value: number | null, unit: string): string {
-  if (value == null) return "Không giới hạn";
-  return `${value.toLocaleString("vi-VN")} ${unit}`;
+  if (value == null) return "Unlimited";
+  const plural = NON_COUNTABLE_UNITS.has(unit.toLowerCase())
+    ? unit
+    : value === 1
+      ? unit
+      : `${unit}s`;
+  return `${value.toLocaleString("en-US")} ${plural}`;
 }
 
-/** Định dạng tiền VND: 149.000đ */
+/** Format VND amount: 1,428,000₫ */
 export function formatVnd(amount: number): string {
-  return `${amount.toLocaleString("vi-VN")}đ`;
+  return `${amount.toLocaleString("en-US")}₫`;
 }
 
 /** Chuyển 1 plan của BE thành view model cho UI. */
@@ -222,7 +241,9 @@ export function toPlanView(plan: SubscriptionPlanDto): PlanView {
 
   return {
     id: plan.id,
-    name: plan.name?.trim() || TIER_FALLBACK_NAME[tier],
+    // Always show the English tier name — the API plan names are in
+    // Vietnamese, and /pricing is fully in English.
+    name: TIER_DISPLAY_NAME[tier],
     tier,
     icon: meta.icon,
     eyebrow: meta.eyebrow,

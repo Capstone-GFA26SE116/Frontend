@@ -538,18 +538,21 @@ body.has-focus-bar .site-main {
 .site-footer-inner {
   max-width: 80rem;
   margin: 0 auto;
-  padding: 40px 32px;
+  padding: 26px 32px;
   /*
    * Grid 3 cột: logo | nav | (ô trống).
    *
    * ⚠️ Trước đây dùng `flex + space-between` → khi bỏ khối copyright ở
    * cuối, nav bị đẩy sang hết bên phải. Grid cố định 3 cột giữ nav luôn
    * ở GIỮA dù có hay không có phần tử thứ 3.
+   *
+   * Giá trị padding/gap khớp với footer trang `/` (`.demo-footer-inner`)
+   * để 2 footer trông giống nhau.
    */
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  gap: 16px;
+  gap: 24px;
   color: var(--body);
   font-family: var(--font-sans);
   font-size: 14px;
@@ -559,14 +562,15 @@ body.has-focus-bar .site-main {
 .site-footer-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   justify-self: start;
+  min-width: 0;
 }
 
 .site-footer-nav {
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: 22px;
   flex-wrap: wrap;
   justify-content: center;
   justify-self: center;
@@ -579,7 +583,7 @@ body.has-focus-bar .site-main {
   text-decoration: none;
   transition: color 160ms ease;
 }
-.site-footer-link:hover { color: var(--primary); }
+.site-footer-link:hover { color: var(--ink-strong); }
 
 /* ================= Responsive tweaks ================= */
 @media (max-width: 640px) {

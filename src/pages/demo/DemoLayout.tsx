@@ -96,20 +96,24 @@ export function DemoLayout() {
       {/* ---------- Footer ---------- */}
       <footer className="demo-footer">
         <div className="demo-footer-inner">
-          <MetanoiaLogo size={22} tone="dark" />
+          <div className="demo-footer-left">
+            <MetanoiaLogo size={22} tone="dark" />
+          </div>
+          {/*
+           * Nav section — bấm để nhảy tới mục tương ứng trên trang.
+           *
+           * ⚠️ KHÔNG thêm link "Pricing" riêng: `DEMO_SECTIONS` đã có sẵn
+           * mục Pricing (anchor `#pricing`) → thêm nữa sẽ bị trùng.
+           */}
           <nav className="demo-footer-nav" aria-label="Secondary">
             {sections.map((s) => (
               <a key={s.id} href={`#${s.id}`} className="demo-footer-link">
                 {s.label}
               </a>
             ))}
-            <Link to="/pricing" className="demo-footer-link">
-              Pricing
-            </Link>
           </nav>
-          <span className="demo-footer-meta">
-            © 2026 METANOIA · Sample data for illustration only.
-          </span>
+          {/* Cột phải rỗng để nav luôn nằm giữa (logo | nav | spacer). */}
+          <div className="demo-footer-right" aria-hidden="true" />
         </div>
       </footer>
     </div>

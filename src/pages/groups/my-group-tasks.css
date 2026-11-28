@@ -463,6 +463,22 @@
   line-height: 16px;
 }
 
+.mgt-running-icon {
+  font-size: 15px;
+  line-height: 1;
+  animation: mgt-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes mgt-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
 .mgt-running-dot {
   width: 6px;
   height: 6px;
@@ -702,6 +718,31 @@
 }
 
 /* ===========================================================
+ * Checkbox lọc (vd: "Show closed tasks")
+ * =========================================================== */
+
+.mgt-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--body, #bdbdbd);
+  cursor: pointer;
+  user-select: none;
+}
+.mgt-check input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--primary, #00d992);
+  cursor: pointer;
+}
+.mgt-check:hover {
+  color: var(--ink, #f2f2f2);
+}
+
+/* ===========================================================
  * Modal
  * =========================================================== */
 
@@ -729,6 +770,9 @@
   max-width: 540px;
   max-height: calc(100vh - 48px);
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline, #3d3a39) transparent;
   padding: 24px;
   border: 1px solid var(--hairline, #3d3a39);
   border-radius: 8px;
@@ -960,6 +1004,461 @@
 .mgt-slot-option-meta {
   font-size: 12px;
   line-height: 16px;
+  color: var(--mute, #8b949e);
+}
+
+/* ===========================================================
+ * Hộp thoại chi tiết việc (tab "My tasks")
+ * =========================================================== */
+
+/*
+ * Thanh cuộn của modal: mảnh, bo tròn, ẩn nút mũi tên mặc định của
+ * Chrome (dấu tam giác xám) và chỉ nổi lên khi rê chuột vào.
+ */
+.mgt-modal::-webkit-scrollbar,
+.mgt-detail-comments::-webkit-scrollbar,
+.mgt-textarea::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.mgt-modal::-webkit-scrollbar-track,
+.mgt-detail-comments::-webkit-scrollbar-track,
+.mgt-textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.mgt-modal::-webkit-scrollbar-thumb,
+.mgt-detail-comments::-webkit-scrollbar-thumb,
+.mgt-textarea::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.22);
+  border: 0;
+  border-radius: 9999px;
+}
+
+.mgt-modal:hover::-webkit-scrollbar-thumb,
+.mgt-detail-comments:hover::-webkit-scrollbar-thumb,
+.mgt-textarea:hover::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.42);
+}
+
+.mgt-modal::-webkit-scrollbar-thumb:hover,
+.mgt-detail-comments::-webkit-scrollbar-thumb:hover,
+.mgt-textarea::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 217, 146, 0.6);
+}
+
+.mgt-modal--wide {
+  max-width: 680px;
+  padding: 28px;
+  /* Giữ chỗ cho thanh cuộn → nội dung không bị nhảy khi cuộn. */
+  scrollbar-gutter: stable;
+}
+
+.mgt-modal--wide .mgt-modal-title {
+  font-size: 24px;
+  line-height: 32px;
+}
+
+.mgt-modal--wide .mgt-modal-title-icon {
+  font-size: 24px;
+}
+
+.mgt-modal--wide .mgt-modal-sub {
+  margin-bottom: 20px;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--ink, #f2f2f2);
+}
+
+.mgt-modal--wide .mgt-modal-text {
+  font-size: 15px;
+  line-height: 24px;
+}
+
+.mgt-modal--wide .mgt-status {
+  font-size: 13px;
+  line-height: 20px;
+  padding: 3px 12px;
+}
+
+.mgt-modal--wide .mgt-priority {
+  font-size: 12px;
+  line-height: 18px;
+  padding: 3px 10px;
+}
+
+.mgt-modal--wide .mgt-slot-option {
+  padding: 12px 14px;
+}
+
+.mgt-modal--wide .mgt-slot-option-time {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.mgt-modal--wide .mgt-slot-option-meta {
+  font-size: 13px;
+  line-height: 19px;
+}
+
+.mgt-modal--wide .mgt-form-actions {
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--hairline, #3d3a39);
+}
+
+.mgt-modal--wide .mgt-btn {
+  padding: 12px 20px;
+  font-size: 15px;
+  line-height: 22px;
+  min-height: 46px;
+}
+
+.mgt-modal--wide .mgt-btn-icon {
+  font-size: 18px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mgt-modal--wide .mgt-modal-body {
+  gap: 16px;
+}
+
+.mgt-modal--wide .mgt-detail-comment-form {
+  gap: 12px;
+}
+
+.mgt-task-main--clickable {
+  cursor: pointer;
+}
+
+.mgt-task-title-btn {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.mgt-task-title-btn:hover .mgt-task-title {
+  color: var(--primary, #00d992);
+  text-decoration: underline;
+}
+
+.mgt-detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.mgt-detail-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 999px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--body, #bdbdbd);
+}
+
+.mgt-detail-chip .material-symbols-outlined {
+  font-size: 16px;
+}
+
+.mgt-detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline, #3d3a39);
+}
+
+.mgt-detail-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mute, #8b949e);
+}
+
+.mgt-detail-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.16);
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--body, #bdbdbd);
+}
+
+.mgt-slot-option--static {
+  cursor: default;
+}
+
+.mgt-slot-option--static:hover {
+  border-color: var(--hairline, #3d3a39);
+}
+
+.mgt-detail-comments {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 260px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.28) transparent;
+  padding-right: 6px;
+}
+
+.mgt-detail-comment {
+  padding: 12px 14px;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 8px;
+  background: var(--canvas, #101010);
+}
+
+.mgt-detail-comment-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.mgt-detail-comment-author {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink, #f2f2f2);
+}
+
+.mgt-detail-comment-time {
+  font-size: 12px;
+  color: var(--mute, #8b949e);
+}
+
+.mgt-detail-comment-body {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--body, #bdbdbd);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.mgt-detail-comment-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.mgt-textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 8px;
+  background: var(--canvas, #101010);
+  color: var(--ink, #f2f2f2);
+  font: inherit;
+  font-size: 15px;
+  line-height: 24px;
+  resize: vertical;
+}
+
+.mgt-textarea:focus {
+  outline: none;
+  border-color: rgba(0, 217, 146, 0.55);
+}
+
+.mgt-textarea::placeholder {
+  color: var(--mute, #8b949e);
+}
+
+.mgt-textarea--error {
+  border-color: var(--danger, #ff6b6b);
+}
+
+/* ===========================================================
+ * Hộp thoại chọn lý do dừng phiên
+ * =========================================================== */
+
+.mgt-modal--stop {
+  max-width: 560px;
+}
+
+.mgt-stop-session {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 8px;
+  background: var(--canvas-soft, #1a1a1a);
+}
+
+.mgt-stop-session-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.mgt-stop-session-title {
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--ink, #f2f2f2);
+  overflow-wrap: anywhere;
+}
+
+.mgt-stop-session-group {
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--mute, #8b949e);
+}
+
+.mgt-stop-session-clock {
+  flex-shrink: 0;
+  font-family: var(--font-mono, "SF Mono", ui-monospace, monospace);
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--primary, #00d992);
+}
+
+.mgt-stop-label {
+  display: block;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--mute, #8b949e);
+}
+
+.mgt-stop-required {
+  color: var(--danger, #ff6b6b);
+  font-weight: 600;
+}
+
+.mgt-stop-optional {
+  font-weight: 400;
+  color: var(--mute, #8b949e);
+}
+
+.mgt-stop-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mgt-stop-reason {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline, #3d3a39);
+  border-radius: 8px;
+  background: var(--canvas, #101010);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.mgt-stop-reason:hover:not(:disabled) {
+  border-color: rgba(0, 217, 146, 0.45);
+}
+
+.mgt-stop-reason:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.mgt-stop-reason--active {
+  border-color: var(--primary, #00d992);
+  background: rgba(0, 217, 146, 0.08);
+}
+
+.mgt-stop-reason-dot {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin-top: 4px;
+  border: 2px solid var(--hairline, #3d3a39);
+  border-radius: 50%;
+  background: transparent;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.mgt-stop-reason--active .mgt-stop-reason-dot {
+  border-color: var(--primary, #00d992);
+  box-shadow: inset 0 0 0 3px var(--canvas, #101010);
+  background: var(--primary, #00d992);
+}
+
+.mgt-stop-reason-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mgt-stop-reason-label {
+  font-size: 15px;
+  line-height: 21px;
+  font-weight: 600;
+  color: var(--ink, #f2f2f2);
+}
+
+.mgt-stop-reason-hint {
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--mute, #8b949e);
+}
+
+.mgt-stop-error {
+  margin: 0;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--danger, #ff6b6b);
+}
+
+.mgt-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
   color: var(--mute, #8b949e);
 }
 

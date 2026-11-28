@@ -2202,6 +2202,25 @@
   border-bottom: 1px solid var(--sch-line-soft);
 }
 .sch-aggregate__head strong { font-weight: 600; }
+.sch-aggregate__head-selected {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 240px;
+  padding: 3px 10px;
+  border-radius: var(--sch-r-pill);
+  background: var(--sch-primary-soft);
+  border: 1px solid var(--sch-primary-glow);
+  color: var(--sch-primary);
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sch-aggregate__head-selected .sch-icon-12 {
+  font-size: 12px;
+}
 .sch-aggregate__head-total {
   margin-left: auto;
   padding: 3px 10px;
@@ -2258,6 +2277,7 @@
   box-shadow: 0 0 0 3px rgba(0, 217, 146, 0.08);
 }
 .sch-aggregate__body {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -2271,6 +2291,43 @@
 .sch-aggregate__item:hover .sch-aggregate__body {
   border-color: rgba(0, 217, 146, 0.35);
   background: var(--sch-highest);
+}
+
+/* ===========================================================
+ * Block được CHỌN (người dùng vừa bấm việc con này trên lịch)
+ * → nổi bật rõ: viền accent 2px, nền wash, dot phát sáng, badge.
+ * =========================================================== */
+.sch-aggregate__item--selected .sch-aggregate__body {
+  border-color: var(--sch-primary);
+  background: var(--sch-primary-soft);
+  box-shadow: 0 0 0 1px var(--sch-primary-glow),
+    0 8px 24px rgba(0, 217, 146, 0.14);
+}
+.sch-aggregate__item--selected .sch-aggregate__dot {
+  background: var(--sch-primary);
+  color: var(--sch-on-primary);
+  box-shadow: 0 0 0 4px var(--sch-primary-soft),
+    0 0 14px var(--sch-primary-glow);
+}
+.sch-aggregate__item--selected .sch-aggregate__body::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--sch-primary);
+}
+.sch-aggregate__badge--selected {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--sch-primary);
+  color: var(--sch-on-primary);
+}
+.sch-aggregate__badge--selected .sch-icon-12 {
+  font-size: 12px;
 }
 .sch-aggregate__item-row {
   display: flex;
@@ -2483,6 +2540,37 @@
   border-color: var(--sch-error);
 }
 .sch-aggregate__del:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--sch-primary);
+  outline-offset: 2px;
+}
+
+/* Nút SỬA 1 block (slot) trong danh sách subtask của modal */
+.sch-aggregate__edit {
+  position: absolute;
+  top: 0;
+  right: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--sch-line-soft);
+  border-radius: var(--sch-r-pill);
+  background: var(--sch-bg);
+  color: var(--sch-text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.sch-aggregate__item:hover .sch-aggregate__edit {
+  opacity: 1;
+}
+.sch-aggregate__edit:hover {
+  color: var(--sch-primary);
+  border-color: var(--sch-primary);
+}
+.sch-aggregate__edit:focus-visible {
   opacity: 1;
   outline: 2px solid var(--sch-primary);
   outline-offset: 2px;
@@ -2866,6 +2954,14 @@
   background: var(--sch-error-soft);
 }
 .sch-confirm__icon--warn {
+  color: var(--sch-primary);
+  background: var(--sch-primary-soft);
+}
+/*
+ * ✅ THÀNH CÔNG — dùng cho pop-up "Schedule updated" / "Time block removed".
+ * Dùng lại màu primary (xanh) của design system.
+ */
+.sch-confirm__icon--success {
   color: var(--sch-primary);
   background: var(--sch-primary-soft);
 }

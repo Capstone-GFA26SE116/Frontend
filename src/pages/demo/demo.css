@@ -1773,18 +1773,26 @@
   background-color: var(--canvas);
 }
 .demo-footer-inner {
-  display: flex;
+  display: grid;
+  /* 3 cột: logo | nav (giữa) | spacer — `1fr auto 1fr` đảm bảo nav
+     luôn nằm chính giữa footer bất kể logo rộng hay hẹp. */
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   gap: 24px;
-  flex-wrap: wrap;
   max-width: 80rem;
   margin: 0 auto;
   padding: 26px 32px;
 }
+.demo-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
 .demo-footer-nav {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 22px;
   flex-wrap: wrap;
 }
@@ -1797,12 +1805,6 @@
 }
 .demo-footer-link:hover {
   color: var(--ink-strong);
-}
-.demo-footer-meta {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 17px;
-  color: var(--mute);
 }
 
 /* ===========================================================
@@ -1873,6 +1875,13 @@
   }
   .demo-footer-inner {
     padding: 22px 18px;
+    /* Màn hẹp: 3 cột `1fr auto 1fr` sẽ bóp nav → xếp dọc cho thoáng. */
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 16px;
+  }
+  .demo-footer-right {
+    display: none;
   }
   .demo-metrics-inner {
     padding: 32px 18px;

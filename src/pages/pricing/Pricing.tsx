@@ -20,8 +20,10 @@ import {
   durationLabel,
   formatLimit,
   formatVnd,
+  inferTier,
   sortPlanViews,
   toPlanView,
+  TIER_DISPLAY_NAME,
   type PlanTier,
   type PlanView,
 } from "./plan-catalog";
@@ -82,7 +84,7 @@ export function PricingPage() {
       setPlans(views);
       setPlansError(null);
     } else {
-      setPlansError(res.error ?? "Không tải được danh sách gói.");
+      setPlansError(res.error ?? "Could not load the plan list.");
     }
     setPlansLoading(false);
   }, []);
@@ -100,7 +102,7 @@ export function PricingPage() {
         );
         setPlansError(null);
       } else {
-        setPlansError(res.error ?? "Không tải được danh sách gói.");
+        setPlansError(res.error ?? "Could not load the plan list.");
       }
       setPlansLoading(false);
     })();
@@ -195,8 +197,6 @@ export function PricingPage() {
   const pageAnim = useStaggeredMount(0, 30);
   const plansAnim = useStaggeredMount(110, 160, visiblePlans.length);
   const compareAnim = useStaggeredMount(50, 240, "compare");
-  const faqAnim = useStaggeredMount(80, 360);
-  const proofAnim = useStaggeredMount(90, 460);
   const priceAnim = useStaggeredMount(0, 0, billing);
 
   /* ----- Mua gói: POST /api/payments/checkout ----- */
@@ -214,7 +214,7 @@ export function PricingPage() {
       return;
     }
     if (!plan.purchasable) {
-      setBuyError("Gói này hiện không khả dụng để mua.");
+      setBuyError("This plan is currently not available for purchase.");
       return;
     }
 
@@ -222,11 +222,11 @@ export function PricingPage() {
     setBuyError(null);
     const res = await createPaymentCheckout(plan.id);
     if (!res.ok) {
-      // 400 = gói không mua được · 503 = PayOS lỗi tạm thời · 401 = hết phiên.
+      // 400 = plan not purchasable · 503 = PayOS temporarily down · 401 = session expired.
       setBuyError(
         res.status === 503
-          ? "Cổng thanh toán đang bận. Vui lòng thử lại sau ít phút."
-          : res.error ?? "Không tạo được link thanh toán.",
+          ? "The payment gateway is busy. Please try again in a few minutes."
+          : res.error ?? "Could not create a payment link.",
       );
       setBuyingPlanId(null);
       return;
@@ -282,6 +282,20 @@ export function PricingPage() {
   const currentSub = me?.currentSubscription ?? null;
   const currentEndAt = currentSub?.endAt ?? null;
 
+  /**
+   * Tên gói hiện tại hiển thị bằng tiếng Anh.
+   *
+   * BE trả `planName` bằng tiếng Việt (VD: "Tiêu chuẩn") → suy ra tier
+   * rồi hiện tên tiếng Anh tương ứng cho nhất quán với phần còn lại
+   * của trang.
+   */
+  const currentPlanLabel = useMemo(() => {
+    const raw = currentSub?.planName ?? me?.currentPlanName ?? null;
+    if (!raw) return "—";
+    const tier = inferTier(raw, 0);
+    return TIER_DISPLAY_NAME[tier];
+  }, [currentSub?.planName, me?.currentPlanName]);
+
   return (
     <div className="pricing">
       {/* Ambient glow */}
@@ -296,15 +310,15 @@ export function PricingPage() {
         <div className="pricing-container">
           <span className="pricing-eyebrow">
             <span className="material-symbols-outlined">bolt</span>
-            Hệ thống Điều phối Nhận thức v2.4
+            Cognitive Orchestration System v2.4
           </span>
           <h1 className="pricing-title">
-            Lựa chọn gói đồng hành thông minh cùng METANOIA
+            Pick the plan that moves at your pace
           </h1>
           <p className="pricing-subtitle">
-            Tối ưu hóa thời gian và năng lượng cho Freelancer và Remote Worker
-            với hệ thống AI tự tiến hóa. Hỗ trợ thanh toán nội địa tiện lợi
-            qua VietQR, MoMo, VNPay và thẻ quốc tế.
+            Optimise your time and energy for freelancers and remote workers
+            with a self-evolving AI system. Local payments via VietQR, MoMo,
+            VNPay and international cards.
           </p>
 
           {/* Gói hiện tại — banner nhỏ (chỉ khi đã login) */}
@@ -314,16 +328,16 @@ export function PricingPage() {
                 workspace_premium
               </span>
               <span className="pricing-current-bar-text">
-                Gói hiện tại:{" "}
-                <strong>{currentSub.planName ?? "—"}</strong>
+                Current plan:{" "}
+                <strong>{currentPlanLabel}</strong>
               </span>
               {currentEndAt ? (
                 <span className="pricing-current-bar-meta">
-                  Hết hạn{" "}
-                  {new Date(currentEndAt).toLocaleDateString("vi-VN")}
+                  Renews{" "}
+                  {new Date(currentEndAt).toLocaleDateString("en-US")}
                 </span>
               ) : (
-                <span className="pricing-current-bar-meta">Không giới hạn</span>
+                <span className="pricing-current-bar-meta">Unlimited</span>
               )}
             </div>
           )}
@@ -332,7 +346,7 @@ export function PricingPage() {
           <div
             className="pricing-toggle"
             role="tablist"
-            aria-label="Chu kỳ thanh toán"
+            aria-label="Billing cycle"
           >
             <button
               type="button"
@@ -345,7 +359,7 @@ export function PricingPage() {
                 (billing === "monthly" ? " pricing-toggle-btn--active" : "")
               }
             >
-              Thanh toán theo tháng
+              Monthly billing
             </button>
             <button
               type="button"
@@ -358,10 +372,10 @@ export function PricingPage() {
                 (billing === "annual" ? " pricing-toggle-btn--active" : "")
               }
             >
-              <span>Thanh toán theo năm</span>
+              <span>Annual billing</span>
               <span className="pricing-save-pill">
                 <span className="material-symbols-outlined">bolt</span>
-                TIẾT KIỆM 20%
+                SAVE 20%
               </span>
             </button>
           </div>
@@ -399,13 +413,13 @@ export function PricingPage() {
                 onClick={() => void loadPlans()}
               >
                 <span className="material-symbols-outlined">refresh</span>
-                Thử lại
+                Retry
               </button>
             </div>
           ) : visiblePlans.length === 0 ? (
             <div className="pricing-empty" role="status">
               <span className="material-symbols-outlined">inventory_2</span>
-              <p>Hiện chưa có gói nào khả dụng.</p>
+              <p>No plans are available right now.</p>
             </div>
           ) : (
             <div className="pricing-plan-grid">
@@ -447,14 +461,14 @@ export function PricingPage() {
         <div className="pricing-container">
           <div className="pricing-section-head">
             <span className="pricing-eyebrow pricing-eyebrow--inline">
-              So sánh chuyên sâu
+              In-depth comparison
             </span>
             <h2 className="pricing-section-title">
-              Chi tiết đặc quyền theo từng gói
+              Full privilege breakdown by plan
             </h2>
             <p className="pricing-section-desc">
-              Được thiết kế chuẩn mực phục vụ từ cá nhân làm việc độc lập đến
-              các remote studio và đội ngũ chuyên gia linh hoạt.
+              Designed to the same standard for solo professionals, remote
+              studios and expert teams alike.
             </p>
           </div>
 
@@ -462,15 +476,15 @@ export function PricingPage() {
             <table className="pricing-table">
               <thead>
                 <tr>
-                  <th className="pricing-th-feature">Tính năng &amp; Năng lực AI</th>
+                  <th className="pricing-th-feature">Features &amp; AI capabilities</th>
                   <th className="pricing-th-plan">
-                    {byTier.free?.name ?? "Cá nhân khởi đầu"}
+                    {byTier.free?.name ?? "Free"}
                   </th>
                   <th className="pricing-th-plan pricing-th-plan--hero">
-                    {byTier.pro?.name ?? "Chuyên nghiệp & Freelancer"}
+                    {byTier.pro?.name ?? "Pro"}
                   </th>
                   <th className="pricing-th-plan">
-                    {byTier.team?.name ?? "Nhóm Chuyên gia & Studio"}
+                    {byTier.team?.name ?? "Team"}
                   </th>
                 </tr>
               </thead>
@@ -481,15 +495,15 @@ export function PricingPage() {
                     mounted: compareAnim.mounted,
                     delayStyle: compareAnim.getDelay(0),
                   }}
-                  feature="Phân rã dự án (Macro → Sub-tasks)"
-                  starter={byTier.free?.limits.tasks ?? "50 nhiệm vụ / tháng"}
+                  feature="Project breakdown (Macro → Sub-tasks)"
+                  starter={byTier.free?.limits.tasks ?? "50 tasks / month"}
                   pro={{
-                    text: byTier.pro?.limits.tasks ?? "Không giới hạn",
+                    text: byTier.pro?.limits.tasks ?? "Unlimited",
                     tone: "primary",
                     emphasis: true,
                   }}
                   team={{
-                    text: byTier.team?.limits.tasks ?? "Không giới hạn",
+                    text: byTier.team?.limits.tasks ?? "Unlimited",
                     tone: "secondary",
                     emphasis: true,
                   }}
@@ -500,10 +514,10 @@ export function PricingPage() {
                     mounted: compareAnim.mounted,
                     delayStyle: compareAnim.getDelay(1),
                   }}
-                  feature="Ma trận Eisenhower AI tự động"
-                  starter={byTier.free?.limits.ai === "Có"}
-                  pro={byTier.pro?.limits.ai === "Có"}
-                  team={byTier.team?.limits.ai === "Có"}
+                  feature="Automatic AI Eisenhower matrix"
+                  starter={byTier.free?.limits.ai === "Yes"}
+                  pro={byTier.pro?.limits.ai === "Yes"}
+                  team={byTier.team?.limits.ai === "Yes"}
                 />
                 <CompareRow
                   index={2}
@@ -511,7 +525,7 @@ export function PricingPage() {
                     mounted: compareAnim.mounted,
                     delayStyle: compareAnim.getDelay(2),
                   }}
-                  feature="Thuật toán nhịp sinh học K_bias"
+                  feature="K_bias biological rhythm algorithm"
                   starter={false}
                   pro
                   team
@@ -522,15 +536,15 @@ export function PricingPage() {
                     mounted: compareAnim.mounted,
                     delayStyle: compareAnim.getDelay(3),
                   }}
-                  feature="Bộ nhớ ngữ cảnh pgvector"
-                  starter={byTier.free?.limits.memory ?? "Lưu 7 ngày"}
+                  feature="pgvector context memory"
+                  starter={byTier.free?.limits.memory ?? "7-day retention"}
                   pro={{
-                    text: byTier.pro?.limits.memory ?? "Vĩnh viễn (Personal)",
+                    text: byTier.pro?.limits.memory ?? "Lifetime (Personal)",
                     tone: "primary",
                     emphasis: true,
                   }}
                   team={{
-                    text: byTier.team?.limits.memory ?? "Vĩnh viễn (Shared Team)",
+                    text: byTier.team?.limits.memory ?? "Lifetime (Shared Team)",
                     tone: "secondary",
                     emphasis: true,
                   }}
@@ -541,10 +555,10 @@ export function PricingPage() {
                     mounted: compareAnim.mounted,
                     delayStyle: compareAnim.getDelay(4),
                   }}
-                  feature="Đồng bộ đa thiết bị & Lịch"
+                  feature="Multi-device sync & schedules"
                   starter="Google Calendar"
-                  pro={{ text: "SignalR Real-time", tone: "plain" }}
-                  team={{ text: "SignalR + Webhook Web", tone: "plain" }}
+                  pro={{ text: "Real-time SignalR", tone: "plain" }}
+                  team={{ text: "SignalR + Webhook", tone: "plain" }}
                 />
                 <CompareRow
                   index={5}
@@ -552,15 +566,15 @@ export function PricingPage() {
                     mounted: compareAnim.mounted,
                     delayStyle: compareAnim.getDelay(5),
                   }}
-                  feature="Hạn mức gọi AI"
-                  starter={formatLimit(byTier.free?.aiCallLimit ?? null, "lượt")}
+                  feature="AI call limit"
+                  starter={formatLimit(byTier.free?.aiCallLimit ?? null, "call")}
                   pro={{
-                    text: formatLimit(byTier.pro?.aiCallLimit ?? null, "lượt"),
+                    text: formatLimit(byTier.pro?.aiCallLimit ?? null, "call"),
                     tone: "primary",
                     emphasis: true,
                   }}
                   team={{
-                    text: formatLimit(byTier.team?.aiCallLimit ?? null, "lượt"),
+                    text: formatLimit(byTier.team?.aiCallLimit ?? null, "call"),
                     tone: "secondary",
                     emphasis: true,
                   }}
@@ -571,7 +585,7 @@ export function PricingPage() {
                     mounted: compareAnim.mounted,
                     delayStyle: compareAnim.getDelay(6),
                   }}
-                  feature="Dung lượng lưu trữ"
+                  feature="Storage capacity"
                   starter={formatLimit(byTier.free?.storageLimitMb ?? null, "MB")}
                   pro={{
                     text: formatLimit(byTier.pro?.storageLimitMb ?? null, "MB"),
@@ -589,15 +603,15 @@ export function PricingPage() {
                     mounted: compareAnim.mounted,
                     delayStyle: compareAnim.getDelay(7),
                   }}
-                  feature="Số dự án tối đa"
-                  starter={formatLimit(byTier.free?.projectLimit ?? null, "dự án")}
+                  feature="Maximum projects"
+                  starter={formatLimit(byTier.free?.projectLimit ?? null, "project")}
                   pro={{
-                    text: formatLimit(byTier.pro?.projectLimit ?? null, "dự án"),
+                    text: formatLimit(byTier.pro?.projectLimit ?? null, "project"),
                     tone: "primary",
                     emphasis: true,
                   }}
                   team={{
-                    text: formatLimit(byTier.team?.projectLimit ?? null, "dự án"),
+                    text: formatLimit(byTier.team?.projectLimit ?? null, "project"),
                     tone: "secondary",
                     emphasis: true,
                   }}
@@ -608,11 +622,11 @@ export function PricingPage() {
                     mounted: compareAnim.mounted,
                     delayStyle: compareAnim.getDelay(8),
                   }}
-                  feature="Cân bằng năng lượng & Cảnh báo quá tải"
+                  feature="Energy balancing & overload alerts"
                   starter={false}
-                  pro={{ text: "Cá nhân", tone: "plain" }}
+                  pro={{ text: "Individual", tone: "plain" }}
                   team={{
-                    text: "Cả nhóm (Workload Balancing)",
+                    text: "Whole team (Workload Balancing)",
                     tone: "secondary",
                     emphasis: true,
                   }}
@@ -623,7 +637,7 @@ export function PricingPage() {
                     mounted: compareAnim.mounted,
                     delayStyle: compareAnim.getDelay(9),
                   }}
-                  feature="Báo cáo tiến độ dự án & Timesheet"
+                  feature="Project progress reports & timesheets"
                   starter={false}
                   pro={{ text: "Markdown / PDF", tone: "plain" }}
                   team={{
@@ -638,90 +652,21 @@ export function PricingPage() {
                     mounted: compareAnim.mounted,
                     delayStyle: compareAnim.getDelay(10),
                   }}
-                  feature="Hỗ trợ kỹ thuật"
-                  starter={byTier.free?.limits.support ?? "Cộng đồng Discord"}
+                  feature="Technical support"
+                  starter={byTier.free?.limits.support ?? "Discord community"}
                   pro={{
-                    text: byTier.pro?.limits.support ?? "Ưu tiên < 2h",
+                    text: byTier.pro?.limits.support ?? "Priority < 2h",
                     tone: "primary",
                     emphasis: true,
                   }}
                   team={{
-                    text: byTier.team?.limits.support ?? "Kỹ sư AI hỗ trợ 1:1",
+                    text: byTier.team?.limits.support ?? "1:1 AI engineer support",
                     tone: "secondary",
                     emphasis: true,
                   }}
                 />
               </tbody>
             </table>
-          </div>
-
-          <div className="pricing-faq-grid">
-            <FaqItem
-              index={0}
-              animation={{
-                mounted: faqAnim.mounted,
-                delayStyle: faqAnim.getDelay(0),
-              }}
-              icon="help_outline"
-              q="Tôi có thể hủy đăng ký bất cứ lúc nào không?"
-              a="Hoàn toàn có thể. Bạn có thể hủy gia hạn chỉ với 1 cú click trong cài đặt tài khoản. Tài khoản vẫn duy trì toàn bộ quyền lợi cho đến hết kỳ hạn đã thanh toán."
-            />
-            <FaqItem
-              index={1}
-              animation={{
-                mounted: faqAnim.mounted,
-                delayStyle: faqAnim.getDelay(1),
-              }}
-              icon="support_agent"
-              q="Giao dịch không hợp lệ thì xử lý thế nào?"
-              a="Nếu tiền đã về nhưng đơn không hợp lệ (sai số tiền, hoặc về sau khi đã hủy), hệ thống sẽ không cấp gói. Vui lòng liên hệ hỗ trợ để chúng tôi xử lý thủ công giúp bạn."
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* 3 proof cards */}
-      <section
-        className={
-          "pricing-section pricing-proof" +
-          (pageAnim.mounted ? " pricing-proof--in" : "")
-        }
-      >
-        <div className="pricing-container">
-          <div className="pricing-proof-grid">
-            <ProofCard
-              index={0}
-              animation={{
-                mounted: proofAnim.mounted,
-                delayStyle: proofAnim.getDelay(0),
-              }}
-              icon="speed"
-              tone="primary"
-              title="Tiết kiệm 14h / tuần"
-              body="Theo dữ liệu đo đạc thực tế từ 1.200 kỹ sư và freelancer sử dụng cơ chế sắp xếp tác vụ tự động của METANOIA."
-            />
-            <ProofCard
-              index={1}
-              animation={{
-                mounted: proofAnim.mounted,
-                delayStyle: proofAnim.getDelay(1),
-              }}
-              icon="psychology_alt"
-              tone="secondary"
-              title="Tối ưu tải nhận thức"
-              body="Thuật toán K_bias tự động hoãn các công việc có độ phức tạp cao vào những khung giờ năng lượng sụt giảm."
-            />
-            <ProofCard
-              index={2}
-              animation={{
-                mounted: proofAnim.mounted,
-                delayStyle: proofAnim.getDelay(2),
-              }}
-              icon="sync_saved_locally"
-              tone="tertiary"
-              title="Bảo toàn ngữ cảnh"
-              body="Không bao giờ quên các quyết định quan trọng và yêu cầu khách hàng với bộ nhớ ngữ nghĩa vector hỗ trợ truy vấn tức thì."
-            />
           </div>
         </div>
       </section>
@@ -755,8 +700,7 @@ export function PricingPage() {
             </div>
           </div>
         </section>
-      )}
-    </div>
+      )}    </div>
   );
 }
 
@@ -789,18 +733,18 @@ function PlanCard(props: PlanCardProps) {
 
   /** Chu kỳ hiển thị. Gói dài hạn hiện "/ tháng" + tổng tiền ở dòng dưới. */
   const displayPeriod =
-    plan.price === 0 ? "— miễn phí" : `/ ${plan.months === 12 ? "tháng" : "kỳ"}`;
+    plan.price === 0 ? "— free" : `/ ${plan.months === 12 ? "month" : "cycle"}`;
 
   /** Giá quy đổi / tháng (chỉ hiện với gói > 1 tháng). */
   const perMonth = plan.months > 0 ? plan.price / plan.months : plan.price;
 
   /** Nhãn CTA theo trạng thái. */
   const ctaLabel = (() => {
-    if (state === "current") return "Đang dùng gói này";
-    if (state === "inactive") return "Gói tạm dừng bán";
-    if (props.buying) return "Đang tạo link…";
-    if (isFree) return "Bắt đầu miễn phí";
-    return "Mua gói này";
+    if (state === "current") return "Current plan";
+    if (state === "inactive") return "Sales paused";
+    if (props.buying) return "Creating checkout…";
+    if (isFree) return "Start for free";
+    return "Buy this plan";
   })();
 
   const ctaDisabled = state !== "available" || props.buying;
@@ -842,12 +786,12 @@ function PlanCard(props: PlanCardProps) {
       {state === "current" ? (
         <span className="pricing-plan-badge pricing-plan-badge--current">
           <span className="material-symbols-outlined">verified</span>
-          Đang dùng
+          Current plan
         </span>
       ) : isPro ? (
         <span className="pricing-plan-badge">
           <span className="material-symbols-outlined">auto_awesome</span>
-          Khuyên dùng
+          Most popular
         </span>
       ) : null}
 
@@ -908,7 +852,7 @@ function PlanCard(props: PlanCardProps) {
               <div className="pricing-price-savings">
                 <span className="material-symbols-outlined">verified</span>
                 <span>
-                  ≈ {formatVnd(Math.round(perMonth))} / tháng · Thanh toán{" "}
+                  ≈ {formatVnd(Math.round(perMonth))} / month · Billed{" "}
                   {durationLabel(plan.durationDays)}
                 </span>
               </div>
@@ -920,18 +864,18 @@ function PlanCard(props: PlanCardProps) {
         <ul className="pricing-plan-limits">
           <LimitRow
             icon="neurology"
-            label="Gọi AI"
-            value={formatLimit(plan.aiCallLimit, "lượt")}
+            label="AI calls"
+            value={formatLimit(plan.aiCallLimit, "call")}
           />
           <LimitRow
             icon="storage"
-            label="Lưu trữ"
+            label="Storage"
             value={formatLimit(plan.storageLimitMb, "MB")}
           />
           <LimitRow
             icon="space_dashboard"
-            label="Dự án"
-            value={formatLimit(plan.projectLimit, "dự án")}
+            label="Projects"
+            value={formatLimit(plan.projectLimit, "project")}
           />
         </ul>
 
@@ -1083,72 +1027,5 @@ function CellContent({ value }: { value: CompareValue }) {
     >
       {value.text}
     </span>
-  );
-}
-
-function FaqItem({
-  icon,
-  q,
-  a,
-  animation,
-}: {
-  icon: string;
-  q: string;
-  a: string;
-  index: number;
-  animation: {
-    mounted: boolean;
-    delayStyle: { animationDelay: string };
-  };
-}) {
-  return (
-    <div
-      className={"pricing-faq" + (animation.mounted ? " pricing-faq--in" : "")}
-      style={animation.delayStyle}
-    >
-      <h4 className="pricing-faq-q">
-        <span className="material-symbols-outlined pricing-faq-icon">
-          {icon}
-        </span>
-        {q}
-      </h4>
-      <p className="pricing-faq-a">{a}</p>
-    </div>
-  );
-}
-
-function ProofCard({
-  icon,
-  title,
-  body,
-  tone,
-  animation,
-}: {
-  icon: string;
-  title: string;
-  body: string;
-  tone: "primary" | "secondary" | "tertiary";
-  index: number;
-  animation: {
-    mounted: boolean;
-    delayStyle: { animationDelay: string };
-  };
-}) {
-  return (
-    <div
-      className={
-        "pricing-proof-card" +
-        (animation.mounted ? " pricing-proof-card--in" : "")
-      }
-      style={animation.delayStyle}
-    >
-      <div className="pricing-proof-head">
-        <div className={`pricing-proof-icon pricing-proof-icon--${tone}`}>
-          <span className="material-symbols-outlined">{icon}</span>
-        </div>
-        <span className="pricing-proof-title">{title}</span>
-      </div>
-      <p className="pricing-proof-body">{body}</p>
-    </div>
   );
 }

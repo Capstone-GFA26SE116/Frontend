@@ -27,6 +27,7 @@ import {
   stopGroupFocus,
   type GroupChangeRequestDto,
   type GroupFocusCurrentDto,
+  type GroupFocusStopReason,
   type GroupScheduleSlotDto,
   type GroupTaskTimeDto,
   type MyGroupSubTaskDto,
@@ -50,6 +51,7 @@ import {
   taskStatusLabel,
 } from "./group-logic";
 import { GroupErrorDialog } from "./GroupErrorDialog";
+import { GroupStopReasonDialog } from "./GroupStopReasonDialog";
 import {
   type GroupErrorDetails,
   type GroupErrorView,
@@ -106,6 +108,12 @@ export function MyGroupTasksPage() {
   const [stopping, setStopping] = useState(false);
   /** Mốc đồng hồ đơn điệu (như `useFocusSession` của nhánh cá nhân). */
   const anchorRef = useRef<{ elapsed: number; at: number } | null>(null);
+
+  /* ---------- Hộp thoại chọn lý do dừng ---------- */
+  /** Hộp thoại lý do dừng đang mở? */
+  const [stopDialogOpen, setStopDialogOpen] = useState(false);
+  /** Lỗi khi gửi Stop (400 từ BE) — hiển thị trong hộp thoại. */
+  const [stopError, setStopError] = useState<string | null>(null);
 
   /* ---------- Đề xuất đổi giờ ---------- */
   const [changeRequests, setChangeRequests] = useState<
@@ -340,14 +348,30 @@ export function MyGroupTasksPage() {
       showApiError(res, "start this focus session");
       return;
     }
+
+    /*
+     * Cập nhật status ngay — không chờ reload trang.
+     * BE đổi việc con `ToDo` → `InProgress` (việc cha tự suy lại).
+     */
+    const startedStatus = res.data?.taskStatus;
+    if (startedStatus) {
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.taskId === task.taskId
+            ? { ...t, status: String(startedStatus) }
+            : t,
+        ),
+      );
+    }
+
     await refreshCurrent();
     toast.success("Đã bắt đầu phiên làm việc");
   }
 
   /* ---------- Dừng phiên làm việc ---------- */
   async function handleStop(
-    stopReason: "Completed" | "Interrupted" | "Blocked" | "Other",
-    note?: string,
+    stopReason: GroupFocusStopReason,
+    note?: string | null,
   ) {
     if (!current) return;
     setStopping(true);
@@ -359,13 +383,33 @@ export function MyGroupTasksPage() {
     if (!res.ok) {
       if (res.status === 409) {
         // Phiên đã dừng trước đó → chỉ cần đồng bộ lại, không phải lỗi.
+        setStopDialogOpen(false);
         await refreshCurrent();
         toast.info("This session was already stopped");
         return;
       }
-      showApiError(res, "stop this focus session");
+      setStopError("Could not stop the session. Please try again.");
       return;
     }
+    setStopDialogOpen(false);
+    setStopError(null);
+
+    /*
+     * Cập nhật status ngay — không chờ reload trang.
+     * BE trả `taskStatus` sau khi Stop → patch thẳng vào state `tasks`.
+     */
+    const stoppedTaskId = current.groupTaskId;
+    const newStatus = res.data?.taskStatus;
+    if (newStatus) {
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.taskId === stoppedTaskId
+            ? { ...t, status: String(newStatus) }
+            : t,
+        ),
+      );
+    }
+
     const mins = res.data.sessionMinutes;
     toast.success(
       "Đã dừng phiên làm việc",
@@ -707,10 +751,29 @@ export function MyGroupTasksPage() {
 
           <div className="mgt-task-actions">
             {runningHere ? (
-              <span className="mgt-running">
-                <span className="mgt-running-dot" aria-hidden="true" />
-                {fmtElapsed(elapsed)}
-              </span>
+              <>
+                <span className="mgt-running">
+                  <span
+                    className="material-symbols-outlined mgt-running-icon"
+                    aria-hidden="true"
+                  >
+                    timer
+                  </span>
+                  {fmtElapsed(elapsed)}
+                </span>
+                <button
+                  type="button"
+                  className="mgt-btn mgt-btn--primary mgt-btn--sm"
+                  onClick={() => setStopDialogOpen(true)}
+                  disabled={stopping}
+                  title="Stop this focus session"
+                >
+                  <span className="material-symbols-outlined mgt-btn-icon">
+                    stop_circle
+                  </span>
+                  <span>Stop</span>
+                </button>
+              </>
             ) : (
               <>
                 {/*
@@ -933,45 +996,21 @@ export function MyGroupTasksPage() {
           </div>
         </header>
 
-        {/* ================= Phiên đang chạy ================= */}
-        {current && (
-          <section className="mgt-live">
-            <span className="mgt-live-icon" aria-hidden="true">
-              <span className="material-symbols-outlined">timer</span>
-            </span>
-            <div className="mgt-live-body">
-              <span className="mgt-live-title">
-                {current.taskTitle}
-                {current.subTaskTitle ? ` · ${current.subTaskTitle}` : ""}
-              </span>
-              <span className="mgt-live-group">{current.groupName}</span>
-            </div>
-            <span className="mgt-live-clock">{fmtElapsed(elapsed)}</span>
-            <div className="mgt-live-actions">
-              <button
-                type="button"
-                className="mgt-btn mgt-btn--primary mgt-btn--sm"
-                onClick={() => void handleStop("Completed")}
-                disabled={stopping}
-              >
-                <span className="material-symbols-outlined mgt-btn-icon">
-                  stop_circle
-                </span>
-                <span>Hoàn thành</span>
-              </button>
-              <button
-                type="button"
-                className="mgt-btn mgt-btn--ghost mgt-btn--sm"
-                onClick={() => void handleStop("Interrupted")}
-                disabled={stopping}
-              >
-                <span className="material-symbols-outlined mgt-btn-icon">
-                  pause
-                </span>
-                <span>Tạm dừng</span>
-              </button>
-            </div>
-          </section>
+        {/* ================= Hộp thoại chọn lý do dừng ================= */}
+        {stopDialogOpen && current && (
+          <GroupStopReasonDialog
+            taskTitle={current.taskTitle}
+            subTaskTitle={current.subTaskTitle}
+            groupName={current.groupName}
+            elapsedLabel={fmtElapsed(elapsed)}
+            busy={stopping}
+            serverError={stopError}
+            onConfirm={(reason, note) => void handleStop(reason, note)}
+            onClose={() => {
+              setStopDialogOpen(false);
+              setStopError(null);
+            }}
+          />
         )}
 
         {/* ================= Đề xuất đổi giờ ================= */}

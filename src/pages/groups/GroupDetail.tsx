@@ -17,6 +17,7 @@ import { GroupErrorDialog } from "./GroupErrorDialog";
 import { GroupInviteModal } from "./GroupInviteModal";
 import { GroupScheduleSlots } from "./GroupScheduleSlots";
 import { GroupScheduleBoard } from "./GroupScheduleBoard";
+import { GroupMyTasksPanel } from "./GroupMyTasksPanel";
 import {
   GroupAssigneeSuggestionsModal,
   type GroupAiMember,
@@ -142,6 +143,7 @@ import "./group-detail.css";
  */
 type TabKey =
   | "tasks"
+  | "myTasks"
   | "schedule"
   | "milestones"
   | "members"
@@ -433,8 +435,7 @@ export function GroupDetailPage() {
       listGroupTasks(groupId),
       listGroupActivity(groupId, { skip: 0, take: 50 }),
       getGroupProgress(groupId),
-    ]);
-    setLoading(false);
+    ]);    setLoading(false);
     if (!gRes.ok) {
       setError(gRes.error);
       return;
@@ -486,6 +487,46 @@ export function GroupDetailPage() {
       return true;
     });
   }, [tasks, statusFilter, assigneeFilter]);
+
+  /**
+   * Số việc **của tôi** trong nhóm — badge cho tab "My tasks".
+   *
+   * ⚠️ Suy ra từ `tasks` đã nạp sẵn (`GET /api/groups/{id}/tasks`) + thành
+   * viên có `assigneeId` trùng user → KHÔNG gọi thêm API (tránh thêm 1
+   * request không cần thiết, và tránh phụ thuộc endpoint `my-group-tasks`).
+   */
+  const myTaskCount = useMemo(() => {
+    const myId = user?.id ?? null;
+    if (!myId) return 0;
+    return tasks.filter((t) => t.assigneeId === myId).length;
+  }, [tasks, user?.id]);
+
+  /** Việc **của tôi** — danh sách đầy đủ cho tab "My tasks". */
+  const myTasks = useMemo(() => {
+    const myId = user?.id ?? null;
+    if (!myId) return [];
+    return tasks.filter((t) => t.assigneeId === myId);
+  }, [tasks, user?.id]);
+
+  /**
+   * Patch status của 1 việc ngay trong state `tasks`.
+   *
+   * Gọi khi tab "My tasks" dừng phiên → BE đổi status việc → cả tab
+   * "Tasks" và "My tasks" cập nhật tức thì, không cần reload trang.
+   */
+  const handleTaskStatusPatched = useCallback(
+    (taskId: string, status: string) => {
+      setTasks((prev) =>
+        prev.map((t) => (t.id === taskId ? { ...t, status } : t)),
+      );
+      // Việc con cũng có thể vừa đổi status → nạp lại cho khớp.
+      void listGroupSubTasks(taskId).then((sRes) => {
+        if (!sRes.ok) return;
+        setSubTasks((prev) => ({ ...prev, [taskId]: sRes.data ?? [] }));
+      });
+    },
+    [],
+  );
 
   /* ---------- Tên thành viên: id → fullName ---------- */
   /** Dùng cho lịch nhóm (hiện "ai đang làm việc nào"). */
@@ -1782,6 +1823,12 @@ export function GroupDetailPage() {
             [
               { key: "tasks", label: "Tasks", icon: "checklist", count: tasks.length },
               {
+                key: "myTasks",
+                label: "My tasks",
+                icon: "assignment",
+                count: myTaskCount,
+              },
+              {
                 key: "schedule",
                 label: "Schedule",
                 icon: "calendar_month",
@@ -1832,6 +1879,28 @@ export function GroupDetailPage() {
             </button>
           ))}
         </nav>
+
+        {/* ================= TAB: MY TASKS ================= */}
+        {/*
+          Việc **của tôi** trong nhóm này — có nút "Start" (bấm giờ),
+          chọn slot, báo cáo thời gian. Giống trang `/my-group-tasks` nhưng
+          lọc theo nhóm đang xem.
+        */}
+        {tab === "myTasks" && (
+          <section className="gdt-panel">
+            <div className="gdt-section-head">
+              <div className="gdt-section-head-text">
+                <span className="gdt-section-eyebrow">Assigned to me</span>
+                <h2 className="gdt-section-title">My tasks</h2>
+              </div>
+            </div>
+            <GroupMyTasksPanel
+              groupId={groupId}
+              tasks={myTasks}
+              onTaskStatusChange={handleTaskStatusPatched}
+            />
+          </section>
+        )}
 
         {/* ================= TAB: TASKS ================= */}
         {tab === "tasks" && (

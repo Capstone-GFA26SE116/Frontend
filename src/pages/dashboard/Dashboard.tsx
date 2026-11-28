@@ -8,13 +8,13 @@ import {
   getProjectProgress,
   listCalendar,
   listProjects,
-  getProductiveHours,
+  getPendingScheduleProposal,
   getTodayBriefing,
   type BriefingResponse,
   type CalendarItemDto,
   type GoogleCalendarSyncDirection,
   type GoogleCalendarSyncResultDto,
-  type ProductiveHoursDto,
+  type PendingProposalDto,
 } from "../../lib/api-client";
 import "./dashboard.css";
 
@@ -27,19 +27,8 @@ const TICK_MS = 30 * 1000;
 const RADAR_LIMIT = 5;
 
 /* ---------- Hằng số cho metric card (dữ liệu thật từ API) ---------- */
-/**
- * Ngưỡng coi 1 giờ là "khung giờ hiệu quả" (0–1 → phần trăm).
- * Chỉ dùng để tô màu thanh nhiệt, KHÔNG phải ngưỡng AI dùng để xếp lịch.
- */
-const HOUR_SCALE = 100;
-/**
- * Ngưỡng TƯƠNG ĐỐI để gom khung giờ vàng: giờ chỉ được tính vào khung nếu
- * đạt ≥ 70% điểm đỉnh. Dùng mốc tương đối để không gom nhầm giờ "vừa có
- * dữ liệu" (mọi giờ > 0) thành 1 khum hết ngày.
- */
-const PEAK_RATIO = 70;
-/** Số giờ nhóm liền kề gộp lại thành 1 "khung giờ vàng" (vd 9–12, 14–18). */
-const PEAK_BLOCK_MIN_HOURS = 1;
+/** Số slot đề xuất tối đa hiển thị trong metric card "Pending schedule". */
+const PENDING_SLOT_PREVIEW = 2;
 
 /** "42m" / "1h 05" — định dạng ngắn cho phần thời gian còn lại. */
 function formatRemain(ms: number): string {
@@ -50,95 +39,22 @@ function formatRemain(ms: number): string {
   return h > 0 ? `${h}h ${String(m).padStart(2, "0")}` : `${m}m`;
 }
 
-/** "09:00" / "9:00" — giờ từ số (0–23) hoặc chuỗi ISO. */
-function fmtHourLabel(h: number): string {
-  return `${String(h).padStart(2, "0")}:00`;
-}
-
 /**
- * "09:00" / "09:00:00" / "9" → số giờ (0–23). Trả `null` nếu không parse được.
- * Dùng cho `top_hours[]` của API (BE trả chuỗi giờ dạng text).
- */
-function parseHourFromClock(value: string | null | undefined): number | null {
-  if (!value) return null;
-  const first = value.trim().split(":")[0];
-  const n = Number(first);
-  if (!Number.isFinite(n) || n < 0 || n > 23) return null;
-  return Math.floor(n);
-}
-
-/**
- * Chuẩn hoá 1 điểm giờ (0–1) về phần trăm (0–100).
- * BE có thể trả 0–1 hoặc 0–100 → đọc cả hai để không phụ thuộc shape.
- */
-function toPercent(value: number | null | undefined): number | null {
-  if (value === null || value === undefined || !Number.isFinite(value)) {
-    return null;
-  }
-  const pct = value <= 1 ? value * HOUR_SCALE : value;
-  return Math.max(0, Math.min(100, Math.round(pct)));
-}
-
-/**
- * Từ mảng `hours[24]` → khung giờ hiệu quả nhất (giờ có điểm cao nhất).
- * Trả `null` khi BE chưa có dữ liệu (user chưa onboard, hoặc chưa học được).
- */
-function findPeakHour(hours: number[] | undefined): number | null {
-  if (!hours || hours.length === 0) return null;
-  let best: number | null = null;
-  for (let i = 0; i < hours.length; i++) {
-    const v = toPercent(hours[i]);
-    if (v === null) continue;
-    if (best === null || v > (toPercent(hours[best]) ?? -1)) best = i;
-  }
-  return best;
-}
-
-/**
- * Gom các giờ hiệu quả thành các khung liên tục → "09:00 – 12:00".
+ * "09:00 – 12:00" — nhãn 1 khoảng giờ từ 2 mốc ISO.
  *
- * Ngưỡng là **tương đối**: chỉ tính giờ đạt ≥ `PEAK_RATIO` (mặc định 70%)
- * của điểm đỉnh. Nếu dùng mốc tuyệt đối (> 0) thì mọi giờ có dữ liệu
- * đều bị gộp thành 1 khum hết ngày.
- *
- * Trả về tối đa `maxBlocks` khung, mỗi khung là `{ start, end }` (end = giờ kế tiếp).
+ * Dùng `Intl.DateTimeFormat` để giờ hiển thị theo múi giờ của máy user
+ * (BE trả ISO 8601 có offset).
  */
-function findPeakBlocks(
-  hours: number[] | undefined,
-  maxBlocks = 2,
-): { start: number; end: number }[] {
-  if (!hours || hours.length === 0) return [];
-  const peak = findPeakHour(hours);
-  if (peak === null) return [];
-  const peakPct = toPercent(hours[peak]) ?? 0;
-  if (peakPct <= 0) return [];
-  const threshold = (peakPct * PEAK_RATIO) / HOUR_SCALE;
-
-  const good: boolean[] = hours.map((v) => {
-    const pct = toPercent(v);
-    return pct !== null && pct > 0 && pct / HOUR_SCALE >= threshold;
+function fmtIsoRange(startIso: string, endIso: string): string {
+  const s = new Date(startIso);
+  const e = new Date(endIso);
+  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return "—";
+  const timeFmt = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
   });
-
-  const blocks: { start: number; end: number }[] = [];
-  let i = 0;
-  while (i < good.length) {
-    if (!good[i]) {
-      i++;
-      continue;
-    }
-    const start = i;
-    while (i < good.length && good[i]) i++;
-    const end = i; // exclusive
-    if (end - start >= PEAK_BLOCK_MIN_HOURS) blocks.push({ start, end });
-  }
-  // Ưu tiên khung dài nhất (đây là khung "vàng" nhất).
-  blocks.sort((a, b) => b.end - b.start - (a.end - a.start));
-  return blocks.slice(0, maxBlocks);
-}
-
-/** "09:00 – 12:00" — nhãn 1 khung giờ hiệu quả. */
-function fmtPeakBlock(b: { start: number; end: number }): string {
-  return `${fmtHourLabel(b.start)} – ${fmtHourLabel(b.end)}`;
+  return `${timeFmt.format(s)} – ${timeFmt.format(e)}`;
 }
 
 /* ---------- Types ---------- */
@@ -507,8 +423,9 @@ export function DashboardPage() {
   const [radar, setRadar] = useState<RadarItem[]>([]);
   const [radarLoading, setRadarLoading] = useState(true);
   /* ---------- Dữ liệu metric card (API thật) ---------- */
-  // GET /profile/productive-hours → điểm giờ hiệu quả + khung giờ vàng.
-  const [productive, setProductive] = useState<ProductiveHoursDto | null>(null);
+  // GET /api/schedule/proposals/pending → đề xuất lịch AI đang chờ duyệt.
+  const [pendingProposal, setPendingProposal] =
+    useState<PendingProposalDto | null>(null);
   // GET /briefing/today → task ưu tiên + task thiếu thời gian (at risk).
   const [briefing, setBriefing] = useState<BriefingResponse | null>(null);
   const [metricsLoading, setMetricsLoading] = useState(true);
@@ -712,23 +629,23 @@ export function DashboardPage() {
 
   /* ---------- Load dữ liệu metric card từ API ----------
    * 2 nguồn, gọi song song:
-   *   GET /profile/productive-hours → điểm giờ hiệu quả (khung giờ vàng)
-   *   GET /briefing/today           → task ưu tiên + task thiếu thời gian
+   *   GET /api/schedule/proposals/pending → đề xuất lịch AI đang chờ duyệt
+   *   GET /briefing/today                 → task ưu tiên + task thiếu thời gian
    *
-   * Cả 2 đều là endpoint READ-ONLY của AI service, **không** tốn lượt AI.
+   * Cả 2 đều là endpoint READ-ONLY, **không** tốn lượt AI.
    * Lỗi 1 nguồn không chặn nguồn kia → mỗi metric tự hiển thị "—".
    */
   useEffect(() => {
     let cancelled = false;
 
     void (async () => {
-      const [hoursRes, briefRes] = await Promise.all([
-        getProductiveHours(),
+      const [proposalRes, briefRes] = await Promise.all([
+        getPendingScheduleProposal(),
         getTodayBriefing("en"),
       ]);
       if (cancelled) return;
 
-      if (hoursRes.ok) setProductive(hoursRes.data);
+      if (proposalRes.ok) setPendingProposal(proposalRes.data);
       if (briefRes.ok) setBriefing(briefRes.data);
       setMetricsLoading(false);
     })();
@@ -934,38 +851,37 @@ export function DashboardPage() {
 
   /* ---------- Số liệu metric card (100% từ API, không bịa) ---------- */
 
-  /* Metric 1: Giờ hiệu quả — GET /profile/productive-hours */
-  // Giờ có điểm cao nhất (null = BE chưa có dữ liệu).
-  const peakHour = useMemo(
-    () => findPeakHour(productive?.hours),
-    [productive?.hours],
+  /* Metric 1: Đề xuất lịch đang chờ duyệt — GET /api/schedule/proposals/pending */
+  // Danh sách slot AI đề xuất (có thể rỗng nếu BE không trả kèm).
+  const pendingSlots = useMemo(
+    () => pendingProposal?.slots ?? [],
+    [pendingProposal],
   );
-  // Điểm của giờ đỉnh (phần trăm 0–100), null = chưa có dữ liệu.
-  const peakScore = useMemo(() => {
-    if (peakHour === null) return null;
-    return toPercent(productive?.hours?.[peakHour]);
-  }, [productive?.hours, peakHour]);
-  // Khung giờ vàng. Ưu tiên `top_hours` do BE trả (đã tính sẵn từ hồ sơ
-  // năng suất); fallback tự gom từ `hours[]` nếu BE chưa có.
-  const peakBlocks = useMemo(() => {
-    const top = productive?.top_hours ?? [];
-    const fromApi = top
-      .map((r) => {
-        const start = parseHourFromClock(r.start);
-        const end = parseHourFromClock(r.end);
-        if (start === null || end === null || end <= start) return null;
-        return { start, end };
-      })
-      .filter((b): b is { start: number; end: number } => b !== null);
-    if (fromApi.length > 0) return fromApi;
-    return findPeakBlocks(productive?.hours);
-  }, [productive]);
-  // Nhãn khung giờ vàng đầu tiên, fallback sang giờ đỉnh đơn lẻ.
-  const peakLabel = peakBlocks.length
-    ? fmtPeakBlock(peakBlocks[0])
-    : peakHour !== null
-      ? fmtHourLabel(peakHour)
-      : "—";
+  // Tổng phút AI đề xuất xếp lịch.
+  const pendingMinutes = useMemo(
+    () =>
+      pendingSlots.reduce(
+        (sum, s) => sum + (s.proposedMinutes ?? 0),
+        0,
+      ),
+    [pendingSlots],
+  );
+  // Phút còn thiếu (BE tính sẵn) — > 0 nghĩa là đề xuất chưa đủ chỗ.
+  const pendingMissingMinutes = pendingProposal?.missingMinutes ?? 0;
+  /*
+   * Có đề xuất nào đang chờ duyệt không.
+   *
+   * Có 2 nguồn tín hiệu:
+   *   1. `GET /api/schedule/proposals/pending` — chi tiết đầy đủ (slots, phút).
+   *   2. `GET /briefing/today` → `has_pending_proposal` — chỉ là cờ boolean.
+   *
+   * Dùng cờ của briefing làm fallback để card không báo "All clear" sai lệch
+   * khi BE có đề xuất nhưng endpoint chi tiết không trả kèm slot.
+   */
+  const hasPendingProposal =
+    pendingProposal !== null || briefing?.has_pending_proposal === true;
+  // Đề xuất còn xếp lịch được không (BE có thể trả false nếu hết chỗ).
+  const pendingFeasible = pendingProposal?.isFeasible ?? true;
 
   /* Metric 2: Task ưu tiên — GET /briefing/today */
   const topTasks = useMemo(() => briefing?.top_tasks ?? [], [briefing]);
@@ -1134,7 +1050,7 @@ export function DashboardPage() {
         <section
           className={"dash-metrics" + (pageMounted ? " dash-metrics--in" : "")}
         >
-          {/* Metric 1: Giờ hiệu quả — GET /profile/productive-hours */}
+          {/* Metric 1: Đề xuất lịch chờ duyệt — GET /api/schedule/proposals/pending */}
           <article
             className={
               "dash-metric" +
@@ -1143,58 +1059,81 @@ export function DashboardPage() {
             style={metricsAnim.getDelay(0)}
           >
             <div className="dash-metric-head">
-              <span className="dash-metric-label">Peak focus hours</span>
-              <span
-                className={
-                  "dash-chip " +
-                  (productive?.onboarded
-                    ? "dash-chip--success"
-                    : "dash-chip--muted")
-                }
-              >
-                {productive?.onboarded ? "Set" : "Not set"}
-              </span>
+              <span className="dash-metric-label">Pending schedule</span>
+              {/*
+               * Chip kiểu nút: bấm để sang màn hình duyệt lịch.
+               * Khi không có đề xuất thì chip chỉ là nhãn trạng thái.
+               */}
+              {hasPendingProposal ? (
+                <Link
+                  to="/schedule"
+                  className={
+                    "dash-chip dash-chip--link " +
+                    (pendingFeasible ? "dash-chip--primary" : "dash-chip--warning")
+                  }
+                  title="Review and approve the proposed schedule"
+                >
+                  {pendingFeasible ? "Review" : "Needs time"}
+                  <span className="material-symbols-outlined dash-chip__icon">
+                    arrow_forward
+                  </span>
+                </Link>
+              ) : (
+                <span className="dash-chip dash-chip--success">All clear</span>
+              )}
             </div>
             <div className="dash-metric-value">
               <span className="dash-metric-number">
-                {peakScore === null ? "—" : `${peakScore}%`}
+                {metricsLoading ? "…" : pendingSlots.length}
               </span>
-              <span className="dash-metric-trend">
-                <span className="material-symbols-outlined">schedule</span>
-                Best hour
-              </span>
-            </div>
-            <div className="dash-metric-foot">
-              <span>Deep work window</span>
-              <span className="dash-metric-foot-emph">{peakLabel}</span>
-            </div>
-            {/* Thanh nhiệt 24 giờ — dựng từ `hours[]` thật của API. */}
-            <div
-              className="dash-hours"
-              role="img"
-              aria-label={
-                peakScore === null
-                  ? "No productive hours data yet"
-                  : `Peak focus ${peakScore}% at ${peakLabel}`
-              }
-            >
-              {(productive?.hours ?? Array.from({ length: 24 }, () => 0)).map(
-                (v, i) => {
-                  const pct = toPercent(v) ?? 0;
-                  return (
-                    <span
-                      key={i}
-                      className={
-                        "dash-hour" +
-                        (i === peakHour ? " dash-hour--peak" : "")
-                      }
-                      style={{ opacity: pct === 0 ? 0.12 : 0.25 + pct / 133 }}
-                      title={`${fmtHourLabel(i)} — ${pct}%`}
-                    />
-                  );
-                },
+              {pendingSlots.length > 0 && (
+                <span className="dash-metric-trend">
+                  <span className="material-symbols-outlined">schedule</span>
+                  {fmtMinutes(pendingMinutes)} proposed
+                </span>
               )}
             </div>
+
+            {/* Foot — cùng cấu trúc với 3 card kia để 4 card cao bằng nhau. */}
+            <div className="dash-metric-foot dash-metric-foot--pinned">
+              <span>
+                {pendingSlots.length > 0 ? "First slot" : "Nothing to approve"}
+              </span>
+              <span className="dash-metric-foot-emph">
+                {pendingSlots.length > PENDING_SLOT_PREVIEW
+                  ? `+${pendingSlots.length - PENDING_SLOT_PREVIEW} more`
+                  : pendingMissingMinutes > 0
+                    ? `${fmtMinutes(pendingMissingMinutes)} short`
+                    : "—"}
+              </span>
+            </div>
+
+            {/* Danh sách khung giờ AI đề xuất (tối đa 2 dòng). */}
+            {pendingSlots.length > 0 ? (
+              <ul
+                className="dash-prop-list"
+                aria-label={`${pendingSlots.length} proposed time slots waiting for approval`}
+              >
+                {pendingSlots.slice(0, PENDING_SLOT_PREVIEW).map((s) => (
+                  <li key={s.id} className="dash-prop-item">
+                    <span className="dash-prop-time">
+                      {fmtIsoRange(s.startTime, s.endTime)}
+                    </span>
+                    <span className="dash-prop-dur">
+                      {fmtMinutes(s.proposedMinutes)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div
+                className="dash-progress"
+                role="img"
+                aria-label="No schedule proposal is waiting for approval"
+              >
+                <div className="dash-progress-fill" style={{ width: "100%" }} />
+              </div>
+            )}
           </article>
 
           {/* Metric 2: Task ưu tiên — GET /briefing/today (top_tasks) */}

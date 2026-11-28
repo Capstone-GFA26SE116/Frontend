@@ -58,6 +58,10 @@ function Companion({ projectId, conversationId }: { projectId: string; conversat
   const didLoadPending = useRef(false);
   const scopeChosen = useRef(false);
   const notes = chat.messages.findLast((message) => message.notes)?.notes;
+  const savedDraft = chat.savedDraft && chat.messages.some((message) => message.id === chat.savedDraft?.messageId)
+    ? chat.savedDraft : null;
+  const savedTasks = savedDraft?.result.milestones.flatMap((milestone) => milestone.tasks) ?? [];
+  const recentTaskIds = new Set(savedTasks.map((task) => task.id));
   const splittable = chat.tasks.filter((task) => canSchedule(task) &&
     !chat.subtasksByTaskId.get(task.id)?.length);
   const sample = splittable.find((task) => task.estimatedMinutes > 120) ?? splittable[0];
@@ -249,12 +253,6 @@ function Companion({ projectId, conversationId }: { projectId: string; conversat
         Tìm giờ cho việc con vừa lưu
       </button>
     </div>}
-    {!!chat.newTaskIds.length && <div className="pc-actions">
-      <button type="button" className="aic-btn aic-btn--secondary" disabled={busy}
-        onClick={() => void suggest({ ids: chat.newTaskIds, title: `${chat.newTaskIds.length} việc vừa lưu` })}>
-        Tìm giờ cho {chat.newTaskIds.length} việc vừa lưu
-      </button>
-    </div>}
     {schedulePanel}
   </>;
 
@@ -271,11 +269,20 @@ function Companion({ projectId, conversationId }: { projectId: string; conversat
           chat.setFiles([]);
           void chat.openConversationById(item.conversation_id);
         }}
-        onImportFile={() => navigate("/projects/import")}
-        onCreateProject={() => navigate("/projects/new")}
+        onCreateConversation={() => {
+          void chat.createConversation().then((created) => {
+            if (!created) return;
+            setPane(null);
+            setTaskChat(null);
+            setSuggestAfterSplit(false);
+          });
+        }}
+        creatingConversation={!chat.project || chat.waiting || chat.applying ||
+          ["archived", "completed"].includes(chat.project.status.toLowerCase())}
+        activeEmptyConversation={!!chat.conversationId && chat.messages.length === 0}
         refreshKey={chat.refreshKey}
         projectIdFilter={projectId}
-        hideCreateButton
+        hideFooter
         emptyMessage="Dự án này chưa có lịch sử chat."
       />
       <ChatFrame
@@ -303,6 +310,23 @@ function Companion({ projectId, conversationId }: { projectId: string; conversat
           sampleTask: sample?.title,
           onSampleTask: () => { if (sample) openTask(sample); },
           latestDraftId: chat.latestDraft?.message_id,
+          savedDraft: savedDraft ? {
+            messageId: savedDraft.messageId,
+            receipt: <section className="pc-panel" aria-label="Kết quả lưu bản nháp">
+              <strong>{savedTasks.length ? `Đã lưu ${savedTasks.length} việc vào dự án` : "Không có việc mới để lưu"}</strong>
+              {!!savedTasks.length && <ul className="pc-slot-list">
+                {savedTasks.map((task) => <li key={task.id}>{task.title}</li>)}
+              </ul>}
+              {!!savedDraft.result.skipped.length && <p>Đã bỏ qua {savedDraft.result.skipped.length} việc trùng.</p>}
+              {!chat.treeLoading && <p>Dự án hiện có {chat.tasks.length} việc.</p>}
+              {!!savedTasks.length && <div className="pc-actions">
+                <button type="button" className="aic-btn aic-btn--secondary" disabled={busy}
+                  onClick={() => void suggest({ ids: savedTasks.map((task) => task.id), title: `${savedTasks.length} việc vừa lưu` })}>
+                  Tìm giờ cho {savedTasks.length} việc vừa lưu
+                </button>
+              </div>}
+            </section>,
+          } : undefined,
           documentCount: chat.documentIds.length,
           panel: tools,
           navigation: <div className="pc-mobile-nav pc-actions">
@@ -330,6 +354,7 @@ function Companion({ projectId, conversationId }: { projectId: string; conversat
         project={chat.project ? { id: chat.project.id, name: chat.project.name, clientName: chat.project.client?.name ?? null, deadline: chat.project.deadline ?? null } : null}
         milestones={chat.milestones}
         tasks={chat.tasks}
+        recentTaskIds={recentTaskIds}
         subtasksByTaskId={chat.subtasksByTaskId}
         draftMilestoneTitles={chat.draftMilestoneTitles}
         loading={chat.treeLoading}

@@ -41,7 +41,9 @@ import {
   updateMilestone,
   updateSubtask,
   updateTask,
+  type CreateTaskRequest,
   type AppliedScheduleDto,
+  type AppliedProjectBreakdownDto,
   type EditedProjectMilestone,
   type MilestoneDto,
   type ProjectChatDto,
@@ -80,15 +82,15 @@ export interface ProjectChatHandlers {
   onCreateFixedTask: (reminder: string) => void;
   onRetry: () => void;
   onRetrySchedule: () => void;
-  onAddMilestone: () => void;
-  onAddTask: (milestoneId: string, title: string) => void;
-  onAddSubtask: (taskId: string, title: string) => void;
-  onRenameMilestone: (milestoneId: string, name: string) => void;
-  onRenameTask: (taskId: string, title: string) => void;
-  onRenameSubtask: (subtaskId: string, title: string) => void;
-  onDeleteMilestone: (milestoneId: string) => void;
-  onDeleteTask: (taskId: string) => void;
-  onDeleteSubtask: (subtaskId: string) => void;
+  onAddMilestone: (name: string) => Promise<boolean>;
+  onAddTask: (milestoneId: string, task: CreateTaskRequest) => Promise<boolean>;
+  onAddSubtask: (taskId: string, title: string, minutes: number) => Promise<boolean>;
+  onRenameMilestone: (milestoneId: string, name: string) => Promise<boolean>;
+  onRenameTask: (taskId: string, title: string) => Promise<boolean>;
+  onRenameSubtask: (subtaskId: string, title: string) => Promise<boolean>;
+  onDeleteMilestone: (milestoneId: string) => Promise<boolean>;
+  onDeleteTask: (taskId: string) => Promise<boolean>;
+  onDeleteSubtask: (subtaskId: string) => Promise<boolean>;
   onToggleTaskDone: (task: TaskDto) => void;
 }
 
@@ -101,14 +103,15 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
    * =========================================================== */
   /** Conversation đang mở. */
   const [conversationId, setConversationId] = useState<string | null>(null);
-  /** Dự án đang mở (rút từ conversation). */
-  const [projectId, setProjectId] = useState<string | null>(null);
+  /** Load the project tree even when its AI conversation is unavailable. */
+  const [projectId, setProjectId] = useState<string | null>(initialProjectId);
   const [messages, setMessages] = useState<ProjectChatMessageDto[]>([]);
   const [draftText, setDraftText] = useState("");
   const [files, setFiles] = useState<PendingFile[]>([]);
   const [documentIds, setDocumentIds] = useState<string[]>([]);
   const lastSendMode = useRef<"discuss" | "plan">("discuss");
   const [waiting, setWaiting] = useState(false);
+  const creatingConversation = useRef(false);
   const [applying, setApplying] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   /**
@@ -132,6 +135,10 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
    * từng task).
    */
   const [newTaskIds, setNewTaskIds] = useState<string[]>([]);
+  const [savedDraft, setSavedDraft] = useState<{
+    messageId: string;
+    result: AppliedProjectBreakdownDto;
+  } | null>(null);
   /** Đang gọi `POST /schedule/propose` (nút "Xếp lịch" sau khi lỗi xếp lịch). */
   const [scheduleBusy, setScheduleBusy] = useState(false);
   /** Bản nháp hiện tại (dùng cho cột phải + trạng thái màn hình). */
@@ -188,7 +195,7 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
       const res = await getProjectChat(cid);
       setWaiting(false);
       if (!res.ok) {
-        toast.error(res.error ?? "Không tải được cuộc chat.");
+        setAiError(res.error ?? "Không tải được cuộc chat.");
         return;
       }
       const data: ProjectChatDto = res.data;
@@ -198,8 +205,17 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
       }
       setConversationId(data.conversation_id);
       setProjectId(data.project_id);
-      setMessages(data.messages ?? []);
-      setLatestDraft(data.latest_draft);
+      const latest = data.latest_draft;
+      const savedLatest = data.applied || latest?.applied ||
+        data.messages?.some((message) => message.id === latest?.message_id && message.applied);
+      setMessages((data.messages ?? []).map((message) => {
+        const isSaved = message.applied || message.draft?.applied ||
+          (savedLatest && message.id === latest?.message_id);
+        return isSaved && message.draft
+          ? { ...message, applied: true, draft: { ...message.draft, applied: true } }
+          : message;
+      }));
+      setLatestDraft(latest && savedLatest ? { ...latest, applied: true } : latest);
       setApplied(data.applied === true);
       setScheduleResult(null);
       setScheduleError(null);
@@ -220,7 +236,7 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
       const listRes = await listProjectConversations(pid);
       if (!listRes.ok) {
         setWaiting(false);
-        toast.error(listRes.error ?? "Không tải được danh sách chat.");
+        setAiError(listRes.error ?? "Không tải được danh sách chat.");
         return;
       }
       const first = listRes.data?.[0];
@@ -233,13 +249,44 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
       const createRes = await startProjectConversation(pid);
       setWaiting(false);
       if (!createRes.ok) {
-        toast.error(createRes.error ?? "Không mở được cuộc chat.");
+        setAiError(createRes.error ?? "Không mở được cuộc chat.");
         return;
       }
       await openConversationById(createRes.data.conversation_id);
     },
-    [openConversationById, toast],
+    [openConversationById],
   );
+
+  async function createConversation() {
+    if (!projectId || waiting || applying || creatingConversation.current) return false;
+    creatingConversation.current = true;
+    setWaiting(true);
+    try {
+      const result = await startProjectConversation(projectId);
+      if (!result.ok) {
+        toast.error(result.error ?? "Không tạo được cuộc trò chuyện.");
+        return false;
+      }
+      setConversationId(result.data.conversation_id);
+      setMessages([]);
+      setDraftText("");
+      setFiles([]);
+      setDocumentIds([]);
+      setLatestDraft(null);
+      setApplied(false);
+      setSavedDraft(null);
+      setNewTaskIds([]);
+      setAiError(null);
+      setAiErrorKind(null);
+      setScheduleResult(null);
+      setScheduleError(null);
+      setRefreshKey((key) => key + 1);
+      return true;
+    } finally {
+      creatingConversation.current = false;
+      setWaiting(false);
+    }
+  }
 
   /** Load cây cột mốc › việc › việc con của dự án. */
   const loadTree = useCallback(async (pid: string) => {
@@ -390,6 +437,11 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
   function handleRetry() {
     setAiError(null);
     setAiErrorKind(null);
+    if (!conversationId && initialProjectId) {
+      if (initialConversationId) void openConversationById(initialConversationId);
+      else void openProject(initialProjectId);
+      return;
+    }
     void sendTurn(lastSendMode.current);
   }
 
@@ -432,6 +484,16 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
   /* ===========================================================
    * Áp dụng
    * =========================================================== */
+  function markDraftSaved(messageId: string) {
+    setApplied(true);
+    setLatestDraft((draft) => draft?.message_id === messageId ? { ...draft, applied: true } : draft);
+    setMessages((items) => items.map((message) =>
+      message.id === messageId && message.draft
+        ? { ...message, applied: true, draft: { ...message.draft, applied: true } }
+        : message,
+    ));
+  }
+
   async function handleApplyAndSchedule(messageId: string) {
     if (!conversationId) return;
     setApplying(true);
@@ -453,8 +515,7 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
       return;
     }
 
-    setApplied(true);
-    setLatestDraft((d) => (d ? { ...d, applied: true } : d));
+    markDraftSaved(messageId);
 
     // Gom ID các việc vừa tạo → dùng cho nút "Xếp lịch" khi xếp lịch lỗi.
     const createdIds = (res.data.applied?.milestones ?? []).flatMap((m) =>
@@ -531,8 +592,8 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
       return;
     }
 
-    setApplied(true);
-    setLatestDraft((d) => (d ? { ...d, applied: true } : d));
+    markDraftSaved(messageId);
+    setSavedDraft({ messageId, result: res.data });
 
     // Gom ID việc mới (để nút "Xếp lịch" dùng được sau nếu cần).
     setNewTaskIds(
@@ -558,75 +619,85 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
   /* ===========================================================
    * Cột phải — thêm / sửa / xoá
    * =========================================================== */
-  async function handleAddMilestone() {
-    if (!projectId) return;
+  async function handleAddMilestone(name: string) {
+    if (!projectId) return false;
     const orderIndex =
       milestones.reduce((m, x) => Math.max(m, x.orderIndex ?? 0), 0) + 1;
     const res = await createMilestone(projectId, {
-      name: "Cột mốc mới",
+      name,
       orderIndex,
     });
     if (!res.ok) {
       toast.error(res.error ?? "Không tạo được cột mốc.");
-      return;
+      return false;
     }
     setMilestones((prev) => [...prev, res.data]);
     toast.success("Đã thêm cột mốc.");
+    return true;
   }
 
-  async function handleAddTask(milestoneId: string, title: string) {
-    if (!projectId) return;
+  async function handleAddTask(milestoneId: string, task: CreateTaskRequest) {
+    if (!projectId) return false;
     const res = await createTask(projectId, {
-      title: title.trim() || "Việc mới",
+      ...task,
       milestoneId,
     });
     if (!res.ok) {
       toast.error(res.error ?? "Không tạo được việc.");
-      return;
+      return false;
     }
     setTasks((prev) => [...prev, res.data]);
+    return true;
   }
 
-  async function handleAddSubtask(taskId: string, title: string) {
+  async function handleAddSubtask(taskId: string, title: string, estimatedMinutes: number) {
+    const current = await listSubtasks(taskId);
+    if (!current.ok) {
+      toast.error(current.error ?? "Không tải được danh sách việc con.");
+      return false;
+    }
+    const orderIndex = current.data.reduce((max, subtask) => Math.max(max, subtask.orderIndex), 0) + 1;
     const res = await createSubtask(taskId, {
-      title: title.trim() || "Việc con mới",
+      title,
+      estimatedMinutes,
+      orderIndex,
     });
     if (!res.ok) {
       toast.error(res.error ?? "Không tạo được việc con.");
-      return;
+      return false;
     }
     setSubtasksByTaskId((prev) => {
       const next = new Map(prev);
-      next.set(taskId, [...(next.get(taskId) ?? []), res.data]);
+      next.set(taskId, [...current.data, res.data]);
       return next;
     });
+    return true;
   }
 
   async function handleRenameMilestone(milestoneId: string, name: string) {
     const ms = milestones.find((m) => m.id === milestoneId);
-    if (!ms) return;
+    if (!ms) return false;
     // ⚠️ PUT /api/milestones/{id} thay thế toàn bộ entity → gửi đủ mọi trường.
     const res = await updateMilestone(milestoneId, {
       name,
       orderIndex: ms.orderIndex,
       dueDate: ms.dueDate,
-      startDate: ms.startDate,
-      endDate: ms.endDate,
       status: ms.status,
       revisionCount: ms.revisionCount,
     });
     if (!res.ok) {
       toast.error(res.error ?? "Không sửa được cột mốc.");
-      return;
+      return false;
     }
     setMilestones((prev) =>
       prev.map((m) => (m.id === milestoneId ? res.data : m)),
     );
+    return true;
   }
 
   async function handleRenameTask(taskId: string, title: string) {
     const task = tasks.find((t) => t.id === taskId);
-    if (!task) return;
+    if (!task) return false;
     // ⚠️ PUT /api/tasks/{id} thay thế toàn bộ entity → phải gửi đủ mọi trường,
     // nếu không sẽ mất `aiEstimatedMinutes` (ước lượng của AI) và làm hệ thống
     // học thói quen sai (spec ui-man-chat-ai.md mục 4.3).
@@ -645,27 +716,27 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
     });
     if (!res.ok) {
       toast.error(res.error ?? "Không sửa được việc.");
-      return;
+      return false;
     }
     setTasks((prev) => prev.map((t) => (t.id === taskId ? res.data : t)));
+    return true;
   }
 
   async function handleRenameSubtask(subtaskId: string, title: string) {
     const current = Array.from(subtasksByTaskId.values())
       .flat()
       .find((s) => s.id === subtaskId);
-    if (!current) return;
+    if (!current) return false;
     // ⚠️ PUT /api/subtasks/{id} cũng thay thế toàn bộ → gửi đủ trường.
     const res = await updateSubtask(subtaskId, {
       title,
-      description: current.description ?? undefined,
       estimatedMinutes: current.estimatedMinutes,
       orderIndex: current.orderIndex,
       status: current.status,
     });
     if (!res.ok) {
       toast.error(res.error ?? "Không sửa được việc con.");
-      return;
+      return false;
     }
     setSubtasksByTaskId((prev) => {
       const next = new Map(prev);
@@ -677,31 +748,35 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
       }
       return next;
     });
+    return true;
   }
 
   async function handleDeleteMilestone(milestoneId: string) {
     const res = await deleteMilestone(milestoneId);
     if (!res.ok) {
       toast.error(res.error ?? "Không xoá được cột mốc.");
-      return;
+      return false;
     }
     setMilestones((prev) => prev.filter((m) => m.id !== milestoneId));
+    setTasks((prev) => prev.map((task) => task.milestoneId === milestoneId ? { ...task, milestoneId: null } : task));
+    return true;
   }
 
   async function handleDeleteTask(taskId: string) {
     const res = await deleteTask(taskId);
     if (!res.ok) {
       toast.error(res.error ?? "Không xoá được việc.");
-      return;
+      return false;
     }
     setTasks((prev) => prev.filter((t) => t.id !== taskId));
+    return true;
   }
 
   async function handleDeleteSubtask(subtaskId: string) {
     const res = await deleteSubtask(subtaskId);
     if (!res.ok) {
       toast.error(res.error ?? "Không xoá được việc con.");
-      return;
+      return false;
     }
     setSubtasksByTaskId((prev) => {
       const next = new Map(prev);
@@ -710,6 +785,7 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
       }
       return next;
     });
+    return true;
   }
 
   async function handleToggleTaskDone(task: TaskDto) {
@@ -788,15 +864,15 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
     onCreateFixedTask: (reminder) => void handleCreateFixedTask(reminder),
     onRetry: handleRetry,
     onRetrySchedule: () => void handleRetrySchedule(),
-    onAddMilestone: () => void handleAddMilestone(),
-    onAddTask: (msId, title) => void handleAddTask(msId, title),
-    onAddSubtask: (taskId, title) => void handleAddSubtask(taskId, title),
-    onRenameMilestone: (id, name) => void handleRenameMilestone(id, name),
-    onRenameTask: (id, title) => void handleRenameTask(id, title),
-    onRenameSubtask: (id, title) => void handleRenameSubtask(id, title),
-    onDeleteMilestone: (id) => void handleDeleteMilestone(id),
-    onDeleteTask: (id) => void handleDeleteTask(id),
-    onDeleteSubtask: (id) => void handleDeleteSubtask(id),
+    onAddMilestone: handleAddMilestone,
+    onAddTask: handleAddTask,
+    onAddSubtask: handleAddSubtask,
+    onRenameMilestone: handleRenameMilestone,
+    onRenameTask: handleRenameTask,
+    onRenameSubtask: handleRenameSubtask,
+    onDeleteMilestone: handleDeleteMilestone,
+    onDeleteTask: handleDeleteTask,
+    onDeleteSubtask: handleDeleteSubtask,
     onToggleTaskDone: (t) => void handleToggleTaskDone(t),
   };
 
@@ -820,6 +896,7 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
     scheduleError,
     scheduleBusy,
     newTaskIds,
+    savedDraft,
     latestDraft,
     applied,
     hasDraft: !!latestDraft && latestDraft.applied !== true,
@@ -853,6 +930,7 @@ export function useProjectChat(options: UseProjectChatOptions = {}) {
     handlers,
     openProject,
     openConversationById,
+    createConversation,
     reloadProjectTree: () => projectId ? loadTree(projectId) : Promise.resolve(),
   };
 }

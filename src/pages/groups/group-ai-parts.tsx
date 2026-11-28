@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 /**
  * ===========================================================
  * Thành phần dùng chung cho Chat AI của nhóm
@@ -42,11 +43,13 @@ export interface GroupChatThreadProps {
   members: GroupMemberDto[];
   loading: boolean;
   thinking: boolean;
-  /** Tin AI gần nhất không có bản nháp dùng được → cảnh báo. */
-  planWithoutDraft: GroupChatMessageDto | null;
-  /** Đã có bản nháp → nhắc xem ở cột phải. */
-  hasDraft: boolean;
+  emptyPlan: boolean;
+  canRegenerate: boolean;
+  showReview: boolean;
   onRegenerate: () => void;
+  onReview: () => void;
+  onExample: () => void;
+  exampleDisabled: boolean;
   /** Ref tới vùng cuộn — trang cha tự cuộn xuống cuối. */
   bodyRef?: RefObject<HTMLDivElement | null>;
 }
@@ -56,9 +59,13 @@ export function GroupChatThread({
   members,
   loading,
   thinking,
-  planWithoutDraft,
-  hasDraft,
+  emptyPlan,
+  canRegenerate,
+  showReview,
   onRegenerate,
+  onReview,
+  onExample,
+  exampleDisabled,
   bodyRef,
 }: GroupChatThreadProps) {
   return (
@@ -66,17 +73,17 @@ export function GroupChatThread({
       {loading && (
         <div className="gai-thinking" role="status">
           <span className="material-symbols-outlined">progress_activity</span>
-          <span>Loading conversation…</span>
+          <span>Đang mở cuộc trò chuyện…</span>
         </div>
       )}
 
-      {!loading && messages.length === 0 && (
-        <div className="gai-state">
-          <span className="material-symbols-outlined">auto_awesome</span>
-          <span>
-            Describe the client brief below. AI will ask what's missing, then
-            draft a milestone plan for the group.
-          </span>
+      {!loading && !thinking && messages.length === 0 && (
+        <div className="gai-planner-welcome">
+          <h2>Bạn muốn nhóm bàn giao gì?</h2>
+          <p>Gửi yêu cầu khách hàng, hạn bàn giao và phần việc bạn muốn bổ sung. AI có thể hỏi lại trước khi bạn tạo bản nháp.</p>
+          <button type="button" className="gai-btn gai-btn--ghost gai-btn--sm" disabled={exampleDisabled} onClick={onExample}>
+            Điền mẫu brief
+          </button>
         </div>
       )}
 
@@ -96,7 +103,7 @@ export function GroupChatThread({
           <div className="gai-msg-col">
             <div className="gai-msg-meta">
               <span className="gai-msg-meta-name">METANOIA AI</span>
-              <span className="gai-msg-meta-time">· thinking</span>
+              <span className="gai-msg-meta-time">· đang xử lý</span>
             </div>
             <div className="gai-bubble gai-bubble--ai gai-typing">
               <span className="gai-typing-dot" />
@@ -111,40 +118,34 @@ export function GroupChatThread({
        * AI trả lời nhưng KHÔNG sinh được bản nháp (chỉ có text).
        * → Báo rõ + cho nút thử lại, thay vì im lặng không hiện gì.
        */}
-      {planWithoutDraft && (
+      {emptyPlan && (
         <div className="gai-no-draft" role="alert">
           <span className="material-symbols-outlined" aria-hidden="true">
             error_outline
           </span>
           <div className="gai-no-draft-body">
-            <strong>The plan came back empty.</strong>
-            <p>
-              The AI replied with text only, so there are no milestones, tasks
-              or assignees to review. This usually happens when the AI can't
-              find enough free time for the team — try again, or move some
-              deadlines back.
-            </p>
+            <strong>AI chưa tạo được bản nháp.</strong>
+            <p>Bạn có thể bổ sung yêu cầu hoặc thử tạo lại.</p>
             <button
               type="button"
               className="gai-btn gai-btn--ghost gai-no-draft-btn"
               onClick={onRegenerate}
+              disabled={!canRegenerate}
             >
               <span className="material-symbols-outlined" aria-hidden="true">
                 refresh
               </span>
-              Generate plan again
+              Thử tạo lại
             </button>
           </div>
         </div>
       )}
 
-      {hasDraft && (
-        <p className="gai-planner-draft-hint">
-          <span className="material-symbols-outlined" aria-hidden="true">
-            arrow_forward
-          </span>
-          The plan is on the right — review and apply it there.
-        </p>
+      {showReview && (
+        <button type="button" className="gai-btn gai-btn--ghost gai-review-link" onClick={onReview}>
+          Xem bản nháp
+          <span className="material-symbols-outlined" aria-hidden="true">arrow_forward</span>
+        </button>
       )}
     </div>
   );
@@ -170,7 +171,7 @@ function GroupChatMessage({
   return (
     <div className={"gai-msg " + (isUser ? "gai-msg--user" : "gai-msg--ai")}>
       {isUser ? (
-        <span className="gai-avatar" title="You">
+        <span className="gai-avatar" title="Bạn">
           {initial}
         </span>
       ) : (
@@ -184,7 +185,7 @@ function GroupChatMessage({
       <div className="gai-msg-col">
         <div className="gai-msg-meta">
           <span className="gai-msg-meta-name">
-            {isUser ? "You" : "METANOIA AI"}
+            {isUser ? "Bạn" : "METANOIA AI"}
           </span>
           <span className="gai-msg-meta-time">· {fmtMsgTime(message.created_at)}</span>
         </div>
@@ -199,34 +200,35 @@ function GroupChatMessage({
           </div>
         )}
 
-        {notes && (
-          <div className="gai-notes">
+        {notes && (notes.clear?.length || notes.missing?.length || notes.questions?.length || notes.risks?.length) ? (
+          <details className="gai-notes">
+            <summary>Tóm tắt brief</summary>
             <NoteBlock
               variant="clear"
               icon="check_circle"
-              title="Clear"
+              title="Đã rõ"
               items={notes.clear}
             />
             <NoteBlock
               variant="missing"
               icon="help"
-              title="Missing"
+              title="Còn thiếu"
               items={notes.missing}
             />
             <NoteBlock
               variant="questions"
               icon="help_outline"
-              title="Ask the client"
+              title="Cần hỏi khách hàng"
               items={notes.questions}
             />
             <NoteBlock
               variant="risks"
               icon="warning"
-              title="Risks"
+              title="Rủi ro"
               items={notes.risks}
             />
-          </div>
-        )}
+          </details>
+        ) : null}
 
         {/*
          * Bản nháp cũ (read-only) — bản MỚI NHẤT hiện ở cột phải.
@@ -386,6 +388,10 @@ export interface GroupDraftPanelProps {
   draft: EditableDraft | null;
   assignable: GroupMemberDto[];
   applying: boolean;
+  readOnly: boolean;
+  savedMilestones?: Record<string, string>;
+  savedTasks?: Record<string, string>;
+  groupPath: string;
   error: string | null;
   busyConflict?: {
     taskKey: string;
@@ -402,7 +408,6 @@ export interface GroupDraftPanelProps {
   onRestore: () => void;
   onApply: () => void;
   onConfirmConflicts: () => void;
-  onDismissConflict: () => void;
 }
 
 export const GroupDraftPanel = forwardRef<
@@ -413,6 +418,10 @@ export const GroupDraftPanel = forwardRef<
     draft,
     assignable,
     applying,
+    readOnly,
+    savedMilestones,
+    savedTasks,
+    groupPath,
     error,
     busyConflict,
     onPatchMilestone,
@@ -420,7 +429,6 @@ export const GroupDraftPanel = forwardRef<
     onRestore,
     onApply,
     onConfirmConflicts,
-    onDismissConflict,
   },
   ref,
 ) {
@@ -429,20 +437,20 @@ export const GroupDraftPanel = forwardRef<
   useImperativeHandle(ref, () => ({
     scrollToDraft: () => {
       rootRef.current?.scrollIntoView({ block: "nearest" });
+      rootRef.current?.focus({ preventScroll: true });
     },
   }));
 
-  /* Số việc / việc con sẽ tạo → hiện tóm tắt cho Leader trước khi duyệt. */
-  const taskCount = draft
-    ? draft.milestones.reduce((acc, ms) => acc + ms.tasks.length, 0)
-    : 0;
-  const subtaskCount = draft
-    ? draft.milestones.reduce(
-        (acc, ms) =>
-          acc + ms.tasks.reduce((a, t) => a + t.subtasks.length, 0),
-        0,
-      )
-    : 0;
+  const selected = draft?.milestones.map((milestone) =>
+    milestone.tasks.filter((task) => task.included !== false)
+  ).filter((tasks) => tasks.length) ?? [];
+  const selectedTasks = selected.flat();
+  const taskCount = selectedTasks.length;
+  const subtaskCount = selectedTasks.reduce((total, task) => total + task.subtasks.length, 0);
+  const estimate = selectedTasks.reduce((total, task) => total + (Number(task.estimatedMinutes) || 0), 0);
+  const unassigned = selectedTasks.filter((task) => !task.assigneeId).length;
+  const resuming = !!savedMilestones;
+  const editingLocked = readOnly || applying || !!draft?.applied;
 
   /* ---------- Chưa có bản nháp ---------- */
   if (!draft) {
@@ -455,12 +463,10 @@ export const GroupDraftPanel = forwardRef<
           >
             account_tree
           </span>
-          <h2 className="gai-planner-card-title">Plan</h2>
+          <h2 className="gai-planner-card-title">Bản nháp</h2>
         </div>
         <p className="gai-planner-card-sub">
-          No plan yet. Paste the client brief in the chat, then press{" "}
-          <strong>Draft plan</strong> — the milestones and tasks will appear
-          here, ready to review and apply.
+          Sau khi bàn brief, bấm <strong>Tạo bản nháp</strong> để xem và chọn những việc bạn muốn lưu.
         </p>
       </div>
     );
@@ -477,12 +483,10 @@ export const GroupDraftPanel = forwardRef<
           >
             account_tree
           </span>
-          <h2 className="gai-planner-card-title">Plan</h2>
+          <h2 className="gai-planner-card-title">Bản nháp</h2>
         </div>
         <p className="gai-planner-card-sub">
-          The AI replied, but it did not produce any milestones, tasks or
-          assignees to review. Generate the plan again — or type what you want
-          changed and press Update plan.
+          Chưa có công việc để duyệt. Bổ sung yêu cầu trong chat rồi tạo bản nháp mới.
         </p>
       </div>
     );
@@ -490,7 +494,7 @@ export const GroupDraftPanel = forwardRef<
 
   /* ---------- Bản nháp đầy đủ ---------- */
   return (
-    <div className="gai-planner-card gai-planner-card--draft" ref={rootRef}>
+    <div className="gai-planner-card gai-planner-card--draft" ref={rootRef} tabIndex={-1}>
       <div className="gai-planner-card-head">
         <span
           className="material-symbols-outlined gai-planner-card-icon gai-planner-card-icon--primary"
@@ -499,19 +503,17 @@ export const GroupDraftPanel = forwardRef<
           account_tree
         </span>
         <h2 className="gai-planner-card-title">
-          {draft.applied ? "Plan applied to the group" : "Review this plan"}
+          {draft.applied ? "Đã lưu kế hoạch" : "Duyệt bản nháp"}
         </h2>
         <span className="gai-planner-card-meta">
-          {fmtMinutes(draft.totalEstimatedMinutes)} estimated
+          {!draft.applied && `${fmtMinutes(estimate)} ước tính`}
         </span>
       </div>
 
       {draft.applied && (
-        <div className="gai-planner-applied-chip">
-          <span className="material-symbols-outlined" aria-hidden="true">
-            check_circle
-          </span>
-          Applied to the group
+        <div className="gai-planner-receipt">
+          <p className="gai-planner-card-sub">Vào danh sách việc để xem kế hoạch đã lưu hoặc giao các việc còn trống.</p>
+          <Link to={groupPath} className="gai-btn gai-btn--primary gai-btn--sm">Xem công việc của nhóm</Link>
         </div>
       )}
 
@@ -528,7 +530,7 @@ export const GroupDraftPanel = forwardRef<
         </div>
       )}
 
-      {draft.milestones.map((ms, mi) => (
+      {!draft.applied && draft.milestones.map((ms, mi) => (
         <div key={ms.key} className="gai-milestone">
           <div className="gai-milestone-head">
             <span className="gai-milestone-index">{mi + 1}</span>
@@ -536,8 +538,8 @@ export const GroupDraftPanel = forwardRef<
               className="gai-input"
               value={ms.title}
               onChange={(e) => onPatchMilestone(ms.key, { title: e.target.value })}
-              disabled={applying || draft.applied}
-              aria-label={`Milestone ${mi + 1} name`}
+              disabled={editingLocked || !!savedMilestones?.[ms.key]}
+              aria-label={`Tên cột mốc ${mi + 1}`}
             />
             <input
               type="date"
@@ -546,133 +548,143 @@ export const GroupDraftPanel = forwardRef<
               onChange={(e) =>
                 onPatchMilestone(ms.key, { deadline: e.target.value })
               }
-              disabled={applying || draft.applied}
-              aria-label={`Milestone ${mi + 1} deadline`}
+              disabled={editingLocked || !!savedMilestones?.[ms.key]}
+              aria-label={`Hạn cột mốc ${mi + 1}`}
             />
           </div>
 
           {ms.reason && <p className="gai-milestone-reason">{ms.reason}</p>}
 
           <div className="gai-tasks">
-            {ms.tasks.map((t) => (
-              <div key={t.key} className="gai-task">
-                <div className="gai-task-head">
-                  <span className="gai-task-title">{t.title}</span>
-                  {t.domainName && (
-                    <span className="gai-domain">{t.domainName}</span>
+            {ms.tasks.map((t) => {
+              const taskSaved = !!savedTasks?.[JSON.stringify([ms.key, t.key])];
+              const taskLocked = editingLocked || taskSaved || t.included === false;
+              return (
+                <div key={t.key} className="gai-task">
+                  <div className="gai-task-head">
+                    <label className="gai-task-choice">
+                      <input type="checkbox" checked={t.included !== false} disabled={editingLocked || resuming}
+                        onChange={(event) => onPatchTask(ms.key, t.key, { included: event.target.checked })}
+                        aria-label={`Chọn việc ${t.title}`} />
+                      <span className="gai-task-title">{t.title}</span>
+                    </label>
+                    {t.domainName && (
+                      <span className="gai-domain">{t.domainName}</span>
+                    )}
+                  </div>
+
+                  <div className="gai-task-fields">
+                    <div className="gai-field">
+                      <label className="gai-field-label">Tên việc</label>
+                      <input
+                        className="gai-input"
+                        value={t.title}
+                        onChange={(e) =>
+                          onPatchTask(ms.key, t.key, { title: e.target.value })
+                        }
+                        disabled={taskLocked}
+                      />
+                    </div>
+
+                    <div className="gai-field">
+                      <label className="gai-field-label">Thời lượng (phút)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={15}
+                        className="gai-input"
+                        value={t.estimatedMinutes}
+                        onChange={(e) =>
+                          onPatchTask(ms.key, t.key, {
+                            estimatedMinutes: e.target.value,
+                          })
+                        }
+                        disabled={taskLocked}
+                      />
+                    </div>
+
+                    <div className="gai-field">
+                      <label className="gai-field-label">Người làm</label>
+                      <select
+                        className="gai-select"
+                        value={t.assigneeId ?? ""}
+                        onChange={(e) =>
+                          onPatchTask(ms.key, t.key, {
+                            assigneeId: e.target.value || null,
+                          })
+                        }
+                        disabled={taskLocked}
+                        aria-label={`Người làm cho ${t.title}`}
+                      >
+                        <option value="">Để trống</option>
+                        {/*
+                         * Người AI gợi ý KHÔNG còn trong nhóm → thêm option riêng.
+                         */}
+                        {t.assigneeId &&
+                          !assignable.some((m) => m.userId === t.assigneeId) && (
+                            <option value={t.assigneeId}>
+                              Thành viên đã rời nhóm
+                            </option>
+                          )}
+                        {assignable.map((m) => {
+                          const isSuggested =
+                            t.suggestedAssigneeId === m.userId &&
+                            t.assigneeId === m.userId;
+                          const role = (m.role ?? "").toLowerCase();
+                          const roleLabel =
+                            role === "leader" ? "Trưởng nhóm" : "Thành viên";
+                          return (
+                            <option key={m.userId} value={m.userId}>
+                              {m.fullName} · {roleLabel}
+                              {isSuggested ? " · AI gợi ý" : ""}
+                            </option>
+                          );
+                        })}
+                      </select>
+                      {t.suggestedAssigneeId &&
+                        t.assigneeId !== t.suggestedAssigneeId && (
+                          <button
+                            type="button"
+                            className="gai-ai-pick-btn"
+                            onClick={() =>
+                              onPatchTask(ms.key, t.key, {
+                                assigneeId: t.suggestedAssigneeId,
+                              })
+                            }
+                            disabled={taskLocked}
+                            title="Chọn người AI đã gợi ý"
+                          >
+                            <span
+                              className="material-symbols-outlined"
+                              aria-hidden="true"
+                            >
+                              auto_awesome
+                            </span>
+                            Dùng gợi ý của AI
+                          </button>
+                        )}
+                    </div>
+                  </div>
+
+                  {t.assigneeReason && (
+                    <p className="gai-task-reason">{t.assigneeReason}</p>
+                  )}
+
+                  {t.subtasks.length > 0 && (
+                    <div className="gai-subtasks">
+                      {t.subtasks.map((st, si) => (
+                        <div key={si} className="gai-subtask">
+                          <span className="gai-subtask-name">{st.title}</span>
+                          <span className="gai-subtask-est">
+                            {fmtMinutes(Number(st.estimatedMinutes) || 0)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
-
-                <div className="gai-task-fields">
-                  <div className="gai-field">
-                    <label className="gai-field-label">Task name</label>
-                    <input
-                      className="gai-input"
-                      value={t.title}
-                      onChange={(e) =>
-                        onPatchTask(ms.key, t.key, { title: e.target.value })
-                      }
-                      disabled={applying || draft.applied}
-                    />
-                  </div>
-
-                  <div className="gai-field">
-                    <label className="gai-field-label">Estimate (min)</label>
-                    <input
-                      type="number"
-                      min={0}
-                      step={15}
-                      className="gai-input"
-                      value={t.estimatedMinutes}
-                      onChange={(e) =>
-                        onPatchTask(ms.key, t.key, {
-                          estimatedMinutes: e.target.value,
-                        })
-                      }
-                      disabled={applying || draft.applied}
-                    />
-                  </div>
-
-                  <div className="gai-field">
-                    <label className="gai-field-label">Assignee</label>
-                    <select
-                      className="gai-select"
-                      value={t.assigneeId ?? ""}
-                      onChange={(e) =>
-                        onPatchTask(ms.key, t.key, {
-                          assigneeId: e.target.value || null,
-                        })
-                      }
-                      disabled={applying || draft.applied}
-                    >
-                      <option value="">Unassigned</option>
-                      {/*
-                       * Người AI gợi ý KHÔNG còn trong nhóm → thêm option riêng.
-                       */}
-                      {t.assigneeId &&
-                        !assignable.some((m) => m.userId === t.assigneeId) && (
-                          <option value={t.assigneeId}>
-                            Former member (no longer in this group)
-                          </option>
-                        )}
-                      {assignable.map((m) => {
-                        const isSuggested =
-                          t.suggestedAssigneeId === m.userId &&
-                          t.assigneeId === m.userId;
-                        const role = (m.role ?? "").toLowerCase();
-                        const roleLabel =
-                          role === "leader" ? "Leader" : "Member";
-                        return (
-                          <option key={m.userId} value={m.userId}>
-                            {m.fullName} · {roleLabel}
-                            {isSuggested ? " · AI pick" : ""}
-                          </option>
-                        );
-                      })}
-                    </select>
-                    {t.suggestedAssigneeId &&
-                      t.assigneeId !== t.suggestedAssigneeId && (
-                        <button
-                          type="button"
-                          className="gai-ai-pick-btn"
-                          onClick={() =>
-                            onPatchTask(ms.key, t.key, {
-                              assigneeId: t.suggestedAssigneeId,
-                            })
-                          }
-                          disabled={applying || draft.applied}
-                          title="Use the person AI suggested for this task"
-                        >
-                          <span
-                            className="material-symbols-outlined"
-                            aria-hidden="true"
-                          >
-                            auto_awesome
-                          </span>
-                          Use AI's pick
-                        </button>
-                      )}
-                  </div>
-                </div>
-
-                {t.assigneeReason && (
-                  <p className="gai-task-reason">{t.assigneeReason}</p>
-                )}
-
-                {t.subtasks.length > 0 && (
-                  <div className="gai-subtasks">
-                    {t.subtasks.map((st, si) => (
-                      <div key={si} className="gai-subtask">
-                        <span className="gai-subtask-name">{st.title}</span>
-                        <span className="gai-subtask-est">
-                          {fmtMinutes(Number(st.estimatedMinutes) || 0)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       ))}
@@ -690,83 +702,48 @@ export const GroupDraftPanel = forwardRef<
       {busyConflict && (
         <div className="gai-planner-conflict">
           <p>
-            <strong>"{busyConflict.title}"</strong> conflicts with the
-            assignee&apos;s fixed time. Assign it anyway?
+            <strong>"{busyConflict.title}"</strong> bị trùng giờ của người được giao. Bạn có thể đổi người ngay trong bản nháp hoặc xác nhận vẫn giao.
           </p>
           <div className="gai-planner-conflict-actions">
             <button
               type="button"
               className="gai-btn gai-btn--primary gai-btn--sm"
               onClick={onConfirmConflicts}
-              disabled={applying}
+              disabled={applying || readOnly}
             >
-              Assign anyway
+              Vẫn giao việc này
             </button>
-            <button
-              type="button"
-              className="gai-btn gai-btn--ghost gai-btn--sm"
-              onClick={onDismissConflict}
-              disabled={applying}
-            >
-              Pick someone else
-            </button>
+
           </div>
         </div>
       )}
 
       {/* ---------- Nút Áp dụng ---------- */}
-      <div className="gai-draft-actions">
-        <span className="gai-draft-summary">
-          <span className="material-symbols-outlined" aria-hidden="true">
-            flag
+      {!draft.applied && (
+        <div className="gai-draft-actions">
+          <span className="gai-draft-summary">
+            {selected.length} cột mốc · {taskCount} việc · {subtaskCount} việc con
+            {unassigned > 0 && ` · ${unassigned} việc chưa giao`}
           </span>
-          {draft.milestones.length}{" "}
-          {draft.milestones.length === 1 ? "milestone" : "milestones"}
-          <span className="gai-draft-summary-sep">·</span>
-          <span className="material-symbols-outlined" aria-hidden="true">
-            checklist
-          </span>
-          {taskCount} {taskCount === 1 ? "task" : "tasks"}
-          {subtaskCount > 0 && (
-            <>
-              <span className="gai-draft-summary-sep">·</span>
-              <span className="material-symbols-outlined" aria-hidden="true">
-                account_tree
-              </span>
-              {subtaskCount} {subtaskCount === 1 ? "subtask" : "subtasks"}
-            </>
-          )}
-        </span>
-        <button
-          type="button"
-          className="gai-btn gai-btn--primary gai-apply-btn"
-          onClick={onApply}
-          disabled={applying || draft.applied}
-        >
-          <span className="material-symbols-outlined" aria-hidden="true">
-            {applying ? "progress_activity" : "check"}
-          </span>
-          {applying
-            ? "Applying…"
-            : draft.applied
-              ? "Applied to the group"
-              : "Apply to group"}
-        </button>
-        {!draft.applied && (
           <button
             type="button"
-            className="gai-btn gai-btn--ghost gai-btn--sm"
-            onClick={onRestore}
-            disabled={applying}
-            title="Discard your edits and use the AI's original plan"
+            className="gai-btn gai-btn--primary gai-apply-btn"
+            onClick={onApply}
+            disabled={applying || readOnly || taskCount === 0 || !!busyConflict}
           >
             <span className="material-symbols-outlined" aria-hidden="true">
-              undo
+              {applying ? "progress_activity" : "check"}
             </span>
-            Restore
+            {applying ? "Đang lưu…" : resuming ? "Lưu phần còn lại" : `Lưu ${taskCount} việc vào nhóm`}
           </button>
-        )}
-      </div>
+          {!resuming && (
+            <button type="button" className="gai-btn gai-btn--ghost gai-btn--sm"
+              onClick={onRestore} disabled={editingLocked}>
+              Khôi phục bản AI
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 });

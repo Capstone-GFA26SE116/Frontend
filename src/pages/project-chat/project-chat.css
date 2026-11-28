@@ -94,6 +94,28 @@
   padding-inline-start: 24px;
 }
 
+.pc-recent-task {
+  color: var(--aic-primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  flex: none;
+}
+
+.pc-chat-new {
+  border-top: 0;
+  padding-bottom: 0;
+}
+
+.pc-chat-empty {
+  padding: 10px 12px;
+  color: var(--aic-primary);
+}
+
+.pc-chat-empty p {
+  margin: 3px 0 0;
+  color: var(--aic-mute);
+}
+
 .pc-mobile-nav {
   display: none;
 }

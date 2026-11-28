@@ -1627,6 +1627,32 @@
   border-color: var(--aic-primary);
 }
 
+.aic-node__editor {
+  min-width: 0;
+  padding: 6px;
+  border-radius: var(--aic-r-xs);
+  background: var(--aic-field);
+}
+.aic-node__editor fieldset,
+.aic-node__editor label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.aic-node__editor fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.aic-node__editor label {
+  font-size: 12px;
+  color: var(--aic-mute);
+}
+.aic-node__editor-actions {
+  display: flex;
+  gap: 6px;
+}
+
 /* Xac nhan xoa noi tuyen */
 .aic-node__confirm-text {
   flex: 1;

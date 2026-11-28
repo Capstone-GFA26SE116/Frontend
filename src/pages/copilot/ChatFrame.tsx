@@ -52,6 +52,7 @@ export interface ChatFrameProps {
     sampleTask?: string;
     onSampleTask?: () => void;
     latestDraftId?: string;
+    savedDraft?: { messageId: string; receipt: ReactNode };
     documentCount: number;
     documentPicker?: ReactNode;
     panel?: ReactNode;
@@ -166,7 +167,8 @@ export function ChatFrame(props: ChatFrameProps) {
 
   const canSend = draftText.trim().length > 0 || files.length > 0 || !!companion?.documentCount;
   const latestReply = messages.findLast((m) => m.role === "assistant");
-  const canDraft = messages.length > 0 && latestReply?.notes?.ready_to_plan !== false;
+  const canDraft = !!latestReply && latestReply.notes?.ready_to_plan !== false &&
+    (hasDraft || latestReply.id !== companion?.latestDraftId);
 
   return (
     <section className="aic-mid" aria-label="Khung chat">
@@ -244,6 +246,7 @@ export function ChatFrame(props: ChatFrameProps) {
             onCreateFixedTask={onCreateFixedTask}
             companion={!!companion}
             activeDraft={companion?.latestDraftId === m.id}
+            savedReceipt={companion?.savedDraft?.messageId === m.id ? companion.savedDraft.receipt : undefined}
           />
         ))}
         {companion && canDraft && !planLocked && <div className="pc-actions">
@@ -466,6 +469,7 @@ function MessageRow({
   onCreateFixedTask,
   companion,
   activeDraft,
+  savedReceipt,
 }: {
   msg: ProjectChatMessageDto;
   applying: boolean;
@@ -474,6 +478,7 @@ function MessageRow({
   onCreateFixedTask: (reminder: string) => void;
   companion: boolean;
   activeDraft: boolean;
+  savedReceipt?: ReactNode;
 }) {
   if (msg.role === "user") {
     return (
@@ -488,6 +493,11 @@ function MessageRow({
 
   // --- Tin AI loại draft → thẻ kế hoạch ---
   if (msg.kind === "draft" && msg.draft) {
+    if (companion && (msg.applied || msg.draft.applied)) {
+      return <div className="aic-msg aic-msg--ai">
+        {savedReceipt ?? <div className="pc-panel">Đã lưu bản nháp vào dự án.</div>}
+      </div>;
+    }
     return (
       <div className="aic-msg aic-msg--ai">
         <DraftCard

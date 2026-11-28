@@ -53,7 +53,9 @@ export function TaskCompanion({
     if (!active.current) return;
     setBusy(false);
     if (!result.ok) {
-      setError(result.error);
+      setError(result.status === 502
+        ? "AI chưa tạo được đề xuất. Nội dung bạn vừa nhập vẫn còn. Bạn có thể thử lại hoặc thêm việc con từ cây dự án."
+        : result.error);
       return;
     }
     setQuestion("");

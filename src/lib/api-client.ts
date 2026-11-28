@@ -402,7 +402,7 @@ async function apiFetch<T>(
    *   - không có token (khách chưa đăng nhập) → endpoint cần auth → KHÔNG
    *     redirect (đá khách khỏi trang public như /pricing).
    */
-  const hadToken = !!token;
+  const canRefresh = token && !path.toLowerCase().startsWith("/api/auth/");
 
   const headers: Record<string, string> = {
     // ⚠️ KHÔNG tự đặt `Content-Type` khi body là FormData — trình duyệt phải
@@ -421,8 +421,8 @@ async function apiFetch<T>(
     const res = await fetch(url, { ...options, headers });
 
     // Nếu 401 → thử refresh
-    if (res.status === 401) {
-      const refreshed = await tryRefresh();
+    if (res.status === 401 && canRefresh) {
+      const refreshed = await tryRefresh(token);
       if (refreshed.ok) {
         // Gọi lại request với token mới
         const newToken = getAccessToken();
@@ -456,22 +456,12 @@ async function apiFetch<T>(
           return { ok: true, data: data as T };
         }
       }
-      // Refresh thất bại hoặc không có refresh token → logout
-      clearTokens();
-      /*
-       * ⚠️ Đang ở route DEMO + token rác → KHÔNG đá guest ra khỏi demo.
-       * Demo là trang công khai, mất token không phải lý do để redirect.
-       *
-       * ⚠️ QUAN TRỌNG: nếu user CHƯA TỪNG đăng nhập (không có token nào)
-       * thì 401 chỉ nghĩa là "endpoint này cần auth" — KHÔNG phải "phiên hết
-       * hạn". Redirect /login lúc đó sẽ đá khách khỏi trang public (vd
-       * /pricing gọi GET /api/subscription-plans) → họ bị "văng ra" ngoài.
-       * Chỉ redirect khi thực sự có session mà session đó không còn hợp lệ.
-       */
-      if (!isDemoMode() && hadToken) {
-        window.location.href = "/login";
+      if (!refreshed.ok && refreshed.rejected && getAccessToken() === token) {
+        clearTokens();
+        if (!isDemoMode()) window.location.href = "/login";
+        return { ok: false, error: "session_expired", status: 401 };
       }
-      return { ok: false, error: "session_expired", status: 401 };
+      return { ok: false, error: "Không thể làm mới phiên. Vui lòng thử lại.", status: 401 };
     }
 
     if (!res.ok) {
@@ -525,34 +515,49 @@ async function apiFetch<T>(
 
 /* ---------- token refresh ---------- */
 
-async function tryRefresh(): Promise<{ ok: boolean }> {
+type RefreshResult = { ok: true } | { ok: false; rejected: boolean };
+
+let refreshInFlight: { token: string; promise: Promise<RefreshResult> } | null = null;
+
+function tryRefresh(requestToken: string): Promise<RefreshResult> {
+  const accessToken = getAccessToken();
+  if (!accessToken) return Promise.resolve({ ok: false, rejected: false });
+  if (accessToken !== requestToken) return Promise.resolve({ ok: true });
   const refreshToken = getRefreshToken();
-  if (!refreshToken) return { ok: false };
+  if (!refreshToken) return Promise.resolve({ ok: false, rejected: true });
+  if (refreshInFlight?.token === refreshToken) return refreshInFlight.promise;
 
-  const refresh = await fetch(`${BASE_URL}/api/Auth/refresh`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refreshToken }),
-  });
-
-  if (!refresh.ok) return { ok: false };
-
-  try {
+  // The backend revokes sessions when a rotated refresh token is reused.
+  const refreshSession = async (): Promise<RefreshResult> => {
+    const current = getAccessToken();
+    if (!current) return { ok: false, rejected: false };
+    if (current !== requestToken) return { ok: true };
+    if (getRefreshToken() !== refreshToken) return { ok: false, rejected: false };
+    const refresh = await fetch(`${BASE_URL}/api/Auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken }),
+    });
+    if (!refresh.ok) return { ok: false, rejected: refresh.status === 401 };
     const data = await refresh.json();
+    if (getRefreshToken() !== refreshToken) {
+      return getAccessToken() ? { ok: true } : { ok: false, rejected: false };
+    }
     if (data.accessToken && data.refreshToken) {
-      saveTokens(
-        data.accessToken,
-        data.refreshToken,
-        data.expiresAtUtc,
-        data.refreshTokenExpiresAtUtc,
-      );
+      saveTokens(data.accessToken, data.refreshToken, data.expiresAtUtc, data.refreshTokenExpiresAtUtc);
       return { ok: true };
     }
-  } catch {
-    // ignore
-  }
+    return { ok: false, rejected: false };
+  };
 
-  return { ok: false };
+  const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
+  const promise = (locks ? locks.request("metanoia:auth-refresh", refreshSession) : refreshSession())
+    .catch((): RefreshResult => ({ ok: false, rejected: false }))
+    .finally(() => {
+      if (refreshInFlight?.promise === promise) refreshInFlight = null;
+    });
+  refreshInFlight = { token: refreshToken, promise };
+  return promise;
 }
 
 /* ---------- public API helpers ---------- */
@@ -2557,31 +2562,18 @@ export async function aiFetch<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<ApiResult<T>> {
+  const token = getAccessToken();
   const first = await aiFetchRaw<T>(path, options);
-  if (first.ok || first.status !== 401) return first;
+  if (first.ok || first.status !== 401 || !token) return first;
 
-  const refreshed = await tryRefresh();
+  const refreshed = await tryRefresh(token);
   if (!refreshed.ok) return first;
 
   const retry = await aiFetchRaw<T>(path, options);
   if (retry.ok || retry.status !== 401) return retry;
 
-  /*
-   * `hadToken` = trước khi xoá token, user có phiên hay không.
-   * Nếu KHÔNG có token (chưa từng đăng nhập) → 401 chỉ là "endpoint cần
-   * auth" → KHÔNG redirect /login (đá khách khỏi trang public).
-   */
-  const hadToken = getAccessToken() !== null;
-
-  // Refresh xong vẫn 401 → token không hợp lệ → đăng xuất như BE.
-  clearTokens();
-  /*
-   * Đang ở route demo → không đá guest ra (demo là trang công khai).
-   */
-  if (!isDemoMode() && hadToken) {
-    window.location.href = "/login";
-  }
-  return { ok: false, error: "session_expired", status: 401 };
+  // An AI deployment can reject a token that is still valid for the backend.
+  return { ok: false, error: "Dịch vụ AI chưa xác thực được phiên. Vui lòng thử lại.", status: 401 };
 }
 
 /* ---------- types (xem openapi.json của AI service) ---------- */
@@ -2863,6 +2855,7 @@ export interface ProjectDraftDto {
 
 export interface ProjectChatMessageDto {
   id: string;
+  applied?: boolean;
   role: ChatRole;
   kind: ProjectReplyKind | null;
   content: string;

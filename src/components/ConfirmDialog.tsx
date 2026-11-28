@@ -76,6 +76,7 @@ export function ConfirmDialog({
           <button
             type="button"
             className="cf-btn cf-btn--ghost"
+            autoFocus
             onClick={onCancel}
             disabled={busy}
           >

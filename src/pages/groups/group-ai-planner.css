@@ -574,3 +574,106 @@
     min-height: 480px;
   }
 }
+
+.gai-planner-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.gai-planner-steps li {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--gai-p-body);
+  font-size: 12px;
+}
+
+.gai-planner-steps li span {
+  display: grid;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  border: 1px solid var(--gai-p-hairline);
+  font-size: 11px;
+}
+
+.gai-planner-steps li[aria-current="step"],
+.gai-planner-steps li[aria-current="step"] span {
+  color: var(--gai-p-primary);
+  border-color: currentColor;
+}
+
+.gai-planner-welcome {
+  display: grid;
+  justify-items: start;
+  align-content: center;
+  gap: 10px;
+  min-height: 180px;
+  padding: 14px;
+}
+
+.gai-planner-welcome h2 {
+  margin: 0;
+  color: var(--gai-p-ink);
+  font-size: 19px;
+}
+
+.gai-planner-welcome p,
+.gai-group-existing {
+  margin: 0;
+  color: var(--gai-p-body);
+  font-size: 13px;
+}
+
+.gai-group-existing summary,
+.gai-planner .gai-notes summary {
+  padding-block: 6px;
+  cursor: pointer;
+}
+
+.gai-task-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.gai-task-choice input {
+  accent-color: var(--gai-p-primary);
+}
+
+.gai-planner-receipt {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+}
+
+.gai-review-link {
+  align-self: flex-start;
+}
+
+@media (max-width: 1099px) {
+  .gai-planner-container,
+  .gai-planner-subbar-inner {
+    padding-inline: 16px;
+  }
+
+  .gai-planner-stream {
+    min-height: 0;
+    max-height: 75dvh;
+  }
+
+  .gai-planner-history {
+    max-height: 138px;
+  }
+
+  .gai-planner-history-items {
+    overflow-y: auto;
+  }
+}

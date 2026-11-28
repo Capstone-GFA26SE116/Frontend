@@ -90,6 +90,7 @@ export interface EditableSubTask {
 
 /** Một việc trong bản nháp. */
 export interface EditableTask {
+  included?: boolean;
   key: string;
   title: string;
   domainName: string | null;
@@ -250,58 +251,6 @@ export function findLatestDraft(
   return emptyFallback;
 }
 
-/**
- * `ready_to_plan` của tin AI gần nhất — dùng để nổi nút "Lên kế hoạch".
- *
- * Trả `false` nếu chưa có tin AI nào (Leader vẫn bấm được nút).
- */
-export function isReadyToPlan(messages: GroupChatMessageDto[]): boolean {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i];
-    /* Không lọc theo `role` — chỉ tin AI mới có `notes`. */
-    if (m.notes) {
-      return m.notes.ready_to_plan === true;
-    }
-  }
-  return false;
-}
-
-/**
- * Phát hiện trường hợp: Leader đã bấm "Lên kế hoạch" / "Update plan" nhưng
- * AI **không trả về bản nháp** (`draft = null`).
- *
- * Vì sao cần?
- * - AI service sinh bản nháp bằng LLM → đôi khi LLM không trả về JSON đúng
- *   schema → `draft = null`, chỉ có `content` dạng văn xuôi
- *   (VD: "I have updated the project plan with structured tasks...").
- * - Lúc đó FE **không có gì để hiển thị** → Leader tưởng chức năng hỏng.
- *
- * Gợi ý nhận biết: tin AI gần nhất không có `draft` VÀ không có `notes`
- * (tức là không phải câu trả lời `discuss` có checklist) → nhiều khả năng
- * đây là lượt `plan` nhưng AI không sinh được cấu trúc.
- *
- * @returns Tin AI gần nhất nếu cần hiện cảnh báo, ngược lại `null`.
- */
-export function findPlanWithoutDraft(
-  messages: GroupChatMessageDto[],
-): GroupChatMessageDto | null {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i];
-    /* Bỏ qua tin của user. */
-    if (m.role === "user") continue;
-    /* Còn bản nháp CÓ milestone → không có vấn đề. */
-    if (m.draft && (m.draft.milestones?.length ?? 0) > 0) return null;
-    /* Có `notes` → đây là lượt `discuss` (có checklist) → bình thường. */
-    if (m.notes) return null;
-    /*
-     * Tin AI không có bản nháp dùng được (thiếu hẳn, hoặc `milestones` rỗng)
-     * và không có `notes` → nghi vấn lượt `plan` mà AI không sinh được cấu trúc.
-     */
-    return m;
-  }
-  return null;
-}
-
 /* ===========================================================
  * Áp dụng bản nháp
  * =========================================================== */
@@ -374,22 +323,22 @@ export function validateDraft(draft: EditableDraft): string[] {
   const problems: string[] = [];
   for (const ms of draft.milestones) {
     if (!ms.title.trim()) {
-      problems.push("Every milestone needs a name.");
+      problems.push("Nhập tên cho cột mốc.");
     }
     if (!ms.deadline) {
-      problems.push(`Milestone "${ms.title || "(unnamed)"}" needs a deadline.`);
+      problems.push(`Nhập hạn cho cột mốc “${ms.title || "chưa đặt tên"}”.`);
     }
     if (ms.tasks.length === 0) {
-      problems.push(`Milestone "${ms.title || "(unnamed)"}" has no tasks.`);
+      problems.push(`Cột mốc “${ms.title}” cần ít nhất một việc.`);
     }
     for (const t of ms.tasks) {
       if (!t.title.trim()) {
-        problems.push("Every task needs a name.");
+        problems.push("Nhập tên cho từng công việc.");
       }
     }
   }
   if (draft.milestones.length === 0) {
-    problems.push("This plan has no milestones to apply.");
+    problems.push("Chọn ít nhất một việc để lưu.");
   }
   return problems;
 }

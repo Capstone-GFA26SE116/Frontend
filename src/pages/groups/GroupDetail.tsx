@@ -12,7 +12,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { useNotificationsContext } from "../../components/focus/notifications-context-state";
 import { signalAffectsSchedule } from "../../hooks/useNotifications";
 import type { ApiErr } from "../../lib/api-client";
-import { listDomains } from "../../lib/api-client";
+import { isSlotOverlapError, listDomains } from "../../lib/api-client";
 import { GroupErrorDialog } from "./GroupErrorDialog";
 import { GroupInviteModal } from "./GroupInviteModal";
 import { GroupScheduleSlots } from "./GroupScheduleSlots";
@@ -673,7 +673,7 @@ export function GroupDetailPage() {
 
       const res = await getGroupAssigneeSuggestions(task.id, {
         domain_id: suggestDomainId || null,
-        language: "en",
+        language: "vi",
       });
       setSuggestLoading(false);
 
@@ -694,7 +694,7 @@ export function GroupDetailPage() {
     setSuggestLoading(true);
     const res = await getGroupAssigneeSuggestions(suggestForTask.id, {
       domain_id: suggestDomainId || null,
-      language: "en",
+      language: "vi",
     });
     setSuggestLoading(false);
     if (!res.ok) {
@@ -721,7 +721,7 @@ export function GroupDetailPage() {
       setSuggestLoading(true);
       const res = await getGroupAssigneeSuggestions(suggestForTask.id, {
         domain_id: domainId || null,
-        language: "en",
+        language: "vi",
       });
       setSuggestLoading(false);
       if (!res.ok) {
@@ -822,7 +822,7 @@ export function GroupDetailPage() {
       setTimeSkippedCount(0);
       setTimeSuggestLoading(true);
 
-      const res = await getGroupSlotSuggestions(task.id, { language: "en" });
+      const res = await getGroupSlotSuggestions(task.id, { language: "vi" });
       setTimeSuggestLoading(false);
 
       if (!res.ok) {
@@ -841,7 +841,7 @@ export function GroupDetailPage() {
     if (!timesForTask) return;
     setTimeSuggestLoading(true);
     const res = await getGroupSlotSuggestions(timesForTask.id, {
-      language: "en",
+      language: "vi",
     });
     setTimeSuggestLoading(false);
     if (!res.ok) {
@@ -896,7 +896,7 @@ export function GroupDetailPage() {
           continue;
         }
         /* 409 SLOT_OVERLAP → bỏ qua khung này, xử lý khung còn lại. */
-        if (res.status === 409) {
+        if (isSlotOverlapError(res)) {
           skipped += 1;
           continue;
         }
@@ -1622,13 +1622,13 @@ export function GroupDetailPage() {
             {leader && !archived && (
               <Link
                 to={`/groups/${groupId}/ai`}
-                className="gdt-btn gdt-btn--ghost"
-                title="Open the group AI planner"
+                className="gdt-btn gdt-btn--primary"
+                title="Bàn brief và lập kế hoạch cho nhóm"
               >
                 <span className="material-symbols-outlined gdt-btn-icon">
                   auto_awesome
                 </span>
-                <span>Chat AI</span>
+                <span>Lập kế hoạch với AI</span>
               </Link>
             )}
             {leader && !archived && (
@@ -2072,7 +2072,7 @@ export function GroupDetailPage() {
                                 className="gai-suggest-btn"
                                 onClick={() => void handleOpenSuggestions(t)}
                                 disabled={busy}
-                                title="Ask AI who should take this on"
+                                title="Xem ai phù hợp với công việc này"
                               >
                                 <span
                                   className="material-symbols-outlined"
@@ -2080,7 +2080,7 @@ export function GroupDetailPage() {
                                 >
                                   auto_awesome
                                 </span>
-                                Suggest assignee
+                                Gợi ý người làm
                               </button>
                             )}
 
@@ -2098,7 +2098,7 @@ export function GroupDetailPage() {
                                 className="gai-timeslot-btn"
                                 onClick={() => void handleOpenTimeSuggestions(t)}
                                 disabled={busy}
-                                title="Ask AI to find free time for this task"
+                                title="Tìm giờ trống cho phần việc của bạn"
                               >
                                 <span
                                   className="material-symbols-outlined"
@@ -2106,7 +2106,7 @@ export function GroupDetailPage() {
                                 >
                                   event_available
                                 </span>
-                                Suggest times
+                                Tìm giờ cho việc của tôi
                               </button>
                             )}
 

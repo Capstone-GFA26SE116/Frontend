@@ -344,7 +344,7 @@ export function GroupAssigneeSuggestionsModal({
                         >
                           person_check
                         </span>
-                        Assign
+                        Giao việc
                       </button>
                     </div>
                   </li>

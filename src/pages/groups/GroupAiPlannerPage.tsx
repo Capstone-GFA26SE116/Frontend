@@ -1,6 +1,6 @@
 /**
  * ===========================================================
- * Group AI Planner — trang riêng cho Chat AI của nhóm
+ * Group Lập kế hoạch với AIner — trang riêng cho Chat AI của nhóm
  * ===========================================================
  * Route: /groups/:groupId/ai
  *
@@ -49,6 +49,7 @@ import {
   getGroup,
   listGroupMembers,
   listGroupMilestones,
+  listGroupTasks,
   parseAssigneeBusyDetails,
   type GroupDto,
   type GroupMemberDto,
@@ -58,8 +59,6 @@ import { toGroupAiErrorView, type GroupAiErrorView } from "./group-ai-errors";
 import {
   buildApplyPlans,
   findLatestDraft,
-  findPlanWithoutDraft,
-  isReadyToPlan,
   toEditableDraft,
   toVietnamDeadline,
   validateDraft,
@@ -79,6 +78,13 @@ import "./group-ai-planner-extra.css";
 /** Độ dài tối đa 1 tin nhắn (AI service trả 422 nếu vượt). */
 const MAX_MESSAGE_LENGTH = 4000;
 
+type ApplyProgress = {
+  draft: EditableDraft;
+  milestones: Record<string, string>;
+  tasks: Record<string, string>;
+  subtasks: Record<string, number>;
+};
+
 export function GroupAiPlannerPage() {
   const { groupId = "" } = useParams();
   const [toasts, toast] = useCenterToast();
@@ -88,6 +94,8 @@ export function GroupAiPlannerPage() {
   const [members, setMembers] = useState<GroupMemberDto[]>([]);
   const [groupError, setGroupError] = useState<string | null>(null);
   const [loadingGroup, setLoadingGroup] = useState(true);
+  const [groupMilestones, setGroupMilestones] = useState<GroupMilestoneDto[]>([]);
+  const [groupTaskCount, setGroupTaskCount] = useState<number | null>(null);
 
   /* ---------- Chat ---------- */
   const [chats, setChats] = useState<GroupConversationDto[]>([]);
@@ -99,7 +107,11 @@ export function GroupAiPlannerPage() {
   /* ---------- Gửi tin ---------- */
   const [draftText, setDraftText] = useState("");
   const [sending, setSending] = useState(false);
+  const [emptyPlan, setEmptyPlan] = useState(false);
   const [thinking, setThinking] = useState(false);
+  const chatBusy = useRef(false);
+  const creatingChat = useRef(false);
+  const [creating, setCreating] = useState(false);
 
   /* ---------- Bản nháp ---------- */
   const [draftOverride, setDraftOverride] = useState<EditableDraft | null>(null);
@@ -111,26 +123,18 @@ export function GroupAiPlannerPage() {
     title: string;
     assigneeId: string | null;
   } | null>(null);
-  /** Id giai đoạn / việc đã tạo → "Thử lại phần còn lại" không tạo trùng. */
-  const [createdMilestoneIds, setCreatedMilestoneIds] = useState<
-    Record<string, string>
-  >({});
-  const [createdTaskIds, setCreatedTaskIds] = useState<Record<string, string>>(
-    {},
-  );
+  const [progress, setProgress] = useState<ApplyProgress | null>(null);
+  const applyingRef = useRef(false);
 
   /* ---------- Lỗi ---------- */
   const [errorView, setErrorView] = useState<GroupAiErrorView | null>(null);
-  const [errorRaw, setErrorRaw] = useState("");
   /** Thao tác thử lại cho lỗi tạm thời (502/503/429). */
   const [retryAction, setRetryAction] = useState<(() => void) | null>(null);
 
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const sendRef = useRef<((mode: GroupChatMode) => Promise<void>) | null>(null);
-  const applyRef = useRef<
-    ((confirmConflicts?: boolean) => Promise<void>) | null
-  >(null);
+  const skipChatLoad = useRef<string | null>(null);
   const loadChatRef = useRef<((chatId: string) => Promise<void>) | null>(null);
   /** Handle của cột phải — để cuộn tới bản nháp khi nó vừa xuất hiện. */
   const panelRef = useRef<GroupDraftPanelHandle | null>(null);
@@ -146,8 +150,7 @@ export function GroupAiPlannerPage() {
     ) => {
       const view = toGroupAiErrorView(res);
       setErrorView(view);
-      setErrorRaw(res.error);
-      if (view.showRetry && retry) setRetryAction(() => retry);
+      setRetryAction(view.showRetry && retry ? () => retry : null);
     },
     [],
   );
@@ -158,9 +161,11 @@ export function GroupAiPlannerPage() {
 
   const loadGroup = useCallback(async () => {
     if (!groupId) return;
-    const [gRes, mRes] = await Promise.all([
+    const [gRes, mRes, milestoneRes, taskRes] = await Promise.all([
       getGroup(groupId),
       listGroupMembers(groupId),
+      listGroupMilestones(groupId),
+      listGroupTasks(groupId),
     ]);
     setLoadingGroup(false);
     if (!gRes.ok) {
@@ -169,6 +174,8 @@ export function GroupAiPlannerPage() {
     }
     setGroupError(null);
     setGroup(gRes.data);
+    if (milestoneRes.ok) setGroupMilestones(milestoneRes.data);
+    if (taskRes.ok) setGroupTaskCount(taskRes.data.length);
     setMembers(mRes.ok ? (mRes.data ?? []) : []);
   }, [groupId]);
 
@@ -221,10 +228,26 @@ export function GroupAiPlannerPage() {
         return ta - tb;
       });
       setMessages(loaded);
-      setCreatedMilestoneIds({});
-      setCreatedTaskIds({});
+      const draft = findLatestDraft(loaded);
+      if (draft?.message.is_applied) {
+        setChats((prev) => prev.map((chat) =>
+          chat.conversation_id === chatId ? { ...chat, status: "applied" } : chat
+        ));
+      }
+      let saved: ApplyProgress | null = null;
+      if (draft && !draft.message.is_applied) {
+        try {
+          const raw = sessionStorage.getItem(`metanoia:group-plan:${chatId}:${draft.message.message_id}`);
+          saved = raw ? JSON.parse(raw) as ApplyProgress : null;
+        } catch {
+          // The chat can still be opened when storage is unavailable.
+        }
+      }
+      setProgress(saved);
       setApplyError(null);
-      setDraftOverride(null);
+      setEmptyPlan(false);
+      setBusyConflict(null);
+      setDraftOverride(saved?.draft ?? null);
     },
     [reportError],
   );
@@ -235,7 +258,10 @@ export function GroupAiPlannerPage() {
 
   useEffect(() => {
     if (!activeChatId) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (skipChatLoad.current === activeChatId) {
+      skipChatLoad.current = null;
+      return;
+    }
     void loadChat(activeChatId);
   }, [activeChatId, loadChat]);
 
@@ -262,7 +288,6 @@ export function GroupAiPlannerPage() {
     return derivedDraft;
   }, [derivedDraft, draftOverride]);
 
-  const readyToPlan = useMemo(() => isReadyToPlan(messages), [messages]);
 
   /**
    * Brief gốc Leader đã gửi (tin `user` đầu tiên có nội dung).
@@ -277,10 +302,6 @@ export function GroupAiPlannerPage() {
   }, [messages]);
 
   /** AI trả về nhưng KHÔNG sinh được bản nháp → cảnh báo + nút thử lại. */
-  const planWithoutDraft = useMemo(() => {
-    if (editableDraft && editableDraft.milestones.length > 0) return null;
-    return findPlanWithoutDraft(messages);
-  }, [messages, editableDraft]);
 
   /* ===========================================================
    * Cuộn
@@ -296,121 +317,87 @@ export function GroupAiPlannerPage() {
    * =========================================================== */
 
   const handleNewChat = useCallback(async () => {
-    if (!groupId) return;
-    const res = await createGroupChat(groupId);
-    if (!res.ok) {
-      reportError(res);
-      return;
+    if (!groupId || creatingChat.current) return;
+    creatingChat.current = true;
+    setCreating(true);
+    setErrorView(null);
+    try {
+      const res = await createGroupChat(groupId);
+      if (!res.ok) {
+        reportError(res);
+        return;
+      }
+      setChats((prev) => [res.data, ...prev]);
+      setMessages([]);
+      skipChatLoad.current = res.data.conversation_id;
+      setActiveChatId(res.data.conversation_id);
+      setProgress(null);
+      setDraftText("");
+      setApplyError(null);
+      setEmptyPlan(false);
+      setBusyConflict(null);
+      setDraftOverride(null);
+      window.setTimeout(() => composerRef.current?.focus(), 40);
+    } finally {
+      creatingChat.current = false;
+      setCreating(false);
     }
-    setChats((prev) => [res.data, ...prev]);
-    setActiveChatId(res.data.conversation_id);
-    setMessages([]);
-    setDraftText("");
-    setCreatedMilestoneIds({});
-    setCreatedTaskIds({});
-    setApplyError(null);
-    setDraftOverride(null);
-    window.setTimeout(() => composerRef.current?.focus(), 40);
   }, [groupId, reportError]);
-
-  /* ===========================================================
-   * Gửi tin
-   * =========================================================== */
 
   const handleSend = useCallback(
     async (mode: GroupChatMode) => {
-      if (!activeChatId || sending) return;
-      let text = draftText.trim();
-
+      const text = draftText.trim();
+      if (chatBusy.current || creatingChat.current || applyingRef.current || loadingChat || loadingChats) return;
       if (mode === "discuss" && !text) return;
-      if (text.length > MAX_MESSAGE_LENGTH) {
-        setApplyError(
-          "Your message is too long. Please keep it under 4000 characters.",
-        );
-        return;
-      }
+      if (mode === "plan" && (!activeChatId || !originalBrief || editableDraft?.applied || progress)) return;
 
-      /*
-       * `mode: "plan"` mà Leader KHÔNG gõ thêm gì → gửi kèm **brief gốc**.
-       *
-       * ⚠️ Vì sao: `text: ""` đúng theo spec, nhưng AI service đôi khi chỉ
-       * trả về prose ("I have created a structured work plan...") mà KHÔNG
-       * kèm `draft` → không có gì để sửa / áp dụng. Gửi kèm brief giúp AI
-       * service có đủ ngữ cảnh để dựng milestone / task / subtask.
-       */
-      if (mode === "plan" && !text) {
-        const brief = originalBrief.slice(0, MAX_MESSAGE_LENGTH);
-        if (brief) text = brief;
-      }
-
+      chatBusy.current = true;
       setSending(true);
       setThinking(true);
+      setErrorView(null);
       setApplyError(null);
+      setEmptyPlan(false);
+      try {
+        let chatId = activeChatId;
+        if (!chatId) {
+          const created = await createGroupChat(groupId);
+          if (!created.ok) {
+            reportError(created, () => void sendRef.current?.(mode));
+            return;
+          }
+          chatId = created.data.conversation_id;
+          skipChatLoad.current = chatId;
+          setChats((prev) => [created.data, ...prev]);
+          setActiveChatId(chatId);
+        }
 
-      const res = await sendGroupChatMessage(activeChatId, { text, mode });
-      setSending(false);
-      setThinking(false);
+        const result = await sendGroupChatMessage(chatId, {
+          text: mode === "plan" && !text
+            ? "Tạo bản nháp dựa trên brief và các phản hồi đã trao đổi trong cuộc trò chuyện này."
+            : text,
+          mode,
+        });
+        if (!result.ok) {
+          reportError(result, () => void sendRef.current?.(mode));
+          return;
+        }
 
-      if (!res.ok) {
-        reportError(res, () => void sendRef.current?.(mode));
-        return;
+        const { user_message, ai_message } = result.data;
+        setMessages((prev) => [...prev, user_message, ai_message]);
+        if (mode === "plan") setEmptyPlan(!(ai_message.draft?.milestones.length));
+        setDraftText("");
+      } finally {
+        chatBusy.current = false;
+        setSending(false);
+        setThinking(false);
       }
-
-      /*
-       * Nối tin mới vào danh sách — nhưng BỎ QUA tin đã có (trùng id) để
-       * không render trùng thẻ bản nháp.
-       */
-      setMessages((prev) => {
-        const incoming = [res.data.user_message, res.data.ai_message];
-        const incomingIds = new Set(incoming.map((m) => m.message_id));
-        const kept = prev.filter((m) => !incomingIds.has(m.message_id));
-        return [...kept, ...incoming];
-      });
-      if (mode === "plan") setDraftText("");
     },
-    [activeChatId, draftText, originalBrief, sending, reportError],
+    [activeChatId, draftText, editableDraft?.applied, groupId, loadingChat, loadingChats, originalBrief, progress, reportError],
   );
 
   useEffect(() => {
     sendRef.current = handleSend;
   }, [handleSend]);
-
-  /**
-   * Bấm "Generate plan again" — yêu cầu AI sinh lại kế hoạch.
-   *
-   * ⚠️ Gửi kèm **brief gốc** (nếu có) thay vì `text: ""`:
-   * - `text: ""` → AI service đôi khi chỉ trả prose mà KHÔNG kèm `draft`.
-   * - Kèm brief → AI có đủ ngữ cảnh để dựng milestone/task/subtask.
-   */
-  const handleRegeneratePlan = useCallback(async () => {
-    if (!activeChatId || sending) return;
-    const brief = originalBrief.slice(0, MAX_MESSAGE_LENGTH);
-
-    setSending(true);
-    setThinking(true);
-    setApplyError(null);
-
-    const res = await sendGroupChatMessage(activeChatId, {
-      text: brief,
-      mode: "plan",
-    });
-
-    setSending(false);
-    setThinking(false);
-
-    if (!res.ok) {
-      reportError(res, () => void sendRef.current?.("plan"));
-      return;
-    }
-
-    setMessages((prev) => {
-      const incoming = [res.data.user_message, res.data.ai_message];
-      const incomingIds = new Set(incoming.map((m) => m.message_id));
-      const kept = prev.filter((m) => !incomingIds.has(m.message_id));
-      return [...kept, ...incoming];
-    });
-    setDraftText("");
-  }, [activeChatId, originalBrief, sending, reportError]);
 
   /* ===========================================================
    * Sửa bản nháp
@@ -419,7 +406,7 @@ export function GroupAiPlannerPage() {
   const patchMilestone = useCallback(
     (msKey: string, patch: Partial<EditableMilestone>) => {
       setDraftOverride((prev) => {
-        const base = prev ?? derivedDraft;
+        const base = prev?.messageId === derivedDraft?.messageId ? prev : derivedDraft;
         if (!base) return prev;
         return {
           ...base,
@@ -434,8 +421,11 @@ export function GroupAiPlannerPage() {
 
   const patchTask = useCallback(
     (msKey: string, taskKey: string, patch: Partial<EditableTask>) => {
+      if (patch.assigneeId !== undefined && busyConflict?.milestoneKey === msKey && busyConflict.taskKey === taskKey) {
+        setBusyConflict(null);
+      }
       setDraftOverride((prev) => {
-        const base = prev ?? derivedDraft;
+        const base = prev?.messageId === derivedDraft?.messageId ? prev : derivedDraft;
         if (!base) return prev;
         return {
           ...base,
@@ -452,7 +442,7 @@ export function GroupAiPlannerPage() {
         };
       });
     },
-    [derivedDraft],
+    [busyConflict, derivedDraft],
   );
 
   /** Khôi phục bản gốc của AI (bỏ các sửa tay). */
@@ -466,177 +456,167 @@ export function GroupAiPlannerPage() {
 
   const handleApply = useCallback(
     async (confirmConflicts = false) => {
-      if (!editableDraft || !activeChatId || applying) return;
+      if (!editableDraft || editableDraft.applied || !activeChatId || applyingRef.current || chatBusy.current || loadingChat || group?.status === "Archived") return;
 
-      const problems = validateDraft(editableDraft);
-      if (problems.length > 0) {
+      const selectedDraft = {
+        ...editableDraft,
+        milestones: editableDraft.milestones
+          .map((ms) => ({ ...ms, tasks: ms.tasks.filter((task) => task.included !== false) }))
+          .filter((ms) => ms.tasks.length),
+      };
+      const problems = validateDraft(selectedDraft);
+      const invalidAssignee = selectedDraft.milestones.flatMap((ms) => ms.tasks).find((task) =>
+        task.assigneeId && members.length > 0 && !members.some((member) =>
+          member.userId === task.assigneeId && ["leader", "member"].includes(member.role.toLowerCase())
+        )
+      );
+      if (invalidAssignee) {
+        setApplyError(`Hãy chọn người khác hoặc để trống người làm cho “${invalidAssignee.title}”.`);
+        return;
+      }
+      if (problems.length) {
         setApplyError(problems[0]);
         return;
       }
 
+      applyingRef.current = true;
       setApplying(true);
       setApplyError(null);
+      setErrorView(null);
 
-      /* 1. orderIndex tiếp theo cho milestone. */
-      const msRes = await listGroupMilestones(groupId);
-      let nextOrder = 1;
-      if (msRes.ok) {
-        const max = msRes.data.reduce(
-          (acc, m: GroupMilestoneDto) => Math.max(acc, m.orderIndex ?? 0),
-          0,
-        );
-        nextOrder = max + 1;
+      const journalKey = `metanoia:group-plan:${activeChatId}:${editableDraft.messageId}`;
+      const saved: ApplyProgress = {
+        draft: editableDraft,
+        milestones: { ...progress?.milestones },
+        tasks: { ...progress?.tasks },
+        subtasks: { ...progress?.subtasks },
+      };
+      function remember() {
+        setProgress({ ...saved });
+        try {
+          sessionStorage.setItem(journalKey, JSON.stringify(saved));
+        } catch {
+          // Keep retry progress in memory when storage is unavailable.
+        }
       }
 
-      const { milestones, tasks } = buildApplyPlans(editableDraft);
+      function fail(res: { ok: false; error: string; status?: number; errorCode?: string }, label: string) {
+        setApplyError(label);
+        reportError(res);
+      }
 
-      /* Bản ghi các mục đã tạo — để "Thử lại phần còn lại" không tạo trùng. */
-      const createdMilestones: Record<string, string> = {
-        ...createdMilestoneIds,
-      };
-      const createdTasks: Record<string, string> = { ...createdTaskIds };
-
-      /* 2. Tạo giai đoạn + việc + việc con — TUẦN TỰ (không song song). */
-      for (const ms of milestones) {
-        if (ms.tasks.length === 0) continue;
-
-        /* --- Giai đoạn --- */
-        let milestoneId = createdMilestones[ms.key];
-        if (!milestoneId) {
-          const msCreate = await createGroupMilestone(groupId, {
-            name: ms.title.trim(),
-            orderIndex: nextOrder++,
-            /* `dueDate` là DateTime? — không có hạn thì gửi `null`, KHÔNG gửi
-               chuỗi rỗng (Backend parse `YYYY-MM-DD` sẽ lỗi 400). */
-            dueDate: ms.deadline ? ms.deadline : null,
-          });
-          if (!msCreate.ok) {
-            setApplying(false);
-            setCreatedMilestoneIds(createdMilestones);
-            setCreatedTaskIds(createdTasks);
-            reportError(msCreate, () => void applyRef.current?.(confirmConflicts));
-            return;
-          }
-          milestoneId = msCreate.data.id;
-          createdMilestones[ms.key] = milestoneId;
+      try {
+        const current = await getGroupChat(activeChatId);
+        if (!current.ok) {
+          fail(current, "Chưa kiểm tra được trạng thái bản nháp. Hãy thử lưu lại.");
+          return;
+        }
+        const currentDraft = findLatestDraft(current.data.messages);
+        if (currentDraft?.message.message_id !== editableDraft.messageId) {
+          setApplyError("Bản nháp đã thay đổi. Hãy mở lại cuộc trò chuyện để xem bản mới nhất.");
+          return;
+        }
+        if (currentDraft.message.is_applied || current.data.conversation.status === "applied") {
+          setDraftOverride({ ...editableDraft, applied: true });
+          setChats((prev) => prev.map((chat) =>
+            chat.conversation_id === activeChatId ? { ...chat, status: "applied" } : chat
+          ));
+          return;
         }
 
-        /* --- Việc của giai đoạn --- */
-        for (const task of tasks.filter((t) => t.milestoneKey === ms.key)) {
-          const already = createdTasks[task.key];
-          if (already) continue; // đã tạo ở lần trước → bỏ qua
+        const msRes = await listGroupMilestones(groupId);
+        if (!msRes.ok) {
+          fail(msRes, "Chưa tải được cột mốc của nhóm. Hãy thử lưu lại.");
+          return;
+        }
+        let nextOrder = msRes.data.reduce((max, ms) => Math.max(max, ms.orderIndex ?? 0), 0) + 1;
+        const { milestones, tasks } = buildApplyPlans(selectedDraft);
 
-          const taskCreate = await createGroupTask(groupId, {
-            title: task.title,
-            milestoneId,
-            estimatedMinutes: task.estimatedMinutes,
-            /* Deadline của việc = 23:59 giờ Việt Nam của ngày hết hạn
-               giai đoạn (spec mục 2.6 bước 3). Không có hạn → `null`. */
-            deadline: ms.deadline ? toVietnamDeadline(ms.deadline) : null,
-            assigneeId: task.assigneeId,
-            confirmConflicts: confirmConflicts || undefined,
-          });
+        for (const ms of milestones) {
+          let milestoneId = saved.milestones[ms.key];
+          if (!milestoneId) {
+            const result = await createGroupMilestone(groupId, {
+              name: ms.title.trim(),
+              orderIndex: nextOrder++,
+              dueDate: ms.deadline,
+            });
+            if (!result.ok) {
+              fail(result, `Chưa lưu được cột mốc “${ms.title}”.`);
+              return;
+            }
+            milestoneId = result.data.id;
+            saved.milestones[ms.key] = milestoneId;
+            remember();
+          }
 
-          if (!taskCreate.ok) {
-            setApplying(false);
-            setCreatedMilestoneIds(createdMilestones);
-            setCreatedTaskIds(createdTasks);
-            /*
-             * 409 GROUP_ASSIGNEE_BUSY → Leader xác nhận rồi gửi lại kèm
-             * `confirmConflicts: true` (spec mục 2.6).
-             */
-            if (taskCreate.status === 409) {
-              const details = parseAssigneeBusyDetails(taskCreate.details);
-              if (details) {
-                setBusyConflict({
-                  taskKey: task.key,
-                  milestoneKey: ms.key,
-                  title: task.title,
-                  assigneeId: task.assigneeId,
-                });
-                setApplyError(
-                  `"${task.title}" was not created because the assignee is busy at that time. Confirm to assign it anyway.`,
-                );
+          for (const task of tasks.filter((item) => item.milestoneKey === ms.key)) {
+            const taskKey = JSON.stringify([ms.key, task.key]);
+            let taskId = saved.tasks[taskKey];
+            if (!taskId) {
+              const result = await createGroupTask(groupId, {
+                title: task.title,
+                milestoneId,
+                estimatedMinutes: task.estimatedMinutes,
+                deadline: toVietnamDeadline(ms.deadline),
+                assigneeId: task.assigneeId,
+                confirmConflicts: confirmConflicts && busyConflict?.taskKey === task.key &&
+                  busyConflict.milestoneKey === ms.key ? true : undefined,
+              });
+              if (!result.ok) {
+                if (result.status === 409 && parseAssigneeBusyDetails(result.details)) {
+                  setBusyConflict({ taskKey: task.key, milestoneKey: ms.key, title: task.title, assigneeId: task.assigneeId });
+                  return;
+                }
+                fail(result, `Chưa lưu được việc “${task.title}”.`);
                 return;
               }
+              taskId = result.data.id;
+              saved.tasks[taskKey] = taskId;
+              setBusyConflict(null);
+              remember();
             }
-            reportError(taskCreate, () =>
-              void applyRef.current?.(confirmConflicts),
-            );
-            return;
-          }
 
-          const taskId = taskCreate.data.id;
-
-          /* --- Việc con --- */
-          for (const st of task.subtasks) {
-            const stRes = await createGroupSubTask(taskId, {
-              title: st.title,
-              estimatedMinutes: st.estimatedMinutes,
-            });
-            /* Việc con lỗi không chặn — báo nhưng vẫn tiếp tục tạo việc còn lại. */
-            if (!stRes.ok) {
-              setApplyError(
-                `Could not add the subtask "${st.title}". You can add it manually from the task.`,
-              );
+            const alreadySaved = saved.subtasks[taskKey] ?? 0;
+            for (const [offset, subtask] of task.subtasks.slice(alreadySaved).entries()) {
+              const result = await createGroupSubTask(taskId, {
+                title: subtask.title,
+                estimatedMinutes: subtask.estimatedMinutes,
+              });
+              if (!result.ok) {
+                fail(result, `Chưa lưu được việc con “${subtask.title}”. Những mục đã lưu sẽ được bỏ qua khi thử lại.`);
+                return;
+              }
+              saved.subtasks[taskKey] = alreadySaved + offset + 1;
+              remember();
             }
           }
-
-          createdTasks[task.key] = taskId;
         }
+
+        const result = await markGroupDraftApplied(activeChatId, editableDraft.messageId);
+        if (!result.ok && !(result.status === 409 &&
+          (result.errorCode ?? result.error).trim().toLowerCase() === "already_applied")) {
+          fail(result, "Các mục đã được tạo. Bấm thử lại để hoàn tất trạng thái lưu.");
+          return;
+        }
+
+        try {
+          sessionStorage.removeItem(journalKey);
+        } catch {
+          // The server records the applied state.
+        }
+        setProgress(null);
+        setBusyConflict(null);
+        setDraftOverride({ ...selectedDraft, applied: true });
+        void loadGroup();
+        setChats((prev) => prev.map((chat) => chat.conversation_id === activeChatId ? { ...chat, status: "applied" } : chat));
+        toast.success("Đã lưu kế hoạch vào nhóm", `${milestones.length} cột mốc và ${tasks.length} việc.`);
+      } finally {
+        applyingRef.current = false;
+        setApplying(false);
       }
-
-      /* 3. Đánh dấu đã áp dụng → khóa nút. */
-      const appliedRes = await markGroupDraftApplied(
-        activeChatId,
-        editableDraft.messageId,
-      );
-      setApplying(false);
-      setCreatedMilestoneIds(createdMilestones);
-      setCreatedTaskIds(createdTasks);
-      setBusyConflict(null);
-      setApplyError(null);
-
-      if (!appliedRes.ok && appliedRes.status === 409) {
-        /* 409 already_applied → đã áp dụng ở tab khác → khóa nút. */
-        setDraftOverride((prev) => {
-          const base = prev ?? editableDraft;
-          return base ? { ...base, applied: true } : prev;
-        });
-        return;
-      }
-
-      if (!appliedRes.ok) {
-        reportError(appliedRes, () =>
-          void applyRef.current?.(confirmConflicts),
-        );
-        return;
-      }
-
-      setDraftOverride((prev) => {
-        const base = prev ?? editableDraft;
-        return base ? { ...base, applied: true } : prev;
-      });
-      toast.success(
-        "Plan applied to the group",
-        `${milestones.length} milestones and ${tasks.length} tasks created.`,
-      );
     },
-    [
-      editableDraft,
-      activeChatId,
-      groupId,
-      applying,
-      createdMilestoneIds,
-      createdTaskIds,
-      reportError,
-      toast,
-    ],
+    [activeChatId, busyConflict, editableDraft, group?.status, groupId, loadingChat, loadGroup, members, progress, reportError, toast],
   );
-
-  useEffect(() => {
-    applyRef.current = handleApply;
-  }, [handleApply]);
 
   /* ===========================================================
    * Render
@@ -659,12 +639,15 @@ export function GroupAiPlannerPage() {
 
   const isLeader = (group?.myRole ?? "").toLowerCase() === "leader";
   const archived = group?.status === "Archived";
+  const pending = creating || sending || applying || loadingChat || loadingChats;
+  const canDraft = !!originalBrief && !editableDraft?.applied && !progress;
+  const step = editableDraft?.applied ? 2 : editableDraft?.milestones.length ? 1 : 0;
 
   if (loadingGroup) {
     return (
       <div className="gai-page-state">
         <span className="material-symbols-outlined gai-spin">progress_activity</span>
-        <span>Loading group…</span>
+        <span>Đang tải nhóm…</span>
       </div>
     );
   }
@@ -673,9 +656,9 @@ export function GroupAiPlannerPage() {
     return (
       <div className="gai-page-state gai-page-state--error">
         <span className="material-symbols-outlined">error</span>
-        <span>{groupError ?? "Group not found."}</span>
+        <span>{groupError ?? "Không tìm thấy nhóm."}</span>
         <Link to="/groups" className="gai-btn gai-btn--ghost">
-          Back to groups
+          Về danh sách nhóm
         </Link>
       </div>
     );
@@ -686,8 +669,7 @@ export function GroupAiPlannerPage() {
       <div className="gai-page-state">
         <span className="material-symbols-outlined">lock</span>
         <span>
-          Only group leaders can plan work with AI. Ask a leader to start a
-          planning chat for this group.
+Trưởng nhóm có thể mở cuộc trò chuyện lập kế hoạch với AI.
         </span>
       </div>
     );
@@ -714,7 +696,7 @@ export function GroupAiPlannerPage() {
             <span className="material-symbols-outlined gai-planner-crumb-sep">
               chevron_right
             </span>
-            <span className="gai-planner-crumb-current">AI Plan</span>
+            <span className="gai-planner-crumb-current">Lập kế hoạch với AI</span>
           </div>
           <div className="gai-planner-subbar-right">
             <Link
@@ -724,7 +706,7 @@ export function GroupAiPlannerPage() {
               <span className="material-symbols-outlined" aria-hidden="true">
                 arrow_back
               </span>
-              Group
+              Về nhóm
             </Link>
           </div>
         </div>
@@ -735,17 +717,17 @@ export function GroupAiPlannerPage() {
           {/* ============ TRÁI: lịch sử chat ============ */}
           <aside className="gai-planner-history">
             <div className="gai-planner-history-head">
-              <h3 className="gai-planner-history-title">Planning chats</h3>
+              <h3 className="gai-planner-history-title">Cuộc trò chuyện</h3>
               <button
                 type="button"
                 className="gai-btn gai-btn--primary gai-btn--sm"
                 onClick={() => void handleNewChat()}
-                disabled={archived}
+                disabled={archived || pending}
               >
                 <span className="material-symbols-outlined" aria-hidden="true">
                   add
                 </span>
-                New
+                Mới
               </button>
             </div>
             <div className="gai-planner-history-items">
@@ -754,13 +736,12 @@ export function GroupAiPlannerPage() {
                   <span className="material-symbols-outlined gai-spin">
                     progress_activity
                   </span>{" "}
-                  Loading chats…
+                  Đang tải lịch sử…
                 </p>
               )}
               {!loadingChats && chats.length === 0 && (
                 <p className="gai-planner-history-empty">
-                  No planning chats yet. Create one to turn a client brief into
-                  a milestone plan.
+                  Cuộc trò chuyện đầu tiên sẽ xuất hiện sau khi bạn gửi brief.
                 </p>
               )}
               {!loadingChats &&
@@ -774,19 +755,34 @@ export function GroupAiPlannerPage() {
                         ? " gai-planner-history-item--on"
                         : "")
                     }
-                    onClick={() => setActiveChatId(c.conversation_id)}
+                    disabled={pending}
+                    aria-current={c.conversation_id === activeChatId ? "true" : undefined}
+                    onClick={() => {
+                      if (c.conversation_id === activeChatId) {
+                        void loadChat(c.conversation_id);
+                        return;
+                      }
+                      setMessages([]);
+                      setDraftText("");
+                      setDraftOverride(null);
+                      setProgress(null);
+                      setEmptyPlan(false);
+                      setBusyConflict(null);
+                      setErrorView(null);
+                      setActiveChatId(c.conversation_id);
+                    }}
                   >
                     <span className="gai-planner-history-item-name">
-                      {c.title || "Group planning"}
+                      {c.title || "Kế hoạch nhóm"}
                     </span>
                     <span className="gai-planner-history-item-meta">
-                      {new Date(c.created_at).toLocaleDateString(undefined, {
+                      {new Date(c.created_at).toLocaleDateString("vi-VN", {
                         day: "numeric",
                         month: "short",
                       })}
                       {c.status === "applied" && (
                         <span className="gai-planner-history-item-status">
-                          applied
+                          Đã lưu
                         </span>
                       )}
                     </span>
@@ -807,33 +803,23 @@ export function GroupAiPlannerPage() {
                 </span>
                 <div>
                   <h1 className="gai-planner-stream-h1">
-                    Group AI Planner
+                    Group Lập kế hoạch với AIner
                     {activeChat?.title && (
                       <span className="gai-planner-stream-chat-title">
                         {activeChat.title}
                       </span>
                     )}
                   </h1>
-                  <p className="gai-planner-stream-sub">
-                    Paste the client brief → AI drafts milestones and tasks →
-                    review on the right, then apply
-                  </p>
                 </div>
               </div>
-              <div className="gai-planner-stream-tags">
-                <span className="gai-planner-tag">
-                  <span className="material-symbols-outlined" aria-hidden="true">
-                    groups
-                  </span>
-                  {members.length} members
-                </span>
-                <span className="gai-planner-tag">
-                  <span className="material-symbols-outlined" aria-hidden="true">
-                    bolt
-                  </span>
-                  {messages.length} msgs
-                </span>
-              </div>
+              <ol className="gai-planner-steps" aria-label="Tiến trình lập kế hoạch">
+                {["Bàn brief", "Duyệt và giao việc", "Đã lưu vào nhóm"].map((label, index) => (
+                  <li key={label} aria-current={index === step ? "step" : undefined}>
+                    <span aria-hidden="true">{index < step ? "✓" : index + 1}</span>
+                    {label}
+                  </li>
+                ))}
+              </ol>
             </div>
 
             {errorView && (
@@ -844,9 +830,6 @@ export function GroupAiPlannerPage() {
                 <div className="gai-planner-banner-body">
                   <strong>{errorView.title}</strong>
                   <span>{errorView.message}</span>
-                  {errorRaw && (
-                    <span className="gai-planner-banner-raw">{errorRaw}</span>
-                  )}
                 </div>
                 {retryAction && (
                   <button
@@ -861,7 +844,7 @@ export function GroupAiPlannerPage() {
                     <span className="material-symbols-outlined" aria-hidden="true">
                       refresh
                     </span>
-                    Try again
+                    Thử lại
                   </button>
                 )}
               </div>
@@ -872,9 +855,16 @@ export function GroupAiPlannerPage() {
               members={members}
               loading={loadingChat}
               thinking={thinking}
-              planWithoutDraft={planWithoutDraft}
-              hasDraft={!!editableDraft}
-              onRegenerate={() => void handleRegeneratePlan()}
+              emptyPlan={emptyPlan}
+              canRegenerate={!pending && !archived && canDraft}
+              onRegenerate={() => void handleSend("plan")}
+              showReview={step === 1}
+              onReview={() => panelRef.current?.scrollToDraft()}
+              onExample={() => {
+                setDraftText("Giúp mình rà soát brief của nhóm. Mục tiêu là [kết quả cần bàn giao], hạn là [ngày]. Những việc đã có là [các việc]. Mình muốn bổ sung [phần còn thiếu].");
+                composerRef.current?.focus();
+              }}
+              exampleDisabled={pending || archived}
               bodyRef={bodyRef}
             />
 
@@ -891,10 +881,10 @@ export function GroupAiPlannerPage() {
                     void handleSend("discuss");
                   }
                 }}
-                placeholder="Paste the client brief, or ask the AI a question…"
-                maxLength={MAX_MESSAGE_LENGTH + 200}
-                disabled={sending || archived}
-                aria-label="Message the AI"
+                placeholder="Mô tả mục tiêu, yêu cầu khách hàng và hạn bàn giao…"
+                maxLength={MAX_MESSAGE_LENGTH}
+                disabled={pending || archived}
+                aria-label="Nhắn cho AI"
               />
               <div className="gai-planner-composer-foot">
                 <span>
@@ -906,32 +896,25 @@ export function GroupAiPlannerPage() {
                   type="button"
                   className="gai-btn gai-btn--primary"
                   onClick={() => void handleSend("discuss")}
-                  disabled={sending || archived || !draftText.trim()}
+                  disabled={pending || archived || !draftText.trim()}
                 >
                   <span className="material-symbols-outlined" aria-hidden="true">
                     send
                   </span>
-                  Send
+                  Gửi để bàn bạc
                 </button>
-                <button
-                  type="button"
-                  className={
-                    "gai-btn gai-btn--ghost" +
-                    (readyToPlan ? " gai-plan-btn" : "")
-                  }
-                  onClick={() => void handleSend("plan")}
-                  disabled={sending || archived}
-                  title={
-                    readyToPlan
-                      ? "AI has enough detail to draft a plan"
-                      : "Ask the AI to draft a milestone plan"
-                  }
-                >
-                  <span className="material-symbols-outlined" aria-hidden="true">
-                    account_tree
-                  </span>
-                  {editableDraft ? "Update plan" : "Draft plan"}
-                </button>
+                {canDraft && (
+                  <button
+                    type="button"
+                    className={`gai-btn ${step === 0 ? "gai-btn--primary" : "gai-btn--ghost"}`}
+                    onClick={() => void handleSend("plan")}
+                    disabled={pending || archived}
+                    title="Dùng nội dung đã trao đổi và yêu cầu bạn đang nhập"
+                  >
+                    <span className="material-symbols-outlined" aria-hidden="true">account_tree</span>
+                    {step === 1 ? "Cập nhật bản nháp với AI" : "Tạo bản nháp"}
+                  </button>
+                )}
               </div>
             </div>
           </section>
@@ -943,6 +926,10 @@ export function GroupAiPlannerPage() {
               draft={editableDraft}
               assignable={assignable}
               applying={applying}
+              readOnly={archived || sending || loadingChat || creating}
+              savedMilestones={progress?.milestones}
+              savedTasks={progress?.tasks}
+              groupPath={`/groups/${groupId}`}
               error={applyError}
               busyConflict={busyConflict}
               onPatchMilestone={patchMilestone}
@@ -950,10 +937,6 @@ export function GroupAiPlannerPage() {
               onRestore={restoreDraft}
               onApply={() => void handleApply()}
               onConfirmConflicts={() => void handleApply(true)}
-              onDismissConflict={() => {
-                setBusyConflict(null);
-                setApplyError(null);
-              }}
             />
 
             {/* Ngữ cảnh nhóm */}
@@ -965,22 +948,24 @@ export function GroupAiPlannerPage() {
                 >
                   info
                 </span>
-                <h2 className="gai-planner-card-title">Group context</h2>
+                <h2 className="gai-planner-card-title">Nhóm đang có gì?</h2>
               </div>
-              <ul className="gai-planner-context-list">
-                <li>
-                  <strong>Group:</strong> {group.name} ·{" "}
-                  {members.length} members
-                </li>
-                <li>
-                  <strong>Apply</strong> creates milestones, tasks and subtasks
-                  in the group — AI never writes to the group tables.
-                </li>
-                <li>
-                  <strong>Each chat</strong> can be applied once. Start a new
-                  chat to plan more work.
-                </li>
-              </ul>
+              <p className="gai-planner-card-sub">
+                {group.name} · {group.memberCount} thành viên
+                {groupTaskCount !== null && ` · ${groupTaskCount} công việc`}
+                {group.deadline && ` · Hạn ${new Date(group.deadline).toLocaleDateString("vi-VN")}`}
+              </p>
+              {groupMilestones.length > 0 && (
+                <details className="gai-group-existing">
+                  <summary>{groupMilestones.length} cột mốc hiện có</summary>
+                  <ul className="gai-planner-context-list">
+                    {groupMilestones.map((milestone) => <li key={milestone.id}>{milestone.name}</li>)}
+                  </ul>
+                </details>
+              )}
+              <Link to={`/groups/${groupId}`} className="gai-btn gai-btn--ghost gai-btn--sm">
+                Xem công việc và gợi ý người làm
+              </Link>
             </div>
           </aside>
         </div>

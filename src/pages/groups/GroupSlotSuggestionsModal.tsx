@@ -149,7 +149,7 @@ export function GroupSlotSuggestionsModal({
           <div className="gai-head-text">
             <span className="gai-eyebrow">AI suggestion</span>
             <h2 id="gai-slot-title" className="gai-title">
-              {data?.summary || "Suggested times for this task"}
+              {data?.summary || "Giờ trống cho phần việc của bạn"}
             </h2>
             <p className="gai-subtitle">{taskTitle}</p>
           </div>
@@ -293,14 +293,14 @@ export function GroupSlotSuggestionsModal({
                 <span className="material-symbols-outlined gai-spin" aria-hidden="true">
                   progress_activity
                 </span>
-                Adding…
+                Đang thêm…
               </>
             ) : (
               <>
                 <span className="material-symbols-outlined" aria-hidden="true">
                   event_available
                 </span>
-                Add to calendar
+                Thêm vào lịch
               </>
             )}
           </button>

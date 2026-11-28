@@ -993,8 +993,8 @@ function ProjectDetailBody({
             <span className="pd-section-eyebrow">Choose your flow</span>
             <h2 className="pd-section-title">How do you want to work on this project?</h2>
             <p className="pd-section-sub">
-              METANOIA supports two flows: create tasks manually and place them on
-              a schedule, or talk to AI and let it plan the work with you.
+              Create and schedule tasks manually, or discuss the brief with AI
+              and review the work and times it suggests.
             </p>
           </div>
         </div>
@@ -1020,32 +1020,6 @@ function ProjectDetailBody({
             </div>
           </Link>
 
-          {/*
-            TODO: tạm thời ẩn luồng "AI auto-decompose" (/projects/:id/execution)
-            cho tới khi luồng này ổn định. Route vẫn còn trong App.tsx nên
-            deep-link vẫn vào được — chỉ ẩn entry point trên trang này.
-            <Link
-              to={`/projects/${project.id}/execution`}
-              className="pd-direction pd-direction--execution"
-              aria-label="Open AI project planner"
-            >
-              <div className="pd-direction-badge">AI</div>
-              <div className="pd-direction-icon">
-                <span className="material-symbols-outlined">auto_awesome</span>
-              </div>
-              <div className="pd-direction-body">
-                <h3 className="pd-direction-title">AI auto-decompose</h3>
-                <p className="pd-direction-desc">
-                  Paste the client brief — AI proposes milestones + tasks, you review and apply.
-                </p>
-              </div>
-              <div className="pd-direction-cta">
-                <span>Explore</span>
-                <span className="material-symbols-outlined">arrow_forward</span>
-              </div>
-            </Link>
-          */}
-
           <Link
             to={`/projects/${project.id}/chat`}
             className="pd-direction pd-direction--chat"
@@ -1058,8 +1032,7 @@ function ProjectDetailBody({
             <div className="pd-direction-body">
               <h3 className="pd-direction-title">AI chat</h3>
               <p className="pd-direction-desc">
-                Talk to AI about this project — full chat history, project tree
-                and one-click scheduling.
+                Discuss the client brief, choose which suggested tasks to save, and approve times for the calendar.
               </p>
             </div>
             <div className="pd-direction-cta">

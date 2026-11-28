@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   type MilestoneDto,
   type SubtaskDto,
@@ -31,6 +31,8 @@ import {
  * =========================================================== */
 
 export interface ProjectTreeProps {
+  planningSummary?: ReactNode;
+  taskActions?: (task: TaskDto, subtasks: SubtaskDto[]) => ReactNode;
   project: {
     id: string;
     name: string;
@@ -98,6 +100,8 @@ export function ProjectTree(props: ProjectTreeProps) {
     onDeleteTask,
     onDeleteSubtask,
     onToggleTaskDone,
+    planningSummary,
+    taskActions,
   } = props;
 
   /** Milestone đang mở rộng (có thể mở nhiều cùng lúc). */
@@ -229,6 +233,8 @@ export function ProjectTree(props: ProjectTreeProps) {
           </div>
         )}
 
+        {planningSummary}
+
         {/* Nút thêm cột mốc */}
         <button
           type="button"
@@ -253,8 +259,7 @@ export function ProjectTree(props: ProjectTreeProps) {
           <div className="aic-right__state">
             <span className="material-symbols-outlined">account_tree</span>
             <p>
-              Chưa có cột mốc nào — Bàn với AI rồi bấm Lên kế hoạch, hoặc tự
-              thêm cột mốc bằng tay.
+              Chưa có cột mốc nào. Bạn có thể thêm cột mốc hoặc tạo bản nháp với AI.
             </p>
           </div>
         ) : (
@@ -277,6 +282,7 @@ export function ProjectTree(props: ProjectTreeProps) {
                 onCancelEdit={() => setPending(null)}
                 onDelete={handleDelete}
                 onToggleDone={onToggleTaskDone}
+                taskActions={taskActions}
               />
             ))}
 
@@ -298,6 +304,7 @@ export function ProjectTree(props: ProjectTreeProps) {
                     onCancelEdit={() => setPending(null)}
                     onDelete={handleDelete}
                     onToggleDone={onToggleTaskDone}
+                    taskActions={taskActions}
                   />
                 ))}
               </section>
@@ -328,6 +335,7 @@ function MilestoneNode({
   onCancelEdit,
   onDelete,
   onToggleDone,
+  taskActions,
 }: {
   milestone: MilestoneDto;
   tasks: TaskDto[];
@@ -347,6 +355,7 @@ function MilestoneNode({
   /** Xác nhận xoá → xoá thật. */
   onDelete: (id: string) => void;
   onToggleDone: (task: TaskDto) => void;
+  taskActions?: ProjectTreeProps["taskActions"];
 }) {
   const msId = `ms:${milestone.id}`;
   const renaming = pending?.kind === "rename" && pending.id === msId;
@@ -438,6 +447,7 @@ function MilestoneNode({
               onCancelEdit={onCancelEdit}
               onDelete={onDelete}
               onToggleDone={onToggleDone}
+              taskActions={taskActions}
             />
           ))}
 
@@ -468,6 +478,7 @@ function TaskNode({
   onCancelEdit,
   onDelete,
   onToggleDone,
+  taskActions,
 }: {
   task: TaskDto;
   subtasks: SubtaskDto[];
@@ -482,6 +493,7 @@ function TaskNode({
   /** Huỷ thao tác nội tuyến. */
   onCancelEdit: () => void;
   onToggleDone: (task: TaskDto) => void;
+  taskActions?: ProjectTreeProps["taskActions"];
 }) {
   const done = isTaskDone(task.status);
   const renaming = pending?.kind === "rename" && pending.id === task.id;
@@ -571,6 +583,8 @@ function TaskNode({
           </span>
         </div>
       )}
+
+      {!deleting && !renaming && !done && taskActions?.(task, subtasks)}
 
       {/* --- Việc con --- */}
       {open && (

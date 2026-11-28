@@ -2248,7 +2248,7 @@ function ProjectCard(p: ProjectCardProps) {
           <Link
             to={`/projects/${prj.id}/chat`}
             className="proj-action proj-action--ai proj-action--flex"
-            title="Chat with AI about this project — it proposes milestones + tasks, you review and apply"
+            title="Discuss the brief, review suggested work and choose when to schedule it"
             onClick={(e) => e.stopPropagation()}
           >
             <span className="material-symbols-outlined proj-action-icon">

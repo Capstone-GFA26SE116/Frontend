@@ -1955,6 +1955,22 @@ export interface ProposeScheduleResponse {
   warnings: ScheduleWarningDto[];
 }
 
+export function approveScheduleProposal(proposalId: string) {
+  return post<{ slots: ScheduleSlotDto[] }>(
+    `/api/schedule/proposals/${encodeURIComponent(proposalId)}/approve`,
+  );
+}
+
+export function getPendingScheduleProposal() {
+  return get<{
+    id: string;
+    isFeasible: boolean;
+    missingMinutes: number | null;
+    explanation: string | null;
+    slots: ScheduleSlotDto[];
+  } | null>("/api/schedule/proposals/pending");
+}
+
 /**
  * POST {AI_BASE_URL}/schedule/propose
  * Nhờ AI tính khung giờ cho các task Flexible.
@@ -2850,6 +2866,7 @@ export interface ProjectChatMessageDto {
   role: ChatRole;
   kind: ProjectReplyKind | null;
   content: string;
+  attachments?: { id: string; name: string }[];
   created_at: string;
   draft: ProjectDraftDto | null;
   /** Ghi chú đi kèm cho tin loại `discuss`. */
@@ -2993,7 +3010,7 @@ export async function sendProjectChatMessage(
 
   // `mode: "plan"` là nút "Lên kế hoạch" → message gửi lại để trống.
   if (mode === "discuss") {
-    if (!trimmed) return { ok: false, error: "message is empty" };
+    if (!trimmed && !documentIds?.length) return { ok: false, error: "message is empty" };
     if (trimmed.length > 8000) {
       return {
         ok: false,
@@ -3022,8 +3039,8 @@ export async function sendProjectChatMessage(
  * Dùng `multipart/form-data`:
  *   - `message`   : nội dung tin (có thể rỗng nếu chỉ đính kèm file)
  *   - `mode`      : "discuss" | "plan"
- *   - `files[]`   : file thực (pdf, docx, txt, md, xlsx, csv)
- *   - `document_ids[]`: id tài liệu đã có sẵn trong dự án
+ *   - `files`   : file thực (pdf, docx, txt, md, xlsx, csv)
+ *   - `document_ids`: id tài liệu đã có sẵn trong dự án
  */
 export async function sendProjectChatMessageWithFiles(
   conversationId: string,
@@ -3039,15 +3056,15 @@ export async function sendProjectChatMessageWithFiles(
       error: "Cần ít nhất 1 file để gửi. Dùng ô chat để gửi tin không kèm file.",
     };
   }
-  if (files.length > 3) {
+  if (files.length + (documentIds?.length ?? 0) > 3) {
     return { ok: false, error: "Tối đa 3 file cho mỗi tin nhắn." };
   }
 
   const form = new FormData();
   form.append("message", message.trim());
   form.append("mode", mode);
-  for (const f of files) form.append("files[]", f);
-  for (const id of documentIds ?? []) form.append("document_ids[]", id);
+  for (const f of files) form.append("files", f);
+  for (const id of documentIds ?? []) form.append("document_ids", id);
 
   return aiFetch<ProjectChatTurnDto>(
     `/chat/conversations/${encodeURIComponent(conversationId)}/messages/files`,
@@ -3103,6 +3120,7 @@ export type ProjectChatMode = "discuss" | "plan";
  * Mỗi mảng là danh sách câu/ý dạng text do AI sinh ra.
  */
 export interface ProjectChatNotesDto {
+  ready_to_plan?: boolean;
   /** Đã rõ — những gì AI đã nắm được. */
   clear?: string[] | null;
   /** Còn thiếu — thông tin AI cần user bổ sung. */

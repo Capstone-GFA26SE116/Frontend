@@ -21,7 +21,7 @@ import "./project-import.css";
  *   2) Sửa tên / hạn / mô tả, bỏ bớt dự án
  *      → POST /projects/import (tạo dự án thật)
  *
- * Mỗi dự án được tạo kèm 1 cuộc chat sẵn có → mở thẳng `/projects/:id/execution`.
+ * Mỗi dự án được tạo kèm 1 cuộc chat sẵn có → mở thẳng `/projects/:id/chat`.
  *
  * Lưu ý: Gói Free không dùng được bước xem trước (403 `plan_feature_locked`).
  *
@@ -221,7 +221,7 @@ export function ProjectImportPage() {
     // Mở dự án đầu tiên (đã có sẵn 1 cuộc chat) — theo spec BE.
     const first = created[0];
     if (first) {
-      navigate(`/projects/${first.project_id}/execution`);
+      navigate(`/projects/${first.project_id}/chat`);
       return;
     }
     navigate("/projects");

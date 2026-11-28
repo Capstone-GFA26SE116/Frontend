@@ -20,7 +20,7 @@ import "./chat-history.css";
  * `match` {message_id, snippet} để tô đậm & cuộn tới đúng tin.
  *
  * Bấm 1 dòng:
- *   - scope = "project" → mở `/projects/:projectId/execution` (chat dự án)
+ *   - scope = "project" → mở cuộc chat thuộc `/projects/:projectId/chat`
  *   - scope = "task"   → mở chat chia nhỏ 1 task
  *
  * Không có nút "Chat mới" ở trang này (theo spec BE).
@@ -171,7 +171,7 @@ export function ChatHistoryPage() {
     if (item.scope === "project") {
       // Chat dự án — mở thẳng màn hình chat của dự án.
       if (item.project?.id) {
-        navigate(`/projects/${item.project.id}/execution`);
+        navigate(`/projects/${item.project.id}/chat?conversation=${encodeURIComponent(item.conversation_id)}`);
       }
       return;
     }
